@@ -15,6 +15,7 @@ schmux lets you spin up multiple AI coding agents (Codex, Claude Code with vario
 ## Features (Planned)
 
 - **Multi-agent orchestration** - Run multiple AI agents simultaneously with different LLM backends
+- **Multi-agent per directory** - Spawn reviewers or subagents on existing workspaces
 - **Workspace management** - Automatic git clone/checkout/pull for clean working directories
 - **tmux integration** - Each agent in its own session, attach anytime to interact
 - **Web dashboard** - Spawn sessions, view real-time output, manage workspaces

@@ -60,10 +60,11 @@ JSON file, hand-edited for v0.5. Location: `~/.schmux/config.json`
 - **Single global workspace directory** configured in `workspace_path`
 - **Sequential directory naming**: `<repo>-001`, `<repo>-002`, etc.
 - **Directory status tracking**: available (clean, no active session) vs in-use
+- **Multiple sessions per directory**: A directory can have multiple agents running simultaneously
 - **Git operations**:
   - Clone repo if not already present
   - Checkout to specified local branch
-  - `git pull --rebase` before starting session
+  - `git pull --rebase` before starting session (for new directory spawn)
   - If pull/rebase fails → workspace marked unusable (conflicts need manual resolution)
   - Cleanup: `git checkout -- .` to reset state when disposing
 
@@ -71,31 +72,48 @@ JSON file, hand-edited for v0.5. Location: `~/.schmux/config.json`
 
 ### Session Lifecycle
 
-1. User spawns session(s) via web dashboard
-2. schmux finds or creates a workspace directory for the repo
-3. Ensures git state is clean, correct branch checked out, pulls latest
+**New Directory Spawn (Worker)**
+1. User spawns session(s) via web dashboard spawn view
+2. schmux creates a new workspace directory for the repo
+3. Clones repo, checks out branch, pulls latest
 4. Creates tmux session, runs agent command with user's prompt
 5. Session tracked in state (process running/stopped)
-6. User can attach via terminal (`tmux attach -t <session>`)
-7. tmux session persists after agent process exits (enables resume)
-8. User disposes session via dashboard when done (cleans up workspace)
+
+**Existing Directory Spawn (Reviewer/Subagent)**
+1. User spawns session from directory view in dashboard
+2. schmux uses existing workspace directory (no git operations)
+3. Creates tmux session, runs agent command with user's prompt
+4. Session tracked in state, associated with same workspace
+
+**Common**
+- User can attach via terminal (`tmux attach -t <session>`)
+- tmux session persists after agent process exits (enables resume)
+- User disposes session via dashboard when done
 
 ---
 
 ### Web Dashboard Features
 
-**Session List View**
-- Flat list of all sessions
-- Displays: project name, directory, agent type, branch, process status (running/stopped)
+**Dashboard Hierarchy**: Project → Directory → Sessions
+
+**Project/Directory View**
+- Organized by project, then by directory
+- Each directory shows all sessions (N agents per directory)
+- Displays: directory name, branch, session count
+- Expand to see individual sessions
+
+**Session List**
+- Displays: agent type, process status (running/stopped), created time
 - Copy-able attach command for each session
 - Dispose button per session
+- **Spawn in this directory** button to add more agents
 
-**Spawn View**
+**Spawn View (New Directory)**
 - Select git repo (dropdown from pre-registered list)
 - Enter branch name
 - Enter prompt (textarea)
 - Agent quantity selector ("shopping cart" style - pick count per agent type)
-- Submit spawns all requested sessions with same prompt
+- Submit spawns all requested sessions with same prompt in new directories
 
 **Session Detail View**
 - Real-time terminal output (scrolling text)
@@ -114,26 +132,35 @@ JSON file at `~/.schmux/state.json`
     {
       "id": "myproject-001",
       "repo": "myproject",
+      "branch": "main",
       "path": "/Users/x/dev/schmux-workspaces/myproject-001",
-      "in_use": true,
-      "session_id": "schmux-myproject-001-abc123",
       "usable": true
     }
   ],
   "sessions": [
     {
-      "id": "schmux-myproject-001-abc123",
+      "id": "schmux-session-abc123",
       "workspace_id": "myproject-001",
       "agent": "claude-glm",
-      "branch": "main",
       "prompt": "fix the auth bug",
-      "tmux_session": "schmux-myproject-001-abc123",
+      "tmux_session": "schmux-session-abc123",
       "created_at": "2025-01-05T10:30:00Z",
       "pid": 12345
+    },
+    {
+      "id": "schmux-session-def456",
+      "workspace_id": "myproject-001",
+      "agent": "claude-kimi",
+      "prompt": "review the changes",
+      "tmux_session": "schmux-session-def456",
+      "created_at": "2025-01-05T11:00:00Z",
+      "pid": 12346
     }
   ]
 }
 ```
+
+Note: Multiple sessions can reference the same `workspace_id`.
 
 ---
 
@@ -153,23 +180,18 @@ schmux status         # show daemon status, web dashboard URL
 - **Web server**: Embedded in daemon, serves dashboard
 - **Terminal streaming**: Capture tmux pane output, stream to browser via websocket
 - **Process tracking**: Monitor agent PID to determine running/stopped status
-
----
-
-### Out of Scope (v0.5)
-
-- CLI for spawning/resume (web only for v0.5)
-- Config UI (hand-edit JSON)
-- Completion hooks/notifications
-- Budget tracking
-- Batch grouping in dashboard
-- Full terminal emulator in browser
+- **Dependency check**: Verify tmux is installed on startup, error if not found
+- **License**: Apache 2.0
 
 ---
 
 ## Future Scope
 
-### v1.0 Candidates
+### v0.6
+
+- **Cross-agent copy** - Select text from one session's terminal, copy with context to another session in same directory
+
+### v1.0
 
 - **Config management UI** - Web and/or CLI interface instead of hand-editing JSON
 - **CLI commands for spawning** - `schmux run --repo X --branch Y --agents "claude:3" --prompt "..."`
@@ -177,18 +199,17 @@ schmux status         # show daemon status, web dashboard URL
 - **Batch grouping** - Dashboard groups sessions started together with same prompt
 - **Richer session status** - Beyond just process running/stopped
 
-### v1.1 Candidates
+### v1.1
 
 - **Completion notification** - Via agent hooks (`--hook` on prompt complete) to distinguish "task complete" vs "waiting for input" vs "running"
 - **Full terminal emulator** - xterm.js in browser with colors, cursor, full interactivity
 - **Show repo diffs in browser** - View what changes agents have made to the codebase
-- **Open source license** - Select and add appropriate license
+- **Getting started documentation** - Installation guide, tutorials, examples
 
-### v1.1+ Candidates
+### v1.1+
 
 - **Budget tracking** - Track API costs per agent/session
 - **Feedback system** - Rate agent outputs, track which agents/backends perform better on different tasks
 - **Pluggable agent configuration** - Easier way to define new LLM endpoints without wrapper scripts
 - **SQLite for state** - More robust storage if JSON becomes limiting
 - **Remote branch operations** - Create branches, push, PR creation
-- **Getting started documentation** - Installation guide, tutorials, examples
