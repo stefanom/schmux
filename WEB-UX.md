@@ -28,11 +28,12 @@ Primary flows:
    - Running/stopped/waiting/error are visually consistent everywhere.
    - Real-time connection state is explicit (connected/reconnecting/offline).
 3. **Destructive actions are slow, safe, and obvious**
-   - “Dispose” is always clearly destructive; never hidden in ambiguous menus.
-   - Confirmations describe *effects*, not just “Are you sure?”
-4. **Keyboard-first**
-   - Every important action is reachable without a mouse.
-   - Command palette is the fastest path for power users.
+   - "Dispose" is always clearly destructive; never hidden in ambiguous menus.
+   - Confirmations describe *effects*, not just "Are you sure?"
+4. **CLI-first, web-secondary**
+   - The CLI is the primary interface for power users.
+   - The web dashboard is for observability and visual orchestration.
+   - Keyboard accessibility is basic (tab navigation, focus states, Esc to close modals).
 5. **Accessible by default**
    - Focus states, ARIA, dialog focus-trap, reduced motion, readable contrast.
 6. **Calm UI**
@@ -43,10 +44,10 @@ Primary flows:
 
 ### 2.1 App Shell
 All pages use the same shell:
-- Top bar: product name, global search, connection indicator, theme toggle
+- Top bar: product name, connection indicator, theme toggle
 - Left nav: Sessions, Spawn, (future) Diffs, Config, Logs
 - Content area: page header (title + primary actions), then body
-- Global overlays: Toaster, DialogHost, CommandPaletteHost
+- Global overlays: Toaster, DialogHost
 
 ### 2.2 Routes (canonical)
 - `/sessions` (default landing)

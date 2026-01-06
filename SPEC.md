@@ -187,29 +187,34 @@ schmux status         # show daemon status, web dashboard URL
 
 ## Future Scope
 
-### v0.6
+### v0.6 - Now we're cooking with gas
 
 - **Cross-agent copy** - Select text from one session's terminal, copy with context to another session in same directory
+- **Richer session status** - Beyond just process running/stopped
+- **Batch grouping** - Dashboard groups sessions started together with same prompt
 
-### v1.0
+### v0.9 - CLI catch up
 
-- **Config management UI** - Web and/or CLI interface instead of hand-editing JSON
 - **CLI commands for spawning** - `schmux run --repo X --branch Y --agents "claude:3" --prompt "..."`
 - **CLI commands for resume** - `schmux resume <session-id>`
-- **Batch grouping** - Dashboard groups sessions started together with same prompt
-- **Richer session status** - Beyond just process running/stopped
 
-### v1.1
+### v1.0 - Usable by others
 
+- **Getting started documentation** - Installation guide, tutorials, examples
+- **Config management UI** - Web and/or CLI interface instead of hand-editing JSON
 - **Completion notification** - Via agent hooks (`--hook` on prompt complete) to distinguish "task complete" vs "waiting for input" vs "running"
+- **Pluggable agent configuration** - Easier way to define new LLM endpoints without wrapper scripts
+
+### v1.1 - Power tools
 - **Full terminal emulator** - xterm.js in browser with colors, cursor, full interactivity
 - **Show repo diffs in browser** - View what changes agents have made to the codebase
-- **Getting started documentation** - Installation guide, tutorials, examples
+- **Saved prompts** - Easily spin up agents to run standard workflow
 
-### v1.1+
+### v2.0+ - Not in scope (future ideas)
 
 - **Budget tracking** - Track API costs per agent/session
 - **Feedback system** - Rate agent outputs, track which agents/backends perform better on different tasks
-- **Pluggable agent configuration** - Easier way to define new LLM endpoints without wrapper scripts
 - **SQLite for state** - More robust storage if JSON becomes limiting
 - **Remote branch operations** - Create branches, push, PR creation
+- **Search** - Find prompts and responses across current or historical sessions
+- **Keyboard-first web** - Command palette and advanced keyboard navigation
