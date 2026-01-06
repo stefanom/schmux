@@ -58,9 +58,9 @@ func TestGetWorkspacesForRepo(t *testing.T) {
 
 	// Add some workspaces
 	st.Workspaces = []state.Workspace{
-		{ID: "test-001", Repo: "test", Path: "/tmp/test-001"},
-		{ID: "test-002", Repo: "test", Path: "/tmp/test-002"},
-		{ID: "other-001", Repo: "other", Path: "/tmp/other-001"},
+		{ID: "test-001", Repo: "test", Branch: "main", Path: "/tmp/test-001"},
+		{ID: "test-002", Repo: "test", Branch: "develop", Path: "/tmp/test-002"},
+		{ID: "other-001", Repo: "other", Branch: "main", Path: "/tmp/other-001"},
 	}
 
 	cfg := &config.Config{WorkspacePath: "/tmp/workspaces"}
@@ -79,50 +79,5 @@ func TestGetWorkspacesForRepo(t *testing.T) {
 	workspaces = m.getWorkspacesForRepo("nonexistent")
 	if len(workspaces) != 0 {
 		t.Errorf("expected 0 workspaces, got %d", len(workspaces))
-	}
-}
-
-func TestMarkInUseAndRelease(t *testing.T) {
-	st := state.New()
-
-	w := state.Workspace{
-		ID:     "test-001",
-		Repo:   "test",
-		Path:   "/tmp/test-001",
-		InUse:  false,
-		Usable: true,
-	}
-
-	st.AddWorkspace(w)
-
-	cfg := &config.Config{WorkspacePath: "/tmp/workspaces"}
-	m := New(cfg, st)
-
-	// Mark as in use
-	err := m.MarkInUse("test-001", "session-123")
-	if err != nil {
-		t.Errorf("MarkInUse() error = %v", err)
-	}
-
-	retrieved, _ := st.GetWorkspace("test-001")
-	if !retrieved.InUse {
-		t.Error("expected InUse to be true")
-	}
-	if retrieved.SessionID != "session-123" {
-		t.Errorf("expected SessionID session-123, got %s", retrieved.SessionID)
-	}
-
-	// Release
-	err = m.Release("test-001")
-	if err != nil {
-		t.Errorf("Release() error = %v", err)
-	}
-
-	retrieved, _ = st.GetWorkspace("test-001")
-	if retrieved.InUse {
-		t.Error("expected InUse to be false")
-	}
-	if retrieved.SessionID != "" {
-		t.Errorf("expected SessionID to be empty, got %s", retrieved.SessionID)
 	}
 }

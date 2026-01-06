@@ -43,7 +43,8 @@ func (s *Server) handleStatic(w http.ResponseWriter, r *http.Request) {
 	http.ServeFile(w, r, filePath)
 }
 
-// handleSessions returns the list of sessions as JSON.
+// handleSessions returns the list of workspaces and their sessions as JSON.
+// Returns a hierarchical structure: workspaces -> sessions
 func (s *Server) handleSessions(w http.ResponseWriter, r *http.Request) {
 	if r.Method != http.MethodGet {
 		http.Error(w, "Method not allowed", http.StatusMethodNotAllowed)
@@ -52,31 +53,63 @@ func (s *Server) handleSessions(w http.ResponseWriter, r *http.Request) {
 
 	sessions := s.session.GetAllSessions()
 
-	// Build response with running status
+	// Group sessions by workspace
 	type SessionResponse struct {
-		ID          string `json:"id"`
-		WorkspaceID string `json:"workspace_id"`
-		Agent       string `json:"agent"`
-		Branch      string `json:"branch"`
-		Prompt      string `json:"prompt"`
-		CreatedAt   string `json:"created_at"`
-		Running     bool   `json:"running"`
-		AttachCmd   string `json:"attach_cmd"`
+		ID        string `json:"id"`
+		Agent     string `json:"agent"`
+		Branch    string `json:"branch"`
+		Prompt    string `json:"prompt"`
+		CreatedAt string `json:"created_at"`
+		Running   bool   `json:"running"`
+		AttachCmd string `json:"attach_cmd"`
 	}
 
-	response := make([]SessionResponse, 0, len(sessions))
+	type WorkspaceResponse struct {
+		ID          string            `json:"id"`
+		Repo        string            `json:"repo"`
+		Branch      string            `json:"branch"`
+		SessionCount int              `json:"session_count"`
+		Sessions    []SessionResponse `json:"sessions"`
+	}
+
+	workspaceMap := make(map[string]*WorkspaceResponse)
+
 	for _, sess := range sessions {
+		// Get workspace info
+		ws, found := s.state.GetWorkspace(sess.WorkspaceID)
+		if !found {
+			continue
+		}
+
+		// Get or create workspace response
+		wsResp, ok := workspaceMap[sess.WorkspaceID]
+		if !ok {
+			wsResp = &WorkspaceResponse{
+				ID:       ws.ID,
+				Repo:     ws.Repo,
+				Branch:   ws.Branch,
+				Sessions: []SessionResponse{},
+			}
+			workspaceMap[sess.WorkspaceID] = wsResp
+		}
+
 		attachCmd, _ := s.session.GetAttachCommand(sess.ID)
-		response = append(response, SessionResponse{
-			ID:          sess.ID,
-			WorkspaceID: sess.WorkspaceID,
-			Agent:       sess.Agent,
-			Branch:      sess.Branch,
-			Prompt:      sess.Prompt,
-			CreatedAt:   sess.CreatedAt.Format("2006-01-02T15:04:05Z"),
-			Running:     s.session.IsRunning(sess.ID),
-			AttachCmd:   attachCmd,
+		wsResp.Sessions = append(wsResp.Sessions, SessionResponse{
+			ID:        sess.ID,
+			Agent:     sess.Agent,
+			Branch:    sess.Branch,
+			Prompt:    sess.Prompt,
+			CreatedAt: sess.CreatedAt.Format("2006-01-02T15:04:05Z"),
+			Running:   s.session.IsRunning(sess.ID),
+			AttachCmd: attachCmd,
 		})
+		wsResp.SessionCount = len(wsResp.Sessions)
+	}
+
+	// Convert map to slice
+	response := make([]WorkspaceResponse, 0, len(workspaceMap))
+	for _, ws := range workspaceMap {
+		response = append(response, *ws)
 	}
 
 	w.Header().Set("Content-Type", "application/json")
@@ -85,10 +118,11 @@ func (s *Server) handleSessions(w http.ResponseWriter, r *http.Request) {
 
 // SpawnRequest represents a request to spawn sessions.
 type SpawnRequest struct {
-	Repo   string                 `json:"repo"`
-	Branch string                 `json:"branch"`
-	Prompt string                 `json:"prompt"`
-	Agents map[string]int         `json:"agents"` // agent name -> quantity
+	Repo        string         `json:"repo"`
+	Branch      string         `json:"branch"`
+	Prompt      string         `json:"prompt"`
+	Agents      map[string]int `json:"agents"` // agent name -> quantity
+	WorkspaceID string         `json:"workspace_id,omitempty"` // optional: spawn into specific workspace
 }
 
 // handleSpawnPost handles session spawning requests.
@@ -133,7 +167,7 @@ func (s *Server) handleSpawnPost(w http.ResponseWriter, r *http.Request) {
 
 	for agentName, count := range req.Agents {
 		for i := 0; i < count; i++ {
-			sess, err := s.session.Spawn(req.Repo, req.Branch, agentName, req.Prompt)
+			sess, err := s.session.Spawn(req.Repo, req.Branch, agentName, req.Prompt, req.WorkspaceID)
 			if err != nil {
 				results = append(results, SessionResult{
 					Agent: agentName,

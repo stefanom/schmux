@@ -44,12 +44,14 @@
                         <div id="agentsContainer" class="agents-container">
                             <span class="loading">Loading agents...</span>
                         </div>
+                        <div id="agentsError" class="error" style="display: none; margin-top: 0.5rem;">Please select at least one agent</div>
                     </div>
 
                     <div class="form-actions">
                         <button type="submit" class="btn btn-primary">Spawn Sessions</button>
                         <a href="/" class="btn">Cancel</a>
                     </div>
+                    <div id="statusMessage" class="toast-notification" style="display: none;"></div>
                 </form>
 
                 <div id="results" class="results" style="display: none;">
@@ -66,9 +68,47 @@
     <script src="/app.js"></script>
     <script>
         let availableAgents = [];
+        let prefillWorkspaceId = null;
+        let statusTimeout;
+
+        function showStatus(message) {
+            const statusEl = document.getElementById('statusMessage');
+            statusEl.textContent = message;
+            statusEl.style.display = 'block';
+            statusEl.classList.add('show');
+
+            clearTimeout(statusTimeout);
+            statusTimeout = setTimeout(() => {
+                statusEl.classList.remove('show');
+                setTimeout(() => {
+                    statusEl.style.display = 'none';
+                }, 300);
+            }, 3000);
+        }
 
         document.addEventListener('DOMContentLoaded', async () => {
+            // Check for workspace_id in URL query params
+            const urlParams = new URLSearchParams(window.location.search);
+            prefillWorkspaceId = urlParams.get('workspace_id');
+
             await loadConfig();
+
+            // Pre-fill repo and branch if provided
+            if (prefillWorkspaceId) {
+                const repo = urlParams.get('repo');
+                const branch = urlParams.get('branch');
+                if (repo) {
+                    document.getElementById('repo').value = repo;
+                    // Lock repo selection when spawning into specific workspace
+                    document.getElementById('repo').disabled = true;
+                }
+                if (branch) {
+                    document.getElementById('branch').value = branch;
+                }
+
+                // Update title
+                document.querySelector('h2').textContent = `Spawn in ${prefillWorkspaceId}`;
+            }
         });
 
         async function loadConfig() {
@@ -95,6 +135,14 @@
                         <input type="number" id="agent-${agent.name}" name="agents[${agent.name}]" min="0" max="10" value="0">
                     </div>
                 `).join('');
+
+                // Clear error when any agent input changes
+                config.agents.forEach(agent => {
+                    const input = document.getElementById(`agent-${agent.name}`);
+                    input.addEventListener('input', () => {
+                        document.getElementById('agentsError').style.display = 'none';
+                    });
+                });
             } catch (error) {
                 document.getElementById('agentsContainer').innerHTML = `<span class="error">Failed to load config: ${error.message}</span>`;
             }
@@ -116,15 +164,19 @@
             });
 
             if (Object.keys(agents).length === 0) {
-                alert('Please select at least one agent');
+                document.getElementById('agentsError').style.display = 'block';
                 return;
             }
+
+            // Clear any previous error
+            document.getElementById('agentsError').style.display = 'none';
 
             const request = {
                 repo: formData.get('repo'),
                 branch: formData.get('branch'),
                 prompt: formData.get('prompt'),
-                agents: agents
+                agents: agents,
+                workspace_id: prefillWorkspaceId || ''
             };
 
             try {
@@ -137,7 +189,7 @@
                 const results = await response.json();
                 displayResults(results);
             } catch (error) {
-                alert(`Failed to spawn sessions: ${error.message}`);
+                showStatus(`Failed to spawn sessions: ${error.message}`);
             }
         });
 

@@ -17,13 +17,13 @@ type State struct {
 }
 
 // Workspace represents a workspace directory state.
+// Multiple sessions can share the same workspace (multi-agent per directory).
 type Workspace struct {
-	ID        string `json:"id"`
-	Repo      string `json:"repo"`
-	Path      string `json:"path"`
-	InUse     bool   `json:"in_use"`
-	SessionID string `json:"session_id,omitempty"`
-	Usable    bool   `json:"usable"`
+	ID     string `json:"id"`
+	Repo   string `json:"repo"`
+	Branch string `json:"branch"`
+	Path   string `json:"path"`
+	Usable bool   `json:"usable"`
 }
 
 // Session represents an agent session.
@@ -146,18 +146,6 @@ func (s *State) UpdateWorkspace(w Workspace) {
 			return
 		}
 	}
-}
-
-// FindAvailableWorkspace finds an available workspace for a repo.
-func (s *State) FindAvailableWorkspace(repo string) (Workspace, bool) {
-	s.mu.RLock()
-	defer s.mu.RUnlock()
-	for _, w := range s.Workspaces {
-		if w.Repo == repo && !w.InUse && w.Usable {
-			return w, true
-		}
-	}
-	return Workspace{}, false
 }
 
 // AddSession adds a session to the state.

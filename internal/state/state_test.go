@@ -26,8 +26,8 @@ func TestAddAndGetWorkspace(t *testing.T) {
 	w := Workspace{
 		ID:     "test-001",
 		Repo:   "test",
+		Branch: "main",
 		Path:   "/tmp/test-001",
-		InUse:  false,
 		Usable: true,
 	}
 
@@ -44,6 +44,9 @@ func TestAddAndGetWorkspace(t *testing.T) {
 	if retrieved.Repo != w.Repo {
 		t.Errorf("expected Repo %s, got %s", w.Repo, retrieved.Repo)
 	}
+	if retrieved.Branch != w.Branch {
+		t.Errorf("expected Branch %s, got %s", w.Branch, retrieved.Branch)
+	}
 }
 
 func TestUpdateWorkspace(t *testing.T) {
@@ -52,16 +55,15 @@ func TestUpdateWorkspace(t *testing.T) {
 	w := Workspace{
 		ID:     "test-002",
 		Repo:   "test",
+		Branch: "main",
 		Path:   "/tmp/test-002",
-		InUse:  false,
 		Usable: true,
 	}
 
 	s.AddWorkspace(w)
 
 	// Update workspace
-	w.InUse = true
-	w.SessionID = "session-123"
+	w.Usable = false
 	s.UpdateWorkspace(w)
 
 	retrieved, found := s.GetWorkspace("test-002")
@@ -69,37 +71,8 @@ func TestUpdateWorkspace(t *testing.T) {
 		t.Fatal("workspace not found")
 	}
 
-	if !retrieved.InUse {
-		t.Error("expected InUse to be true")
-	}
-	if retrieved.SessionID != "session-123" {
-		t.Errorf("expected SessionID session-123, got %s", retrieved.SessionID)
-	}
-}
-
-func TestFindAvailableWorkspace(t *testing.T) {
-	s := Get()
-
-	s.Workspaces = []Workspace{
-		{ID: "test-001", Repo: "test", Path: "/tmp/test-001", InUse: true, Usable: true},
-		{ID: "test-002", Repo: "test", Path: "/tmp/test-002", InUse: false, Usable: false},
-		{ID: "test-003", Repo: "test", Path: "/tmp/test-003", InUse: false, Usable: true},
-		{ID: "other-001", Repo: "other", Path: "/tmp/other-001", InUse: false, Usable: true},
-	}
-
-	// Should find test-003 (available and usable)
-	w, found := s.FindAvailableWorkspace("test")
-	if !found {
-		t.Fatal("available workspace not found")
-	}
-	if w.ID != "test-003" {
-		t.Errorf("expected ID test-003, got %s", w.ID)
-	}
-
-	// Should not find any for "other" if we're looking for "test"
-	_, found = s.FindAvailableWorkspace("nonexistent")
-	if found {
-		t.Error("expected not to find workspace for nonexistent repo")
+	if retrieved.Usable {
+		t.Error("expected Usable to be false")
 	}
 }
 

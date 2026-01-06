@@ -26,19 +26,35 @@ func New(cfg *config.Config, st *state.State) *Manager {
 	}
 }
 
-// GetOrCreate finds an available workspace or creates a new one.
-func (m *Manager) GetOrCreate(repo, branch string) (*state.Workspace, error) {
-	// Try to find an available workspace
-	if w, found := m.state.FindAvailableWorkspace(repo); found {
-		return &w, nil
+// GetByID returns a workspace by its ID.
+func (m *Manager) GetByID(workspaceID string) (*state.Workspace, bool) {
+	w, found := m.state.GetWorkspace(workspaceID)
+	if !found {
+		return nil, false
+	}
+	return &w, true
+}
+
+// GetOrCreate finds an existing workspace for the repo/branch or creates a new one.
+// Returns the workspace and true if it was created, false if it already existed.
+func (m *Manager) GetOrCreate(repo, branch string) (*state.Workspace, bool, error) {
+	// Try to find an existing workspace with matching repo and branch
+	for _, w := range m.state.Workspaces {
+		if w.Repo == repo && w.Branch == branch && w.Usable {
+			return &w, false, nil
+		}
 	}
 
 	// Create a new workspace
-	return m.create(repo)
+	w, err := m.create(repo, branch)
+	if err != nil {
+		return nil, false, err
+	}
+	return w, true, nil
 }
 
 // create creates a new workspace directory for the given repo.
-func (m *Manager) create(repo string) (*state.Workspace, error) {
+func (m *Manager) create(repo, branch string) (*state.Workspace, error) {
 	// Find the next available workspace number
 	workspaces := m.getWorkspacesForRepo(repo)
 	nextNum := len(workspaces) + 1
@@ -70,12 +86,12 @@ func (m *Manager) create(repo string) (*state.Workspace, error) {
 		return nil, fmt.Errorf("failed to clone repo: %w", err)
 	}
 
-	// Create workspace state
+	// Create workspace state with branch
 	w := state.Workspace{
 		ID:     workspaceID,
 		Repo:   repo,
+		Branch: branch,
 		Path:   workspacePath,
-		InUse:  false,
 		Usable: true,
 	}
 
@@ -143,34 +159,6 @@ func (m *Manager) Cleanup(workspaceID string) error {
 	}
 
 	return nil
-}
-
-// MarkInUse marks a workspace as in use.
-func (m *Manager) MarkInUse(workspaceID, sessionID string) error {
-	w, found := m.state.GetWorkspace(workspaceID)
-	if !found {
-		return fmt.Errorf("workspace not found: %s", workspaceID)
-	}
-
-	w.InUse = true
-	w.SessionID = sessionID
-	m.state.UpdateWorkspace(w)
-
-	return m.state.Save()
-}
-
-// Release releases a workspace from use.
-func (m *Manager) Release(workspaceID string) error {
-	w, found := m.state.GetWorkspace(workspaceID)
-	if !found {
-		return fmt.Errorf("workspace not found: %s", workspaceID)
-	}
-
-	w.InUse = false
-	w.SessionID = ""
-	m.state.UpdateWorkspace(w)
-
-	return m.state.Save()
 }
 
 // getWorkspacesForRepo returns all workspaces for a given repo.

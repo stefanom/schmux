@@ -31,22 +31,40 @@ func New(cfg *config.Config, st *state.State, wm *workspace.Manager) *Manager {
 }
 
 // Spawn creates a new session.
-func (m *Manager) Spawn(repo, branch, agentName, prompt string) (*state.Session, error) {
+// If workspaceID is provided, spawn into that specific workspace (Existing Directory Spawn mode).
+// Otherwise, find or create a workspace by repo/branch.
+func (m *Manager) Spawn(repo, branch, agentName, prompt string, workspaceID string) (*state.Session, error) {
 	// Find agent config
 	agent, found := m.config.FindAgent(agentName)
 	if !found {
 		return nil, fmt.Errorf("agent not found: %s", agentName)
 	}
 
-	// Get or create workspace
-	w, err := m.workspace.GetOrCreate(repo, branch)
-	if err != nil {
-		return nil, fmt.Errorf("failed to get workspace: %w", err)
-	}
+	var w *state.Workspace
+	var isNew bool
+	var err error
 
-	// Prepare workspace (git operations)
-	if err := m.workspace.Prepare(w.ID, branch); err != nil {
-		return nil, fmt.Errorf("failed to prepare workspace: %w", err)
+	if workspaceID != "" {
+		// Spawn into specific workspace (Existing Directory Spawn mode)
+		ws, found := m.workspace.GetByID(workspaceID)
+		if !found {
+			return nil, fmt.Errorf("workspace not found: %s", workspaceID)
+		}
+		w = ws
+		isNew = false
+	} else {
+		// Get or create workspace by repo/branch
+		w, isNew, err = m.workspace.GetOrCreate(repo, branch)
+		if err != nil {
+			return nil, fmt.Errorf("failed to get workspace: %w", err)
+		}
+
+		// Prepare workspace (git operations) only for new workspaces
+		if isNew {
+			if err := m.workspace.Prepare(w.ID, branch); err != nil {
+				return nil, fmt.Errorf("failed to prepare workspace: %w", err)
+			}
+		}
 	}
 
 	// Build agent command with prompt - properly quote the prompt to prevent command injection
@@ -83,11 +101,6 @@ func (m *Manager) Spawn(repo, branch, agentName, prompt string) (*state.Session,
 	m.state.AddSession(sess)
 	if err := m.state.Save(); err != nil {
 		return nil, fmt.Errorf("failed to save state: %w", err)
-	}
-
-	// Mark workspace as in use
-	if err := m.workspace.MarkInUse(w.ID, sessionID); err != nil {
-		return nil, fmt.Errorf("failed to mark workspace in use: %w", err)
 	}
 
 	return &sess, nil
@@ -127,16 +140,10 @@ func (m *Manager) Dispose(sessionID string) error {
 		return fmt.Errorf("session not found: %s", sessionID)
 	}
 
-	// Kill tmux session (keep it for review, just detach)
-	// Actually, spec says dispose cleans up, so kill the tmux session
+	// Kill tmux session
 	if err := tmux.KillSession(sess.TmuxSession); err != nil {
 		// Log but don't fail - session might already be gone
 		fmt.Printf("warning: failed to kill tmux session: %v\n", err)
-	}
-
-	// Release workspace
-	if err := m.workspace.Release(sess.WorkspaceID); err != nil {
-		return fmt.Errorf("failed to release workspace: %w", err)
 	}
 
 	// Clean up workspace (reset git state)

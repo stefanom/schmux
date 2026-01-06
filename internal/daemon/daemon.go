@@ -11,13 +11,13 @@ import (
 
 	"github.com/sergek/schmux/internal/config"
 	"github.com/sergek/schmux/internal/dashboard"
-	"github.com/sergek/schmux/internal/state"
 	"github.com/sergek/schmux/internal/session"
+	"github.com/sergek/schmux/internal/state"
 	"github.com/sergek/schmux/internal/workspace"
 )
 
 const (
-	pidFileName = "daemon.pid"
+	pidFileName   = "daemon.pid"
 	dashboardPort = 7337
 )
 
@@ -36,6 +36,11 @@ type Daemon struct {
 
 // Start starts the daemon in the background.
 func Start() error {
+	// Check tmux dependency before forking
+	if err := checkTmux(); err != nil {
+		return err
+	}
+
 	homeDir, err := os.UserHomeDir()
 	if err != nil {
 		return fmt.Errorf("failed to get home directory: %w", err)
@@ -251,4 +256,18 @@ func Run() error {
 // Shutdown triggers a graceful shutdown.
 func Shutdown() {
 	close(shutdownChan)
+}
+
+// checkTmux verifies that tmux is installed and accessible.
+func checkTmux() error {
+	cmd := exec.Command("tmux", "-V")
+	output, err := cmd.CombinedOutput()
+	if err != nil {
+		return fmt.Errorf("tmux is not installed or not accessible.\n-> %w", err)
+	}
+	// tmux -V outputs version info like "tmux 3.3a", this confirms it's working
+	if len(output) == 0 {
+		return fmt.Errorf("tmux command produced no output")
+	}
+	return nil
 }
