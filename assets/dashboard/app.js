@@ -229,6 +229,7 @@ class TerminalStream {
         this.connected = false;
         this.paused = false;
         this.followTail = options.followTail !== false;
+        this.followCheckbox = options.followCheckbox || null;
         this.onStatusChange = options.onStatusChange || (() => {});
         this.onNewContent = options.onNewContent || (() => {});
 
@@ -302,11 +303,21 @@ class TerminalStream {
         // Mark user as scrolled if they've moved up from the true bottom at all
         if (!this.userScrolled && this.outputElement.scrollTop < this.outputElement.scrollHeight - this.outputElement.clientHeight - 1) {
             this.userScrolled = true;
+            // Uncheck the follow checkbox and pause
+            if (this.followCheckbox && this.followCheckbox.checked) {
+                this.followCheckbox.checked = false;
+                this.pause();
+            }
         }
 
         // If user scrolls back near bottom, clear the scrolled state and resume
         if (this.userScrolled && this.isAtBottom()) {
             this.userScrolled = false;
+            // Re-check the follow checkbox and resume
+            if (this.followCheckbox && !this.followCheckbox.checked) {
+                this.followCheckbox.checked = true;
+                this.resume();
+            }
             if (this.pendingContent) {
                 this.pendingContent = false;
                 this.outputElement.textContent = this.latestContent;
@@ -321,6 +332,11 @@ class TerminalStream {
         this.outputElement.textContent = this.latestContent;
         this.outputElement.scrollTop = this.outputElement.scrollHeight;
         this.onNewContent(false);
+        // Re-check the follow checkbox and resume
+        if (this.followCheckbox && !this.followCheckbox.checked) {
+            this.followCheckbox.checked = true;
+            this.resume();
+        }
     }
 
     updateOutput(output) {
@@ -424,6 +440,12 @@ const API = {
     async getSessions() {
         const response = await fetch('/api/sessions');
         if (!response.ok) throw new Error('Failed to fetch sessions');
+        return response.json();
+    },
+
+    async getWorkspaces() {
+        const response = await fetch('/api/workspaces');
+        if (!response.ok) throw new Error('Failed to fetch workspaces');
         return response.json();
     },
 

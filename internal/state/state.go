@@ -23,7 +23,6 @@ type Workspace struct {
 	Repo   string `json:"repo"`
 	Branch string `json:"branch"`
 	Path   string `json:"path"`
-	Usable bool   `json:"usable"`
 }
 
 // Session represents an agent session.
@@ -31,7 +30,6 @@ type Session struct {
 	ID          string    `json:"id"`
 	WorkspaceID string    `json:"workspace_id"`
 	Agent       string    `json:"agent"`
-	Branch      string    `json:"branch"`
 	Prompt      string    `json:"prompt"`
 	TmuxSession string    `json:"tmux_session"`
 	CreatedAt   time.Time `json:"created_at"`
@@ -134,6 +132,16 @@ func (s *State) GetWorkspace(id string) (Workspace, bool) {
 		}
 	}
 	return Workspace{}, false
+}
+
+// GetWorkspaces returns all workspaces.
+// Returns a copy to prevent callers from modifying internal state.
+func (s *State) GetWorkspaces() []Workspace {
+	s.mu.RLock()
+	defer s.mu.RUnlock()
+	workspaces := make([]Workspace, len(s.Workspaces))
+	copy(workspaces, s.Workspaces)
+	return workspaces
 }
 
 // UpdateWorkspace updates a workspace in the state.

@@ -380,6 +380,12 @@ body {
     align-items: center;
 }
 
+.filter-bar__label {
+    font-weight: 600;
+    color: var(--color-text-subtle);
+    font-size: 0.875rem;
+}
+
 .filter-bar__search {
     flex: 1;
     min-width: 200px;
@@ -389,6 +395,12 @@ body {
     display: flex;
     gap: var(--spacing-md);
     flex-wrap: wrap;
+    align-items: center;
+}
+
+.filter-bar__filters .select {
+    width: auto;
+    min-width: 150px;
 }
 
 /* Form Inputs */

@@ -9,19 +9,28 @@ import (
 	"strings"
 )
 
-// handleIndex serves the main dashboard page.
+// handleIndex redirects to the sessions page.
 func (s *Server) handleIndex(w http.ResponseWriter, r *http.Request) {
 	if r.URL.Path != "/" {
 		http.NotFound(w, r)
 		return
 	}
+	http.Redirect(w, r, "/sessions", http.StatusFound)
+}
 
+// handleSessionsList serves the sessions list page.
+func (s *Server) handleSessionsList(w http.ResponseWriter, r *http.Request) {
 	s.serveHTML(w, r, "index.html")
 }
 
 // handleSpawn serves the spawn page.
 func (s *Server) handleSpawn(w http.ResponseWriter, r *http.Request) {
 	s.serveHTML(w, r, "spawn.html")
+}
+
+// handleWorkspaces serves the workspaces page.
+func (s *Server) handleWorkspaces(w http.ResponseWriter, r *http.Request) {
+	s.serveHTML(w, r, "workspaces.html")
 }
 
 // handleSessionDetail serves the session detail page.
@@ -122,7 +131,7 @@ func (s *Server) handleSessions(w http.ResponseWriter, r *http.Request) {
 		wsResp.Sessions = append(wsResp.Sessions, SessionResponse{
 			ID:        sess.ID,
 			Agent:     sess.Agent,
-			Branch:    sess.Branch,
+			Branch:    ws.Branch,
 			Prompt:    sess.Prompt,
 			CreatedAt: sess.CreatedAt.Format("2006-01-02T15:04:05Z"),
 			Running:   s.session.IsRunning(sess.ID),
@@ -135,6 +144,35 @@ func (s *Server) handleSessions(w http.ResponseWriter, r *http.Request) {
 	response := make([]WorkspaceResponse, 0, len(workspaceMap))
 	for _, ws := range workspaceMap {
 		response = append(response, *ws)
+	}
+
+	w.Header().Set("Content-Type", "application/json")
+	json.NewEncoder(w).Encode(response)
+}
+
+// handleWorkspacesAPI returns the list of all workspaces as JSON.
+func (s *Server) handleWorkspacesAPI(w http.ResponseWriter, r *http.Request) {
+	if r.Method != http.MethodGet {
+		http.Error(w, "Method not allowed", http.StatusMethodNotAllowed)
+		return
+	}
+
+	type WorkspaceResponse struct {
+		ID     string `json:"id"`
+		Repo   string `json:"repo"`
+		Branch string `json:"branch"`
+		Path   string `json:"path"`
+	}
+
+	workspaces := s.state.GetWorkspaces()
+	response := make([]WorkspaceResponse, len(workspaces))
+	for i, ws := range workspaces {
+		response[i] = WorkspaceResponse{
+			ID:     ws.ID,
+			Repo:   ws.Repo,
+			Branch: ws.Branch,
+			Path:   ws.Path,
+		}
 	}
 
 	w.Header().Set("Content-Type", "application/json")

@@ -32,8 +32,8 @@ func New(cfg *config.Config, st *state.State, wm *workspace.Manager) *Manager {
 
 // Spawn creates a new session.
 // If workspaceID is provided, spawn into that specific workspace (Existing Directory Spawn mode).
-// Otherwise, find or create a workspace by repo/branch.
-func (m *Manager) Spawn(repo, branch, agentName, prompt string, workspaceID string) (*state.Session, error) {
+// Otherwise, find or create a workspace by repoURL/branch.
+func (m *Manager) Spawn(repoURL, branch, agentName, prompt string, workspaceID string) (*state.Session, error) {
 	// Find agent config
 	agent, found := m.config.FindAgent(agentName)
 	if !found {
@@ -41,29 +41,20 @@ func (m *Manager) Spawn(repo, branch, agentName, prompt string, workspaceID stri
 	}
 
 	var w *state.Workspace
-	var isNew bool
 	var err error
 
 	if workspaceID != "" {
-		// Spawn into specific workspace (Existing Directory Spawn mode)
+		// Spawn into specific workspace (Existing Directory Spawn mode - no git operations)
 		ws, found := m.workspace.GetByID(workspaceID)
 		if !found {
 			return nil, fmt.Errorf("workspace not found: %s", workspaceID)
 		}
 		w = ws
-		isNew = false
 	} else {
-		// Get or create workspace by repo/branch
-		w, isNew, err = m.workspace.GetOrCreate(repo, branch)
+		// Get or create workspace (includes fetch/pull/clean)
+		w, err = m.workspace.GetOrCreate(repoURL, branch)
 		if err != nil {
 			return nil, fmt.Errorf("failed to get workspace: %w", err)
-		}
-
-		// Prepare workspace (git operations) only for new workspaces
-		if isNew {
-			if err := m.workspace.Prepare(w.ID, branch); err != nil {
-				return nil, fmt.Errorf("failed to prepare workspace: %w", err)
-			}
 		}
 	}
 
@@ -91,7 +82,6 @@ func (m *Manager) Spawn(repo, branch, agentName, prompt string, workspaceID stri
 		ID:          sessionID,
 		WorkspaceID: w.ID,
 		Agent:       agentName,
-		Branch:      branch,
 		Prompt:      prompt,
 		TmuxSession: tmuxSession,
 		CreatedAt:   time.Now(),
@@ -140,11 +130,8 @@ func (m *Manager) Dispose(sessionID string) error {
 		return fmt.Errorf("session not found: %s", sessionID)
 	}
 
-	// Kill tmux session
-	if err := tmux.KillSession(sess.TmuxSession); err != nil {
-		// Log but don't fail - session might already be gone
-		fmt.Printf("warning: failed to kill tmux session: %v\n", err)
-	}
+	// Kill tmux session (ignore error if already gone)
+	tmux.KillSession(sess.TmuxSession)
 
 	// Clean up workspace (reset git state)
 	if err := m.workspace.Cleanup(sess.WorkspaceID); err != nil {

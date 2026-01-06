@@ -25,10 +25,9 @@ func TestAddAndGetWorkspace(t *testing.T) {
 
 	w := Workspace{
 		ID:     "test-001",
-		Repo:   "test",
+		Repo:   "https://github.com/test/repo",
 		Branch: "main",
 		Path:   "/tmp/test-001",
-		Usable: true,
 	}
 
 	s.AddWorkspace(w)
@@ -54,16 +53,15 @@ func TestUpdateWorkspace(t *testing.T) {
 
 	w := Workspace{
 		ID:     "test-002",
-		Repo:   "test",
+		Repo:   "https://github.com/test/repo",
 		Branch: "main",
 		Path:   "/tmp/test-002",
-		Usable: true,
 	}
 
 	s.AddWorkspace(w)
 
-	// Update workspace
-	w.Usable = false
+	// Update workspace branch
+	w.Branch = "develop"
 	s.UpdateWorkspace(w)
 
 	retrieved, found := s.GetWorkspace("test-002")
@@ -71,8 +69,8 @@ func TestUpdateWorkspace(t *testing.T) {
 		t.Fatal("workspace not found")
 	}
 
-	if retrieved.Usable {
-		t.Error("expected Usable to be false")
+	if retrieved.Branch != "develop" {
+		t.Errorf("expected Branch to be develop, got %s", retrieved.Branch)
 	}
 }
 
@@ -83,7 +81,6 @@ func TestAddAndGetSession(t *testing.T) {
 		ID:          "session-001",
 		WorkspaceID: "test-001",
 		Agent:       "claude",
-		Branch:      "main",
 		Prompt:      "fix the bug",
 		TmuxSession: "schmux-test-001-abc123",
 		CreatedAt:   time.Now(),
@@ -111,7 +108,6 @@ func TestRemoveSession(t *testing.T) {
 		ID:          "session-002",
 		WorkspaceID: "test-001",
 		Agent:       "codex",
-		Branch:      "main",
 		Prompt:      "add feature",
 		TmuxSession: "schmux-test-001-def456",
 		CreatedAt:   time.Now(),
@@ -135,8 +131,8 @@ func TestGetSessions(t *testing.T) {
 	s.Sessions = []Session{}
 
 	sessions := []Session{
-		{ID: "s1", WorkspaceID: "w1", Agent: "a1", Branch: "main", Prompt: "p1", TmuxSession: "t1", CreatedAt: time.Now()},
-		{ID: "s2", WorkspaceID: "w2", Agent: "a2", Branch: "main", Prompt: "p2", TmuxSession: "t2", CreatedAt: time.Now()},
+		{ID: "s1", WorkspaceID: "w1", Agent: "a1", Prompt: "p1", TmuxSession: "t1", CreatedAt: time.Now()},
+		{ID: "s2", WorkspaceID: "w2", Agent: "a2", Prompt: "p2", TmuxSession: "t2", CreatedAt: time.Now()},
 	}
 
 	for _, sess := range sessions {

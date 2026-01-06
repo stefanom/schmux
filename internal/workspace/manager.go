@@ -35,28 +35,54 @@ func (m *Manager) GetByID(workspaceID string) (*state.Workspace, bool) {
 	return &w, true
 }
 
-// GetOrCreate finds an existing workspace for the repo/branch or creates a new one.
-// Returns the workspace and true if it was created, false if it already existed.
-func (m *Manager) GetOrCreate(repo, branch string) (*state.Workspace, bool, error) {
-	// Try to find an existing workspace with matching repo and branch
+// GetOrCreate finds an existing workspace for the repoURL/branch or creates a new one.
+// Returns a workspace ready for use (fetch/pull/clean already done).
+func (m *Manager) GetOrCreate(repoURL, branch string) (*state.Workspace, error) {
+	// Try to find an existing workspace with matching repoURL and branch
 	for _, w := range m.state.Workspaces {
-		if w.Repo == repo && w.Branch == branch && w.Usable {
-			return &w, false, nil
+		if w.Repo == repoURL && w.Branch == branch {
+			// Check if workspace has active sessions
+			hasActiveSessions := false
+			for _, s := range m.state.Sessions {
+				if s.WorkspaceID == w.ID {
+					hasActiveSessions = true
+					break
+				}
+			}
+			if !hasActiveSessions {
+				// Prepare the workspace (fetch/pull/clean)
+				if err := m.prepare(w.ID, branch); err != nil {
+					return nil, fmt.Errorf("failed to prepare workspace: %w", err)
+				}
+				return &w, nil
+			}
 		}
 	}
 
 	// Create a new workspace
-	w, err := m.create(repo, branch)
+	w, err := m.create(repoURL, branch)
 	if err != nil {
-		return nil, false, err
+		return nil, err
 	}
-	return w, true, nil
+
+	// Prepare the workspace
+	if err := m.prepare(w.ID, branch); err != nil {
+		return nil, fmt.Errorf("failed to prepare workspace: %w", err)
+	}
+
+	return w, nil
 }
 
-// create creates a new workspace directory for the given repo.
-func (m *Manager) create(repo, branch string) (*state.Workspace, error) {
+// create creates a new workspace directory for the given repoURL.
+func (m *Manager) create(repoURL, branch string) (*state.Workspace, error) {
+	// Find repo config by URL
+	repoConfig, found := m.findRepoByURL(repoURL)
+	if !found {
+		return nil, fmt.Errorf("repo URL not found in config: %s", repoURL)
+	}
+
 	// Find the next available workspace number
-	workspaces := m.getWorkspacesForRepo(repo)
+	workspaces := m.getWorkspacesForRepo(repoURL)
 	nextNum := len(workspaces) + 1
 
 	// Check for gaps in numbering
@@ -71,28 +97,22 @@ func (m *Manager) create(repo, branch string) (*state.Workspace, error) {
 	}
 
 	// Create workspace ID
-	workspaceID := fmt.Sprintf("%s-%03d", repo, nextNum)
+	workspaceID := fmt.Sprintf("%s-%03d", repoConfig.Name, nextNum)
 
 	// Create full path
 	workspacePath := filepath.Join(m.config.GetWorkspacePath(), workspaceID)
 
 	// Clone the repository
-	repoConfig, found := m.config.FindRepo(repo)
-	if !found {
-		return nil, fmt.Errorf("repo not found in config: %s", repo)
-	}
-
-	if err := m.cloneRepo(repoConfig.URL, workspacePath); err != nil {
+	if err := m.cloneRepo(repoURL, workspacePath); err != nil {
 		return nil, fmt.Errorf("failed to clone repo: %w", err)
 	}
 
 	// Create workspace state with branch
 	w := state.Workspace{
 		ID:     workspaceID,
-		Repo:   repo,
+		Repo:   repoURL,
 		Branch: branch,
 		Path:   workspacePath,
-		Usable: true,
 	}
 
 	m.state.AddWorkspace(w)
@@ -103,39 +123,38 @@ func (m *Manager) create(repo, branch string) (*state.Workspace, error) {
 	return &w, nil
 }
 
-// Prepare prepares a workspace for use (git checkout, pull).
-func (m *Manager) Prepare(workspaceID, branch string) error {
+// prepare prepares a workspace for use (git checkout, pull, clean).
+func (m *Manager) prepare(workspaceID, branch string) error {
 	w, found := m.state.GetWorkspace(workspaceID)
 	if !found {
 		return fmt.Errorf("workspace not found: %s", workspaceID)
 	}
 
-	if !w.Usable {
-		return fmt.Errorf("workspace is not usable: %s", workspaceID)
+	// Check if workspace has active sessions
+	for _, s := range m.state.Sessions {
+		if s.WorkspaceID == workspaceID {
+			return fmt.Errorf("workspace has active sessions: %s", workspaceID)
+		}
 	}
 
 	// Fetch latest
 	if err := m.gitFetch(w.Path); err != nil {
-		w.Usable = false
-		m.state.UpdateWorkspace(w)
-		m.state.Save()
 		return fmt.Errorf("git fetch failed: %w", err)
 	}
 
 	// Checkout branch
 	if err := m.gitCheckout(w.Path, branch); err != nil {
-		w.Usable = false
-		m.state.UpdateWorkspace(w)
-		m.state.Save()
 		return fmt.Errorf("git checkout failed: %w", err)
 	}
 
 	// Pull with rebase
 	if err := m.gitPullRebase(w.Path); err != nil {
-		w.Usable = false
-		m.state.UpdateWorkspace(w)
-		m.state.Save()
 		return fmt.Errorf("git pull --rebase failed (conflicts?): %w", err)
+	}
+
+	// Clean untracked files and directories
+	if err := m.gitClean(w.Path); err != nil {
+		return fmt.Errorf("git clean failed: %w", err)
 	}
 
 	return nil
@@ -161,15 +180,25 @@ func (m *Manager) Cleanup(workspaceID string) error {
 	return nil
 }
 
-// getWorkspacesForRepo returns all workspaces for a given repo.
-func (m *Manager) getWorkspacesForRepo(repo string) []state.Workspace {
+// getWorkspacesForRepo returns all workspaces for a given repoURL.
+func (m *Manager) getWorkspacesForRepo(repoURL string) []state.Workspace {
 	var result []state.Workspace
 	for _, w := range m.state.Workspaces {
-		if w.Repo == repo {
+		if w.Repo == repoURL {
 			result = append(result, w)
 		}
 	}
 	return result
+}
+
+// findRepoByURL finds a repo config by URL.
+func (m *Manager) findRepoByURL(repoURL string) (config.Repo, bool) {
+	for _, repo := range m.config.GetRepos() {
+		if repo.URL == repoURL {
+			return repo, true
+		}
+	}
+	return config.Repo{}, false
 }
 
 // cloneRepo clones a repository to the given path.
