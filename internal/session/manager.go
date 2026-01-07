@@ -135,11 +135,8 @@ func (m *Manager) Dispose(sessionID string) error {
 	// Kill tmux session (ignore error if already gone)
 	tmux.KillSession(sess.TmuxSession)
 
-	// Clean up workspace (reset git state)
-	if err := m.workspace.Cleanup(sess.WorkspaceID); err != nil {
-		// Keep workspace as-is on cleanup failure (per spec)
-		fmt.Printf("warning: failed to cleanup workspace: %v\n", err)
-	}
+	// Note: workspace is NOT cleaned up on session disposal.
+	// Workspaces persist and are only reset when reused for a new spawn.
 
 	// Remove session from state
 	m.state.RemoveSession(sessionID)
