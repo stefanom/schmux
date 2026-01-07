@@ -68,8 +68,13 @@ func (m *Manager) Spawn(repoURL, branch, agentName, prompt, nickname string, wor
 	// Create session ID
 	sessionID := fmt.Sprintf("%s-%s", w.ID, uuid.New().String()[:8])
 
-	// Create tmux session
+	// Use sanitized nickname for tmux session name if provided, otherwise use sessionID
 	tmuxSession := sessionID
+	if nickname != "" {
+		tmuxSession = sanitizeNickname(nickname)
+	}
+
+	// Create tmux session
 	if err := tmux.CreateSession(tmuxSession, w.Path, command); err != nil {
 		return nil, fmt.Errorf("failed to create tmux session: %w", err)
 	}
@@ -343,4 +348,12 @@ func (m *Manager) pruneLogs() {
 	if err := m.pruneLogFiles(activeSessions); err != nil {
 		fmt.Printf("warning: log prune failed: %v\n", err)
 	}
+}
+
+// sanitizeNickname sanitizes a nickname for use as a tmux session name.
+// tmux session names cannot contain dots (.) or colons (:).
+func sanitizeNickname(nickname string) string {
+	result := strings.ReplaceAll(nickname, ".", "-")
+	result = strings.ReplaceAll(result, ":", "-")
+	return result
 }

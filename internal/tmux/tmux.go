@@ -232,3 +232,14 @@ func IsPipePaneActive(sessionName string) bool {
 	output := strings.TrimSpace(stdout.String())
 	return output != "" && output != "0"
 }
+
+// RenameSession renames an existing tmux session.
+// This is used when updating session nicknames.
+func RenameSession(oldName, newName string) error {
+	args := []string{"rename-session", "-t", oldName, newName}
+	cmd := exec.Command("tmux", args...)
+	if output, err := cmd.CombinedOutput(); err != nil {
+		return fmt.Errorf("failed to rename tmux session: %w: %s", err, string(output))
+	}
+	return nil
+}
