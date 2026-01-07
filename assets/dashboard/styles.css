@@ -971,6 +971,11 @@ body {
     overflow: hidden;
 }
 
+/* Terminal focus indicator - subtle border glow when xterm has focus */
+.log-viewer__output:has(.xterm.focus) {
+    box-shadow: inset 0 0 0 1px var(--color-accent);
+}
+
 .log-viewer__output--empty {
     display: flex;
     align-items: center;
