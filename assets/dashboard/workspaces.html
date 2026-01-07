@@ -79,6 +79,22 @@
                 </div>
             </div>
 
+            <!-- Workspace Controls -->
+            <div class="workspace-controls">
+                <button class="btn btn--sm btn--ghost" onclick="expandAll()">
+                    <svg width="14" height="14" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2">
+                        <polyline points="6 9 12 15 18 9"></polyline>
+                    </svg>
+                    Expand All
+                </button>
+                <button class="btn btn--sm btn--ghost" onclick="collapseAll()">
+                    <svg width="14" height="14" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2">
+                        <polyline points="18 15 12 9 6 15"></polyline>
+                    </svg>
+                    Collapse All
+                </button>
+            </div>
+
             <!-- Workspaces Container -->
             <div id="workspacesContainer" class="workspace-list"></div>
         </main>
@@ -241,30 +257,32 @@
             const sessionsDiv = document.getElementById(`sessions-${workspaceId}`);
             const toggle = document.getElementById(`toggle-${workspaceId}`);
 
-            if (sessionsDiv.style.display === 'none') {
-                sessionsDiv.style.display = 'block';
-                toggle.style.transform = 'rotate(0deg)';
+            if (sessionsDiv.classList.contains('workspace-item__sessions--expanded')) {
+                sessionsDiv.classList.remove('workspace-item__sessions--expanded');
+                toggle.classList.add('workspace-item__toggle--collapsed');
             } else {
-                sessionsDiv.style.display = 'none';
-                toggle.style.transform = 'rotate(-90deg)';
+                sessionsDiv.classList.add('workspace-item__sessions--expanded');
+                toggle.classList.remove('workspace-item__toggle--collapsed');
             }
         }
 
-        // Initialize: collapse all workspace session lists
-        document.addEventListener('DOMContentLoaded', () => {
-            // After workspaces are loaded, collapse them
-            const observer = new MutationObserver(() => {
-                document.querySelectorAll('.workspace-item__sessions').forEach(div => {
-                    div.style.display = 'none';
-                });
-                document.querySelectorAll('.workspace-item__toggle').forEach(toggle => {
-                    toggle.style.transform = 'rotate(-90deg)';
-                });
-                observer.disconnect();
+        function expandAll() {
+            document.querySelectorAll('.workspace-item__sessions').forEach(div => {
+                div.classList.add('workspace-item__sessions--expanded');
             });
+            document.querySelectorAll('.workspace-item__toggle').forEach(toggle => {
+                toggle.classList.remove('workspace-item__toggle--collapsed');
+            });
+        }
 
-            observer.observe(workspacesContainer, { childList: true });
-        });
+        function collapseAll() {
+            document.querySelectorAll('.workspace-item__sessions').forEach(div => {
+                div.classList.remove('workspace-item__sessions--expanded');
+            });
+            document.querySelectorAll('.workspace-item__toggle').forEach(toggle => {
+                toggle.classList.add('workspace-item__toggle--collapsed');
+            });
+        }
 
         function spawnInWorkspace(workspaceId, repo, branch) {
             window.location.href = `/spawn?workspace_id=${workspaceId}`;
