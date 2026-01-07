@@ -259,14 +259,22 @@ func (m *Manager) gitFetch(dir string) error {
 	return nil
 }
 
-// gitCheckout runs git checkout.
+// gitCheckout runs git checkout, falling back to creating a new branch if needed.
 func (m *Manager) gitCheckout(dir, branch string) error {
+	// Try regular checkout first (handles existing local/remote branches)
 	args := []string{"checkout", branch}
 	cmd := exec.Command("git", args...)
 	cmd.Dir = dir
 
 	if output, err := cmd.CombinedOutput(); err != nil {
-		return fmt.Errorf("git checkout failed: %w: %s", err, string(output))
+		// If checkout failed, try creating a new branch
+		args = []string{"checkout", "-b", branch}
+		cmd = exec.Command("git", args...)
+		cmd.Dir = dir
+
+		if output, err := cmd.CombinedOutput(); err != nil {
+			return fmt.Errorf("git checkout failed: %w: %s", err, string(output))
+		}
 	}
 
 	return nil
