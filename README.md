@@ -48,6 +48,16 @@ See [SPEC.md](SPEC.md) for the full specification.
 - [WEB-UX.md](WEB-UX.md) - Web UI/UX architecture and component standards
 - [CONTRIBUTING.md](CONTRIBUTING.md) - Guide to contribute to this codebase
 
+## Development
+
+Cross-platform dashboard build helper (runs npm build, with optional Go test/build):
+
+```bash
+go run ./cmd/build-dashboard
+go run ./cmd/build-dashboard -test -build
+go run ./cmd/build-dashboard -skip-install
+```
+
 ## License
 
 Apache License 2.0 - see [LICENSE](LICENSE)

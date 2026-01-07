@@ -1,0 +1,270 @@
+import { Terminal } from '@xterm/xterm';
+
+export default class TerminalStream {
+  constructor(sessionId, containerElement, options = {}) {
+    this.sessionId = sessionId;
+    this.containerElement = containerElement;
+    this.ws = null;
+    this.connected = false;
+    this.followTail = options.followTail !== false;
+    this.followCheckbox = options.followCheckbox || null;
+    this.onStatusChange = options.onStatusChange || (() => {});
+    this.onResume = options.onResume || (() => {});
+
+    this.terminal = null;
+    this.tmuxCols = null;
+    this.tmuxRows = null;
+
+    this.initialized = this.initTerminal();
+  }
+
+  async initTerminal() {
+    if (!this.containerElement) {
+      return null;
+    }
+
+    let cols;
+    let rows;
+    try {
+      const resp = await fetch('/api/config');
+      if (!resp.ok) {
+        throw new Error(`Failed to fetch config: ${resp.status}`);
+      }
+      const config = await resp.json();
+      if (!config.terminal || typeof config.terminal.width !== 'number' || typeof config.terminal.height !== 'number') {
+        throw new Error('Config missing terminal.width or terminal.height');
+      }
+      cols = config.terminal.width;
+      rows = config.terminal.height;
+    } catch (e) {
+      this.containerElement.textContent = `Error: ${e.message}`;
+      console.error('Failed to load terminal size from config:', e);
+      return null;
+    }
+
+    this.tmuxCols = cols;
+    this.tmuxRows = rows;
+
+    this.terminal = new Terminal({
+      cols,
+      rows,
+      cursorBlink: true,
+      fontSize: 14,
+      fontFamily: 'Menlo, Monaco, "Courier New", monospace',
+      theme: {
+        background: '#1e1e1e',
+        foreground: '#d4d4d4',
+        cursor: '#d4d4d4',
+        black: '#000000',
+        red: '#cd3131',
+        green: '#0dbc79',
+        yellow: '#e5e510',
+        blue: '#2472c8',
+        magenta: '#bc3fbc',
+        cyan: '#11a8cd',
+        white: '#e5e5e5',
+        brightBlack: '#666666',
+        brightRed: '#f14c4c',
+        brightGreen: '#23d18b',
+        brightYellow: '#f5f543',
+        brightBlue: '#3b8eea',
+        brightMagenta: '#d670d6',
+        brightCyan: '#29b8db',
+        brightWhite: '#ffffff'
+      },
+      scrollback: 1000,
+      convertEol: true
+    });
+
+    this.terminal.open(this.containerElement);
+    this.terminal.onData((data) => {
+      this.sendInput(data);
+    });
+
+    this._attachScrollListener();
+    this.terminal.writeln('\x1b[90mConnecting to session...\x1b[0m');
+    this.setupResizeHandler();
+
+    return this.terminal;
+  }
+
+  _attachScrollListener() {
+    const tryAttach = (attempts = 0) => {
+      const viewport = this.terminal?.element?.querySelector('.xterm-viewport');
+      if (viewport) {
+        viewport.addEventListener('scroll', () => {
+          this.handleUserScroll();
+        });
+      } else if (attempts < 10) {
+        setTimeout(() => tryAttach(attempts + 1), 50 * (attempts + 1));
+      }
+    };
+    tryAttach();
+  }
+
+  setupResizeHandler() {
+    if (typeof ResizeObserver !== 'undefined') {
+      const resizeObserver = new ResizeObserver(() => {
+        this.scaleTerminal();
+      });
+      resizeObserver.observe(this.containerElement);
+    }
+
+    window.addEventListener('resize', () => {
+      this.scaleTerminal();
+    });
+
+    setTimeout(() => this.scaleTerminal(), 100);
+    setTimeout(() => this.scaleTerminal(), 300);
+    setTimeout(() => this.scaleTerminal(), 1000);
+  }
+
+  scaleTerminal() {
+    if (!this.terminal) return;
+
+    const screenElement = this.terminal.element?.querySelector('.xterm-screen');
+    if (!screenElement) return;
+
+    const containerRect = this.containerElement.getBoundingClientRect();
+    const containerWidth = containerRect.width || 800;
+    const containerHeight = containerRect.height || 600;
+
+    const charWidth = 9;
+    const charHeight = 17;
+    const screenWidth = this.tmuxCols * charWidth;
+    const screenHeight = this.tmuxRows * charHeight;
+
+    const scaleX = containerWidth / screenWidth;
+    const scaleY = containerHeight / screenHeight;
+    const scale = Math.min(scaleX, scaleY, 1);
+
+    screenElement.style.transformOrigin = 'top left';
+    screenElement.style.transform = `scale(${scale})`;
+  }
+
+  resizeTerminal() {
+    this.scaleTerminal();
+  }
+
+  connect() {
+    if (!this.terminal) return;
+    const protocol = window.location.protocol === 'https:' ? 'wss:' : 'ws:';
+    const wsUrl = `${protocol}//${window.location.host}/ws/terminal/${this.sessionId}`;
+
+    this.ws = new WebSocket(wsUrl);
+
+    this.ws.onopen = () => {
+      this.connected = true;
+      this.terminal.clear();
+      this.onStatusChange('connected');
+    };
+
+    this.ws.onmessage = (event) => {
+      if (this.terminal) {
+        this.handleOutput(event.data);
+      }
+    };
+
+    this.ws.onclose = () => {
+      this.connected = false;
+      if (this.terminal) {
+        this.terminal.writeln('\x1b[90m\r\n\x1b[0m');
+        this.terminal.writeln('\x1b[91mConnection closed\x1b[0m');
+      }
+      this.onStatusChange('disconnected');
+    };
+
+    this.ws.onerror = (error) => {
+      console.error('WebSocket error:', error);
+      if (this.terminal) {
+        this.terminal.writeln('\x1b[91mWebSocket error\x1b[0m');
+      }
+    };
+  }
+
+  disconnect() {
+    if (this.ws) {
+      this.ws.close();
+    }
+  }
+
+  sendInput(data) {
+    if (this.ws && this.ws.readyState === WebSocket.OPEN) {
+      this.ws.send(JSON.stringify({ type: 'input', data }));
+    }
+  }
+
+  handleOutput(data) {
+    let msg;
+    try {
+      msg = JSON.parse(data);
+    } catch {
+      msg = { type: 'full', content: data };
+    }
+
+    switch (msg.type) {
+      case 'append':
+        this.terminal.write(msg.content);
+        break;
+      case 'full':
+        this.terminal.reset();
+        this.terminal.write(msg.content);
+        break;
+      default:
+        this.terminal.reset();
+        this.terminal.write(msg.content || data);
+    }
+
+    if (this.followTail) {
+      this.terminal.scrollToBottom();
+    }
+  }
+
+  setFollow(follow) {
+    this.followTail = follow;
+    if (this.followCheckbox) this.followCheckbox.checked = follow;
+    this.onResume(!follow);
+  }
+
+  isAtBottom(threshold = 0) {
+    if (!this.terminal) return true;
+    const buffer = this.terminal.buffer.active;
+    return buffer.viewportY >= buffer.baseY - threshold;
+  }
+
+  handleUserScroll() {
+    if (!this.terminal) return;
+    this.setFollow(this.isAtBottom(1));
+  }
+
+  jumpToBottom() {
+    if (this.terminal) {
+      this.terminal.scrollToBottom();
+      this.setFollow(true);
+    }
+  }
+
+  downloadOutput() {
+    if (!this.terminal) return;
+
+    const buffer = this.terminal.buffer.active;
+    const lines = [];
+    for (let i = 0; i < buffer.length; i++) {
+      const line = buffer.getLine(i);
+      if (line) {
+        lines.push(line.translateToString());
+      }
+    }
+
+    const content = lines.join('\n');
+    const blob = new Blob([content], { type: 'text/plain' });
+    const url = URL.createObjectURL(blob);
+    const a = document.createElement('a');
+    a.href = url;
+    a.download = `session-${this.sessionId}.log`;
+    document.body.appendChild(a);
+    a.click();
+    document.body.removeChild(a);
+    URL.revokeObjectURL(url);
+  }
+}

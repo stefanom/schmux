@@ -1,0 +1,443 @@
+import React, { useEffect, useMemo, useState } from 'react';
+import { Link, useSearchParams } from 'react-router-dom';
+import { getConfig, getWorkspaces, spawnSessions } from '../lib/api.js';
+import { useToast } from '../components/ToastProvider.jsx';
+
+const TOTAL_STEPS = 4;
+
+export default function SpawnPage() {
+  const [currentStep, setCurrentStep] = useState(1);
+  const [repos, setRepos] = useState([]);
+  const [agents, setAgents] = useState([]);
+  const [agentCounts, setAgentCounts] = useState({});
+  const [repo, setRepo] = useState('');
+  const [branch, setBranch] = useState('main');
+  const [prompt, setPrompt] = useState('');
+  const [nickname, setNickname] = useState('');
+  const [prefillWorkspaceId, setPrefillWorkspaceId] = useState('');
+  const [loading, setLoading] = useState(true);
+  const [configError, setConfigError] = useState('');
+  const [results, setResults] = useState(null);
+  const [spawning, setSpawning] = useState(false);
+  const [showAgentError, setShowAgentError] = useState(false);
+  const [searchParams] = useSearchParams();
+  const { error: toastError } = useToast();
+
+  useEffect(() => {
+    let active = true;
+
+    const load = async () => {
+      setLoading(true);
+      setConfigError('');
+      try {
+        const config = await getConfig();
+        if (!active) return;
+        setRepos(config.repos || []);
+        setAgents(config.agents || []);
+        const counts = {};
+        (config.agents || []).forEach((agent) => {
+          counts[agent.name] = 0;
+        });
+        setAgentCounts(counts);
+      } catch (err) {
+        if (!active) return;
+        setConfigError(err.message || 'Failed to load config');
+      } finally {
+        if (active) setLoading(false);
+      }
+    };
+
+    load();
+    return () => {
+      active = false;
+    };
+  }, []);
+
+  useEffect(() => {
+    let active = true;
+
+    const checkParams = async () => {
+      const workspaceId = searchParams.get('workspace_id');
+      if (!workspaceId) return;
+      setPrefillWorkspaceId(workspaceId);
+
+      let prefillRepo = searchParams.get('repo');
+      let prefillBranch = searchParams.get('branch');
+
+      if (!prefillRepo || !prefillBranch) {
+        try {
+          const workspaces = await getWorkspaces();
+          const workspace = workspaces.find((ws) => ws.id === workspaceId);
+          if (workspace) {
+            prefillRepo = prefillRepo || workspace.repo;
+            prefillBranch = prefillBranch || workspace.branch;
+          }
+        } catch (err) {
+          console.error('Failed to fetch workspace details:', err);
+        }
+      }
+
+      if (!active) return;
+      if (prefillRepo) setRepo(prefillRepo);
+      if (prefillBranch) setBranch(prefillBranch);
+    };
+
+    checkParams();
+    return () => {
+      active = false;
+    };
+  }, [searchParams]);
+
+  const agentList = useMemo(() => {
+    return agents.map((agent) => ({
+      ...agent,
+      count: agentCounts[agent.name] || 0
+    }));
+  }, [agents, agentCounts]);
+
+  const totalAgentCount = useMemo(() => {
+    return Object.values(agentCounts).reduce((sum, count) => sum + count, 0);
+  }, [agentCounts]);
+
+  const updateAgentCount = (name, delta) => {
+    setAgentCounts((current) => {
+      const next = Math.max(0, Math.min(10, (current[name] || 0) + delta));
+      return { ...current, [name]: next };
+    });
+    setShowAgentError(false);
+  };
+
+  const applyPreset = (preset) => {
+    if (preset === 'each') {
+      const next = {};
+      agents.forEach((agent) => {
+        next[agent.name] = 1;
+      });
+      setAgentCounts(next);
+    } else if (preset === 'review') {
+      const next = {};
+      agents.forEach((agent) => {
+        next[agent.name] = agent.name.includes('claude') ? 2 : 0;
+      });
+      setAgentCounts(next);
+    } else if (preset === 'reset') {
+      const next = {};
+      agents.forEach((agent) => {
+        next[agent.name] = 0;
+      });
+      setAgentCounts(next);
+    }
+    setShowAgentError(false);
+  };
+
+  const validateStep = () => {
+    if (currentStep === 1) {
+      if (!repo) {
+        toastError('Please select a repository');
+        return false;
+      }
+      if (!branch) {
+        toastError('Please enter a branch');
+        return false;
+      }
+    }
+
+    if (currentStep === 2) {
+      if (totalAgentCount === 0) {
+        toastError('Please select at least one agent');
+        setShowAgentError(true);
+        return false;
+      }
+    }
+
+    if (currentStep === 3) {
+      if (!prompt.trim()) {
+        toastError('Please enter a prompt');
+        return false;
+      }
+    }
+
+    return true;
+  };
+
+  const nextStep = async () => {
+    if (!validateStep()) return;
+
+    if (currentStep === TOTAL_STEPS) {
+      await handleSpawn();
+      return;
+    }
+
+    setCurrentStep((step) => Math.min(TOTAL_STEPS, step + 1));
+  };
+
+  const prevStep = () => {
+    setCurrentStep((step) => Math.max(1, step - 1));
+  };
+
+  const handleSpawn = async () => {
+    const selectedAgents = {};
+    Object.entries(agentCounts).forEach(([name, count]) => {
+      if (count > 0) selectedAgents[name] = count;
+    });
+
+    setSpawning(true);
+
+    try {
+      const response = await spawnSessions({
+        repo,
+        branch,
+        prompt,
+        nickname: nickname.trim(),
+        agents: selectedAgents,
+        workspace_id: prefillWorkspaceId || ''
+      });
+      setResults(response);
+    } catch (err) {
+      toastError(`Failed to spawn: ${err.message}`);
+    } finally {
+      setSpawning(false);
+    }
+  };
+
+  if (loading) {
+    return (
+      <div className="loading-state">
+        <div className="spinner"></div>
+        <span>Loading configuration...</span>
+      </div>
+    );
+  }
+
+  if (configError) {
+    return (
+      <div className="empty-state">
+        <div className="empty-state__icon">⚠️</div>
+        <h3 className="empty-state__title">Failed to load config</h3>
+        <p className="empty-state__description">{configError}</p>
+      </div>
+    );
+  }
+
+  if (results) {
+    const successCount = results.filter((r) => !r.error).length;
+    const errorCount = results.filter((r) => r.error).length;
+
+    return (
+      <>
+        <div className="page-header">
+          <h1 className="page-header__title">Spawn Sessions</h1>
+        </div>
+        <div>
+          <h3 style={{ marginBottom: 'var(--spacing-md)' }}>Results</h3>
+          {successCount > 0 ? (
+            <div className="results-panel" style={{ marginBottom: 'var(--spacing-md)' }}>
+              <div className="results-panel__title">Successfully spawned {successCount} session(s)</div>
+              {results.filter((r) => !r.error).map((r, index) => (
+                <div
+                  className="results-panel__item results-panel__item--success"
+                  style={{ display: 'flex', justifyContent: 'space-between', alignItems: 'center' }}
+                  key={r.session_id}
+                >
+                  <div>
+                    <span className="badge badge--primary" style={{ marginRight: 'var(--spacing-sm)' }}>{index + 1}</span>
+                    <span className="mono">{r.workspace_id}</span>
+                    <span style={{ color: 'var(--color-text-muted)', margin: '0 var(--spacing-sm)' }}>·</span>
+                    <span>{r.agent}</span>
+                  </div>
+                  <Link to={`/sessions/${r.session_id}`} className="btn btn--sm">View</Link>
+                </div>
+              ))}
+            </div>
+          ) : null}
+          {errorCount > 0 ? (
+            <div className="results-panel">
+              <div className="results-panel__title text-error">{errorCount} error(s)</div>
+              {results.filter((r) => r.error).map((r) => (
+                <div className="results-panel__item results-panel__item--error" key={`${r.agent}-${r.error}`}>
+                  <strong>{r.agent}:</strong> {r.error}
+                </div>
+              ))}
+            </div>
+          ) : null}
+        </div>
+        <div className="wizard__actions" style={{ marginTop: 'var(--spacing-lg)' }}>
+          <Link to="/sessions" className="btn btn--primary">Back to Sessions</Link>
+        </div>
+      </>
+    );
+  }
+
+  return (
+    <>
+      <div className="page-header">
+        <h1 className="page-header__title">Spawn Sessions</h1>
+      </div>
+
+      <div className="wizard">
+        <div className="wizard__steps">
+          {[1, 2, 3, 4].map((step) => {
+            const className = step === currentStep
+              ? 'wizard__step wizard__step--active'
+              : step < currentStep
+                ? 'wizard__step wizard__step--completed'
+                : 'wizard__step';
+            return (
+              <div className={className} data-step={step} key={step}>
+                {step}. {step === 1 ? 'Target' : step === 2 ? 'Agents' : step === 3 ? 'Prompt' : 'Review'}
+              </div>
+            );
+          })}
+        </div>
+
+        <div className="wizard__content">
+          {currentStep === 1 && (
+            <div className="wizard-step-content" data-step="1">
+              <div className="form-group">
+                <label htmlFor="repo" className="form-group__label">Repository</label>
+                <select
+                  id="repo"
+                  className="select"
+                  required
+                  value={repo}
+                  onChange={(event) => setRepo(event.target.value)}
+                  disabled={!!prefillWorkspaceId}
+                >
+                  <option value="">Select repository...</option>
+                  {repos.map((item) => (
+                    <option key={item.url} value={item.url}>{item.name}</option>
+                  ))}
+                </select>
+              </div>
+              <div className="form-group">
+                <label htmlFor="branch" className="form-group__label">Branch</label>
+                <input
+                  type="text"
+                  id="branch"
+                  className="input"
+                  value={branch}
+                  onChange={(event) => setBranch(event.target.value)}
+                  required
+                  disabled={!!prefillWorkspaceId}
+                />
+                <p className="form-group__hint">The branch to checkout for this workspace</p>
+              </div>
+              {prefillWorkspaceId ? (
+                <div className="banner banner--info" style={{ display: 'flex' }}>
+                  Spawning into existing workspace: {prefillWorkspaceId}
+                </div>
+              ) : null}
+            </div>
+          )}
+
+          {currentStep === 2 && (
+            <div className="wizard-step-content" data-step="2">
+              <div className="preset-buttons">
+                <button type="button" className="btn btn--sm" onClick={() => applyPreset('each')}>1 Each</button>
+                <button type="button" className="btn btn--sm" onClick={() => applyPreset('review')}>Review Squad</button>
+                <button type="button" className="btn btn--sm" onClick={() => applyPreset('reset')}>Reset</button>
+              </div>
+              <div className="agent-grid">
+                {agentList.map((agent) => (
+                  <div className="agent-card" key={agent.name}>
+                    <div className="agent-card__label">{agent.name}</div>
+                    <div className="agent-card__control">
+                      <button className="agent-card__btn" onClick={() => updateAgentCount(agent.name, -1)} aria-label={`Decrease ${agent.name} count`}>−</button>
+                      <span className="agent-card__count">{agent.count}</span>
+                      <button className="agent-card__btn" onClick={() => updateAgentCount(agent.name, 1)} aria-label={`Increase ${agent.name} count`}>+</button>
+                    </div>
+                  </div>
+                ))}
+              </div>
+              {showAgentError ? (
+                <div className="text-error" style={{ marginTop: 'var(--spacing-md)' }}>
+                  Please select at least one agent
+                </div>
+              ) : null}
+            </div>
+          )}
+
+          {currentStep === 3 && (
+            <div className="wizard-step-content" data-step="3">
+              <div className="form-group">
+                <label htmlFor="prompt" className="form-group__label">Prompt</label>
+                <textarea
+                  id="prompt"
+                  className="textarea"
+                  rows={10}
+                  placeholder="Describe the task you want the agents to work on..."
+                  value={prompt}
+                  onChange={(event) => setPrompt(event.target.value)}
+                />
+                <p className="form-group__hint">Be specific about what you want the agents to do. This prompt will be sent to all spawned agents.</p>
+              </div>
+              <div className="form-group">
+                <label htmlFor="nickname" className="form-group__label">Nickname <span className="text-muted">(optional)</span></label>
+                <input
+                  type="text"
+                  id="nickname"
+                  className="input"
+                  placeholder="e.g., 'Fix login bug', 'Refactor auth flow'"
+                  maxLength={100}
+                  value={nickname}
+                  onChange={(event) => setNickname(event.target.value)}
+                />
+                <p className="form-group__hint">A human-friendly name to help you identify this session later. If not provided, the session ID will be used.</p>
+              </div>
+            </div>
+          )}
+
+          {currentStep === 4 && (
+            <div className="wizard-step-content" data-step="4">
+              <h3 style={{ marginBottom: 'var(--spacing-lg)' }}>Review and Spawn</h3>
+              <div className="card" style={{ marginBottom: 'var(--spacing-lg)' }}>
+                <div className="card__body">
+                  <div className="metadata-field" style={{ marginBottom: 'var(--spacing-md)' }}>
+                    <span className="metadata-field__label">Repository</span>
+                    <span className="metadata-field__value">{repo}</span>
+                  </div>
+                  <div className="metadata-field" style={{ marginBottom: 'var(--spacing-md)' }}>
+                    <span className="metadata-field__label">Branch</span>
+                    <span className="metadata-field__value">{branch}</span>
+                  </div>
+                  <div className="metadata-field" style={{ marginBottom: 'var(--spacing-md)' }}>
+                    <span className="metadata-field__label">Workspace</span>
+                    <span className="metadata-field__value">{prefillWorkspaceId || 'New workspace'}</span>
+                  </div>
+                  <div className="metadata-field" style={{ marginBottom: 'var(--spacing-md)' }}>
+                    <span className="metadata-field__label">Agents</span>
+                    <span className="metadata-field__value">
+                      {Object.entries(agentCounts)
+                        .filter(([_, count]) => count > 0)
+                        .map(([name, count]) => `${count}× ${name}`)
+                        .join(', ')}
+                    </span>
+                  </div>
+                  <div className="metadata-field">
+                    <span className="metadata-field__label">Prompt</span>
+                    <span className="metadata-field__value">{prompt.length > 200 ? `${prompt.substring(0, 200)}...` : prompt}</span>
+                  </div>
+                  {nickname.trim() ? (
+                    <div className="metadata-field" style={{ marginTop: 'var(--spacing-md)' }}>
+                      <span className="metadata-field__label">Nickname</span>
+                      <span className="metadata-field__value">{nickname.trim()}</span>
+                    </div>
+                  ) : null}
+                </div>
+              </div>
+            </div>
+          )}
+        </div>
+
+        <div className="wizard__actions">
+          <button type="button" className="btn" onClick={prevStep} disabled={currentStep === 1 || spawning}>
+            Back
+          </button>
+          <button type="button" className="btn btn--primary" onClick={nextStep} disabled={spawning}>
+            {currentStep === TOTAL_STEPS ? 'Spawn' : 'Next'}
+          </button>
+        </div>
+      </div>
+    </>
+  );
+}

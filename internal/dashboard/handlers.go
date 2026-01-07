@@ -5,82 +5,91 @@ import (
 	"fmt"
 	"net/http"
 	"os"
+	"path"
 	"path/filepath"
 	"sort"
 	"strings"
 )
 
-// handleIndex redirects to the sessions page.
+// handleIndex serves the React app entry point.
 func (s *Server) handleIndex(w http.ResponseWriter, r *http.Request) {
-	if r.URL.Path != "/" {
-		http.NotFound(w, r)
-		return
-	}
-	http.Redirect(w, r, "/sessions", http.StatusFound)
+	s.handleApp(w, r)
 }
 
-// handleSessionsList serves the sessions list page.
+// handleSessionsList serves the React app entry point.
 func (s *Server) handleSessionsList(w http.ResponseWriter, r *http.Request) {
-	s.serveHTML(w, r, "sessions.html")
+	s.handleApp(w, r)
 }
 
-// handleSpawn serves the spawn page.
+// handleSpawn serves the React app entry point.
 func (s *Server) handleSpawn(w http.ResponseWriter, r *http.Request) {
-	s.serveHTML(w, r, "spawn.html")
+	s.handleApp(w, r)
 }
 
-// handleWorkspaces serves the workspaces page.
+// handleWorkspaces serves the React app entry point.
 func (s *Server) handleWorkspaces(w http.ResponseWriter, r *http.Request) {
-	s.serveHTML(w, r, "workspaces.html")
+	s.handleApp(w, r)
 }
 
-// handleTips serves the tips page.
+// handleTips serves the React app entry point.
 func (s *Server) handleTips(w http.ResponseWriter, r *http.Request) {
-	s.serveHTML(w, r, "tips.html")
+	s.handleApp(w, r)
 }
 
-// handleSessionDetail serves the session detail page.
+// handleSessionDetail serves the React app entry point.
 func (s *Server) handleSessionDetail(w http.ResponseWriter, r *http.Request) {
-	// Extract session ID from URL path: /sessions/{id}
-	sessionID := strings.TrimPrefix(r.URL.Path, "/sessions/")
-	if sessionID == "" {
+	s.handleApp(w, r)
+}
+
+// handleTerminalHTML serves the React app entry point.
+func (s *Server) handleTerminalHTML(w http.ResponseWriter, r *http.Request) {
+	s.handleApp(w, r)
+}
+
+// handleApp serves the React application entry point for UI routes.
+func (s *Server) handleApp(w http.ResponseWriter, r *http.Request) {
+	if strings.HasPrefix(r.URL.Path, "/api/") || strings.HasPrefix(r.URL.Path, "/ws/") {
 		http.NotFound(w, r)
 		return
 	}
 
-	// Serve terminal.html directly at this URL
-	// The JavaScript will extract the session ID from the path
-	s.serveHTML(w, r, "terminal.html")
+	// Serve static files at root (e.g., favicon.ico) if they exist in dist.
+	if path.Ext(r.URL.Path) != "" {
+		if s.serveFileIfExists(w, r, r.URL.Path) {
+			return
+		}
+	}
+
+	s.serveAppIndex(w, r)
 }
 
-// handleTerminalHTML serves the terminal view page.
-func (s *Server) handleTerminalHTML(w http.ResponseWriter, r *http.Request) {
-	s.serveHTML(w, r, "terminal.html")
+func (s *Server) serveFileIfExists(w http.ResponseWriter, r *http.Request, requestPath string) bool {
+	distPath := s.getDashboardDistPath()
+	cleanPath := filepath.Clean(strings.TrimPrefix(requestPath, "/"))
+	if strings.HasPrefix(cleanPath, "..") {
+		return false
+	}
+	filePath := filepath.Join(distPath, cleanPath)
+	if _, err := os.Stat(filePath); err == nil {
+		http.ServeFile(w, r, filePath)
+		return true
+	}
+	return false
 }
 
-// serveHTML serves an HTML file from the assets directory.
-func (s *Server) serveHTML(w http.ResponseWriter, r *http.Request, filename string) {
-	assetPath := s.getAssetPath()
-	filePath := filepath.Join(assetPath, filename)
+// serveAppIndex serves the built React index.html from the dist directory.
+func (s *Server) serveAppIndex(w http.ResponseWriter, r *http.Request) {
+	distPath := s.getDashboardDistPath()
+	filePath := filepath.Join(distPath, "index.html")
 
-	// Read file content
 	content, err := os.ReadFile(filePath)
 	if err != nil {
-		http.Error(w, "File not found", http.StatusNotFound)
+		http.Error(w, "Dashboard assets not built. Run `npm install` and `npm run build` in assets/dashboard.", http.StatusNotFound)
 		return
 	}
 
-	// Set content type and serve
 	w.Header().Set("Content-Type", "text/html; charset=utf-8")
 	w.Write(content)
-}
-
-// handleStatic serves static assets (CSS, JS) from the assets directory.
-func (s *Server) handleStatic(w http.ResponseWriter, r *http.Request) {
-	assetPath := s.getAssetPath()
-	filename := filepath.Base(r.URL.Path)
-	filePath := filepath.Join(assetPath, filename)
-	http.ServeFile(w, r, filePath)
 }
 
 // handleSessions returns the list of workspaces and their sessions as JSON.
@@ -383,9 +392,9 @@ func (s *Server) handleConfig(w http.ResponseWriter, r *http.Request) {
 	}
 
 	type ConfigResponse struct {
-		Repos    []RepoResponse     `json:"repos"`
-		Agents   []AgentResponse    `json:"agents"`
-		Terminal TerminalResponse   `json:"terminal"`
+		Repos    []RepoResponse   `json:"repos"`
+		Agents   []AgentResponse  `json:"agents"`
+		Terminal TerminalResponse `json:"terminal"`
 	}
 
 	repos := s.config.GetRepos()

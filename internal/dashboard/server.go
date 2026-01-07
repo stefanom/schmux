@@ -48,10 +48,7 @@ func (s *Server) Start() error {
 	mux.HandleFunc("/spawn", s.handleSpawn)
 	mux.HandleFunc("/tips", s.handleTips)
 	mux.HandleFunc("/terminal.html", s.handleTerminalHTML)
-	mux.HandleFunc("/styles.css", s.handleStatic)
-	mux.HandleFunc("/app.js", s.handleStatic)
-	mux.HandleFunc("/xterm.css", s.handleStatic)
-	mux.HandleFunc("/xterm.js", s.handleStatic)
+	mux.Handle("/assets/", http.StripPrefix("/assets/", http.FileServer(http.Dir(filepath.Join(s.getDashboardDistPath(), "assets")))))
 
 	// API routes
 	mux.HandleFunc("/api/healthz", s.withCORS(s.handleHealthz))
@@ -139,4 +136,10 @@ func (s *Server) getAssetPath() string {
 	// Fallback - return first candidate even if it doesn't exist
 	// (will result in 404s but won't crash)
 	return candidates[0]
+}
+
+// getDashboardDistPath returns the path to the built dashboard assets.
+func (s *Server) getDashboardDistPath() string {
+	assetPath := s.getAssetPath()
+	return filepath.Join(assetPath, "dist")
 }

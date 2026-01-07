@@ -1,0 +1,62 @@
+.tipsSection {
+  max-width: 800px;
+  margin: 0 auto;
+}
+
+.tipsSection h2 {
+  margin-top: var(--spacing-xl);
+  margin-bottom: var(--spacing-md);
+  padding-bottom: var(--spacing-sm);
+  border-bottom: 1px solid var(--color-border);
+}
+
+.tipsSection h3 {
+  margin-top: var(--spacing-lg);
+  margin-bottom: var(--spacing-sm);
+}
+
+.keyCombo {
+  display: inline-block;
+  background: var(--color-surface-secondary);
+  border: 1px solid var(--color-border);
+  border-radius: 4px;
+  padding: 2px 8px;
+  font-family: var(--font-mono);
+  font-size: 0.9em;
+  margin: 0 2px;
+}
+
+.cmdBlock {
+  background: var(--color-surface-secondary);
+  border: 1px solid var(--color-border);
+  border-radius: var(--radius-md);
+  padding: var(--spacing-md);
+  margin: var(--spacing-md) 0;
+  font-family: var(--font-mono);
+  font-size: 0.9em;
+  overflow-x: auto;
+}
+
+.cmdBlock code {
+  background: none;
+  padding: 0;
+}
+
+.tipsList {
+  list-style: none;
+  padding-left: 0;
+}
+
+.tipsList li {
+  padding: var(--spacing-sm) 0;
+  border-bottom: 1px solid var(--color-border-subtle);
+}
+
+.tipsList li:last-child {
+  border-bottom: none;
+}
+
+.tipsList strong {
+  display: inline-block;
+  min-width: 180px;
+}
