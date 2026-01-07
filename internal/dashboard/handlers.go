@@ -6,6 +6,7 @@ import (
 	"net/http"
 	"os"
 	"path/filepath"
+	"sort"
 	"strings"
 )
 
@@ -142,10 +143,31 @@ func (s *Server) handleSessions(w http.ResponseWriter, r *http.Request) {
 		wsResp.SessionCount = len(wsResp.Sessions)
 	}
 
-	// Convert map to slice
+	// Convert map to slice and sort workspaces by ID
 	response := make([]WorkspaceResponse, 0, len(workspaceMap))
 	for _, ws := range workspaceMap {
 		response = append(response, *ws)
+	}
+	sort.Slice(response, func(i, j int) bool {
+		return response[i].ID < response[j].ID
+	})
+
+	// Sort sessions within each workspace by nickname (or agent if no nickname)
+	for i := range response {
+		sort.Slice(response[i].Sessions, func(j, k int) bool {
+			sessJ := response[i].Sessions[j]
+			sessK := response[i].Sessions[k]
+			// Use nickname if set, otherwise fall back to agent name
+			nameJ := sessJ.Nickname
+			if nameJ == "" {
+				nameJ = sessJ.Agent
+			}
+			nameK := sessK.Nickname
+			if nameK == "" {
+				nameK = sessK.Agent
+			}
+			return nameJ < nameK
+		})
 	}
 
 	w.Header().Set("Content-Type", "application/json")
@@ -176,6 +198,9 @@ func (s *Server) handleWorkspacesAPI(w http.ResponseWriter, r *http.Request) {
 			Path:   ws.Path,
 		}
 	}
+	sort.Slice(response, func(i, j int) bool {
+		return response[i].ID < response[j].ID
+	})
 
 	w.Header().Set("Content-Type", "application/json")
 	json.NewEncoder(w).Encode(response)
@@ -192,7 +217,7 @@ type SpawnRequest struct {
 	Repo        string         `json:"repo"`
 	Branch      string         `json:"branch"`
 	Prompt      string         `json:"prompt"`
-	Nickname    string         `json:"nickname,omitempty"` // optional human-friendly name for sessions
+	Nickname    string         `json:"nickname,omitempty"`     // optional human-friendly name for sessions
 	Agents      map[string]int `json:"agents"`                 // agent name -> quantity
 	WorkspaceID string         `json:"workspace_id,omitempty"` // optional: spawn into specific workspace
 }
