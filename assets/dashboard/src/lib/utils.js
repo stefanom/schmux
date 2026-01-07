@@ -32,3 +32,9 @@ export async function copyToClipboard(text) {
     return false;
   }
 }
+
+export function truncateStart(text, maxLength = 40) {
+  if (text.length <= maxLength) return text;
+  const suffix = text.slice(-maxLength + 3);
+  return '...' + suffix;
+}

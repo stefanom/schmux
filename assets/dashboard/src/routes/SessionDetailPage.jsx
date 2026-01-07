@@ -3,9 +3,12 @@ import { Link, useNavigate, useParams } from 'react-router-dom';
 import '@xterm/xterm/css/xterm.css';
 import TerminalStream from '../lib/terminalStream.js';
 import { disposeSession, getSessions } from '../lib/api.js';
-import { copyToClipboard, formatTimestamp } from '../lib/utils.js';
+import { copyToClipboard, formatTimestamp, truncateStart } from '../lib/utils.js';
 import { useToast } from '../components/ToastProvider.jsx';
 import { useModal } from '../components/ModalProvider.jsx';
+
+// Module-level storage for sidebar collapse state (persists across navigation)
+let savedSidebarCollapsed = false;
 
 export default function SessionDetailPage() {
   const { sessionId } = useParams();
@@ -15,7 +18,7 @@ export default function SessionDetailPage() {
   const [wsStatus, setWsStatus] = useState('connecting');
   const [showResume, setShowResume] = useState(false);
   const [followTail, setFollowTail] = useState(true);
-  const [sidebarCollapsed, setSidebarCollapsed] = useState(false);
+  const [sidebarCollapsed, setSidebarCollapsed] = useState(savedSidebarCollapsed);
   const terminalRef = useRef(null);
   const terminalStreamRef = useRef(null);
   const { success, error: toastError } = useToast();
@@ -98,7 +101,11 @@ export default function SessionDetailPage() {
 
   const toggleSidebar = () => {
     const wasAtBottom = terminalStreamRef.current?.isAtBottom?.(10) || false;
-    setSidebarCollapsed((prev) => !prev);
+    setSidebarCollapsed((prev) => {
+      const next = !prev;
+      savedSidebarCollapsed = next;
+      return next;
+    });
     setTimeout(() => {
       terminalStreamRef.current?.resizeTerminal?.();
       if (wasAtBottom) {
@@ -243,8 +250,6 @@ export default function SessionDetailPage() {
         </div>
 
         <aside className="session-detail__sidebar">
-          <h3 style={{ margin: 0, fontSize: '1rem' }}>Session Details</h3>
-
           <div className="metadata-field">
             <span className="metadata-field__label">Session ID</span>
             <span className="metadata-field__value metadata-field__value--mono">{sessionData.id}</span>
@@ -290,7 +295,7 @@ export default function SessionDetailPage() {
 
           <div className="metadata-field">
             <span className="metadata-field__label">Repository</span>
-            <span className="metadata-field__value">{sessionData.repo}</span>
+            <a className="metadata-field__value" href={sessionData.repo} target="_blank" rel="noopener noreferrer" title={sessionData.repo}>{truncateStart(sessionData.repo)}</a>
           </div>
 
           <div className="metadata-field">
