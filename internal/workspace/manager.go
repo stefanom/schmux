@@ -169,14 +169,19 @@ func (m *Manager) prepare(workspaceID, branch string) error {
 		return fmt.Errorf("git checkout failed: %w", err)
 	}
 
-	// Pull with rebase
-	if err := m.gitPullRebase(w.Path); err != nil {
-		return fmt.Errorf("git pull --rebase failed (conflicts?): %w", err)
+	// Discard any local changes (must happen before pull)
+	if err := m.gitCheckoutDot(w.Path); err != nil {
+		return fmt.Errorf("git checkout -- . failed: %w", err)
 	}
 
-	// Clean untracked files and directories
+	// Clean untracked files and directories (must happen before pull)
 	if err := m.gitClean(w.Path); err != nil {
 		return fmt.Errorf("git clean failed: %w", err)
+	}
+
+	// Pull with rebase (working dir is now clean)
+	if err := m.gitPullRebase(w.Path); err != nil {
+		return fmt.Errorf("git pull --rebase failed (conflicts?): %w", err)
 	}
 
 	m.logger.Printf("workspace prepared: id=%s branch=%s", workspaceID, branch)
