@@ -58,6 +58,11 @@ func (m *Manager) GetByID(workspaceID string) (*state.Workspace, bool) {
 func (m *Manager) GetOrCreate(repoURL, branch string) (*state.Workspace, error) {
 	// Try to find an existing workspace with matching repoURL and branch
 	for _, w := range m.state.Workspaces {
+		// Check if workspace directory still exists
+		if _, err := os.Stat(w.Path); os.IsNotExist(err) {
+			m.logger.Printf("workspace directory missing, skipping: id=%s path=%s", w.ID, w.Path)
+			continue
+		}
 		if w.Repo == repoURL && w.Branch == branch {
 			// Check if workspace has active sessions
 			hasActiveSessions := false
@@ -69,6 +74,31 @@ func (m *Manager) GetOrCreate(repoURL, branch string) (*state.Workspace, error) 
 			}
 			if !hasActiveSessions {
 				m.logger.Printf("reusing existing workspace: id=%s path=%s branch=%s", w.ID, w.Path, branch)
+				// Prepare the workspace (fetch/pull/clean)
+				if err := m.prepare(w.ID, branch); err != nil {
+					return nil, fmt.Errorf("failed to prepare workspace: %w", err)
+				}
+				return &w, nil
+			}
+		}
+	}
+
+	// Try to find any unused workspace for this repo (different branch OK)
+	for _, w := range m.state.Workspaces {
+		if w.Repo == repoURL {
+			// Check if workspace has active sessions
+			hasActiveSessions := false
+			for _, s := range m.state.Sessions {
+				if s.WorkspaceID == w.ID {
+					hasActiveSessions = true
+					break
+				}
+			}
+			if !hasActiveSessions {
+				m.logger.Printf("reusing workspace for different branch: id=%s old_branch=%s new_branch=%s", w.ID, w.Branch, branch)
+				// Update branch in state
+				w.Branch = branch
+				m.state.UpdateWorkspace(w)
 				// Prepare the workspace (fetch/pull/clean)
 				if err := m.prepare(w.ID, branch); err != nil {
 					return nil, fmt.Errorf("failed to prepare workspace: %w", err)

@@ -209,3 +209,15 @@ func (s *State) RemoveSession(id string) {
 		}
 	}
 }
+
+// RemoveWorkspace removes a workspace from the state.
+func (s *State) RemoveWorkspace(id string) {
+	s.mu.Lock()
+	defer s.mu.Unlock()
+	for i, w := range s.Workspaces {
+		if w.ID == id {
+			s.Workspaces = append(s.Workspaces[:i], s.Workspaces[i+1:]...)
+			return
+		}
+	}
+}
