@@ -265,7 +265,11 @@ func (s *Server) handleSpawnPost(w http.ResponseWriter, r *http.Request) {
 
 	for agentName, count := range req.Agents {
 		for i := 0; i < count; i++ {
-			sess, err := s.session.Spawn(req.Repo, req.Branch, agentName, req.Prompt, req.Nickname, req.WorkspaceID)
+			nickname := req.Nickname
+			if nickname != "" && count > 1 {
+				nickname = fmt.Sprintf("%s (%d)", nickname, i+1)
+			}
+			sess, err := s.session.Spawn(req.Repo, req.Branch, agentName, req.Prompt, nickname, req.WorkspaceID)
 			if err != nil {
 				results = append(results, SessionResult{
 					Agent: agentName,
