@@ -28,6 +28,15 @@ const navItems = [
       <line x1="12" y1="16" x2="12" y2="12"></line>
       <line x1="12" y1="8" x2="12.01" y2="8"></line>
     </svg>
+  ) },
+  { to: '/config', label: 'Config', icon: (
+    <svg className="nav-link__icon" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2">
+      <circle cx="12" cy="12" r="3"></circle>
+      <path d="M12 1v6m0 6v6"></path>
+      <path d="M1 12h6m6 0h6"></path>
+      <path d="M4.93 4.93l4.24 4.24m5.66 5.66l4.24 4.24"></path>
+      <path d="M19.07 4.93l-4.24 4.24m-5.66 5.66l-4.24 4.24"></path>
+    </svg>
   ) }
 ];
 

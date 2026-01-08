@@ -4,6 +4,7 @@ import (
 	"fmt"
 	"os"
 
+	"github.com/sergek/schmux/internal/config"
 	"github.com/sergek/schmux/internal/daemon"
 )
 
@@ -17,6 +18,17 @@ func main() {
 
 	switch command {
 	case "start":
+		// Check if config exists, offer to create if not
+		configOk, err := config.EnsureExists()
+		if err != nil {
+			fmt.Fprintf(os.Stderr, "Error checking config: %v\n", err)
+			os.Exit(1)
+		}
+		if !configOk {
+			// User declined to create config
+			os.Exit(1)
+		}
+
 		if err := daemon.Start(); err != nil {
 			fmt.Fprintf(os.Stderr, "Error: %v\n", err)
 			os.Exit(1)

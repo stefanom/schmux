@@ -31,3 +31,16 @@ export async function disposeSession(sessionId) {
   if (!response.ok) throw new Error('Failed to dispose session');
   return response.json();
 }
+
+export async function updateConfig(request) {
+  const response = await fetch('/api/config', {
+    method: 'POST',
+    headers: { 'Content-Type': 'application/json' },
+    body: JSON.stringify(request)
+  });
+  if (!response.ok) {
+    const err = await response.json();
+    throw new Error(err.detail || response.statusText || 'Failed to update config');
+  }
+  return response.json();
+}

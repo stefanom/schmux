@@ -9,6 +9,8 @@ import (
 	"path/filepath"
 	"sort"
 	"strings"
+
+	"github.com/sergek/schmux/internal/config"
 )
 
 // handleIndex serves the React app entry point.
@@ -370,36 +372,48 @@ func (s *Server) handleUpdateNickname(w http.ResponseWriter, r *http.Request) {
 	json.NewEncoder(w).Encode(map[string]string{"status": "ok"})
 }
 
-// handleConfig returns the config (repos and agents) for the spawn form.
+// handleConfig returns the config (repos and agents) for the spawn form,
+// or updates the config via POST.
 func (s *Server) handleConfig(w http.ResponseWriter, r *http.Request) {
-	if r.Method != http.MethodGet {
+	switch r.Method {
+	case http.MethodGet:
+		s.handleConfigGet(w, r)
+	case http.MethodPost, http.MethodPut:
+		s.handleConfigUpdate(w, r)
+	default:
 		http.Error(w, "Method not allowed", http.StatusMethodNotAllowed)
-		return
 	}
+}
 
+// handleConfigGet returns the current config.
+func (s *Server) handleConfigGet(w http.ResponseWriter, r *http.Request) {
 	type RepoResponse struct {
 		Name string `json:"name"`
 		URL  string `json:"url"`
 	}
 
 	type AgentResponse struct {
-		Name string `json:"name"`
+		Name    string `json:"name"`
+		Command string `json:"command"`
 	}
 
 	type TerminalResponse struct {
-		Width  int `json:"width"`
-		Height int `json:"height"`
+		Width     int `json:"width"`
+		Height    int `json:"height"`
+		SeedLines int `json:"seed_lines"`
 	}
 
 	type ConfigResponse struct {
-		Repos    []RepoResponse   `json:"repos"`
-		Agents   []AgentResponse  `json:"agents"`
-		Terminal TerminalResponse `json:"terminal"`
+		WorkspacePath string            `json:"workspace_path"`
+		Repos         []RepoResponse    `json:"repos"`
+		Agents        []AgentResponse   `json:"agents"`
+		Terminal      TerminalResponse  `json:"terminal"`
 	}
 
 	repos := s.config.GetRepos()
 	agents := s.config.GetAgents()
 	width, height := s.config.GetTerminalSize()
+	seedLines := s.config.GetTerminalSeedLines()
 
 	repoResp := make([]RepoResponse, len(repos))
 	for i, repo := range repos {
@@ -408,15 +422,157 @@ func (s *Server) handleConfig(w http.ResponseWriter, r *http.Request) {
 
 	agentResp := make([]AgentResponse, len(agents))
 	for i, agent := range agents {
-		agentResp[i] = AgentResponse{Name: agent.Name}
+		agentResp[i] = AgentResponse{Name: agent.Name, Command: agent.Command}
 	}
 
 	response := ConfigResponse{
-		Repos:    repoResp,
-		Agents:   agentResp,
-		Terminal: TerminalResponse{Width: width, Height: height},
+		WorkspacePath: s.config.GetWorkspacePath(),
+		Repos:         repoResp,
+		Agents:        agentResp,
+		Terminal:      TerminalResponse{Width: width, Height: height, SeedLines: seedLines},
 	}
 
 	w.Header().Set("Content-Type", "application/json")
 	json.NewEncoder(w).Encode(response)
+}
+
+// ConfigUpdateRequest represents a request to update the config.
+type ConfigUpdateRequest struct {
+	WorkspacePath *string `json:"workspace_path,omitempty"`
+	Repos         []struct {
+		Name string `json:"name"`
+		URL  string `json:"url"`
+	} `json:"repos,omitempty"`
+	Agents []struct {
+		Name    string `json:"name"`
+		Command string `json:"command"`
+	} `json:"agents,omitempty"`
+	Terminal *struct {
+		Width     *int `json:"width,omitempty"`
+		Height    *int `json:"height,omitempty"`
+		SeedLines *int `json:"seed_lines,omitempty"`
+	} `json:"terminal,omitempty"`
+}
+
+// handleConfigUpdate handles config update requests.
+func (s *Server) handleConfigUpdate(w http.ResponseWriter, r *http.Request) {
+	var req ConfigUpdateRequest
+	if err := json.NewDecoder(r.Body).Decode(&req); err != nil {
+		http.Error(w, fmt.Sprintf("Invalid request: %v", err), http.StatusBadRequest)
+		return
+	}
+
+	// Get current config values as defaults
+	cfg := s.config
+	workspacePath := cfg.GetWorkspacePath()
+	repos := cfg.GetRepos()
+	agents := cfg.GetAgents()
+	width, height := cfg.GetTerminalSize()
+	seedLines := cfg.GetTerminalSeedLines()
+
+	// Check for workspace path change and warn
+	sessionCount := len(s.state.GetSessions())
+	workspaceCount := len(s.state.GetWorkspaces())
+
+	// Apply updates
+	if req.WorkspacePath != nil {
+		newPath := *req.WorkspacePath
+		// Expand ~ if present
+		homeDir, _ := os.UserHomeDir()
+		if len(newPath) > 0 && newPath[0] == '~' && homeDir != "" {
+			newPath = filepath.Join(homeDir, newPath[1:])
+		}
+		if newPath != workspacePath && (sessionCount > 0 || workspaceCount > 0) {
+			// Return warning information but don't block the change
+			type WarningResponse struct {
+				Warning        string `json:"warning"`
+				SessionCount   int    `json:"session_count"`
+				WorkspaceCount int    `json:"workspace_count"`
+				RequiresRestart bool  `json:"requires_restart"`
+			}
+			warning := WarningResponse{
+				Warning:        fmt.Sprintf("Changing workspace_path affects only NEW workspaces. %d existing sessions and %d workspaces will keep their current paths.", sessionCount, workspaceCount),
+				SessionCount:   sessionCount,
+				WorkspaceCount: workspaceCount,
+				RequiresRestart: true,
+			}
+			w.Header().Set("Content-Type", "application/json")
+			w.WriteHeader(http.StatusOK)
+			json.NewEncoder(w).Encode(warning)
+			return
+		}
+		workspacePath = newPath
+	}
+
+	if req.Repos != nil {
+		// Validate repos
+		for _, repo := range req.Repos {
+			if repo.Name == "" {
+				http.Error(w, "repo name is required", http.StatusBadRequest)
+				return
+			}
+			if repo.URL == "" {
+				http.Error(w, fmt.Sprintf("repo URL is required for %s", repo.Name), http.StatusBadRequest)
+				return
+			}
+		}
+		repos = make([]config.Repo, len(req.Repos))
+		for i, r := range req.Repos {
+			repos[i] = config.Repo{Name: r.Name, URL: r.URL}
+		}
+	}
+
+	if req.Agents != nil {
+		// Validate agents
+		for _, agent := range req.Agents {
+			if agent.Name == "" {
+				http.Error(w, "agent name is required", http.StatusBadRequest)
+				return
+			}
+			if agent.Command == "" {
+				http.Error(w, fmt.Sprintf("agent command is required for %s", agent.Name), http.StatusBadRequest)
+				return
+			}
+		}
+		agents = make([]config.Agent, len(req.Agents))
+		for i, a := range req.Agents {
+			agents[i] = config.Agent{Name: a.Name, Command: a.Command}
+		}
+	}
+
+	if req.Terminal != nil {
+		if req.Terminal.Width != nil && *req.Terminal.Width > 0 {
+			width = *req.Terminal.Width
+		}
+		if req.Terminal.Height != nil && *req.Terminal.Height > 0 {
+			height = *req.Terminal.Height
+		}
+		if req.Terminal.SeedLines != nil && *req.Terminal.SeedLines > 0 {
+			seedLines = *req.Terminal.SeedLines
+		}
+	}
+
+	// Create updated config
+	newCfg := &config.Config{
+		WorkspacePath: workspacePath,
+		Repos:         repos,
+		Agents:        agents,
+		Terminal: &config.TerminalSize{
+			Width:     width,
+			Height:    height,
+			SeedLines: seedLines,
+		},
+	}
+
+	// Save config
+	if err := newCfg.Save(); err != nil {
+		http.Error(w, fmt.Sprintf("Failed to save config: %v", err), http.StatusInternalServerError)
+		return
+	}
+
+	w.Header().Set("Content-Type", "application/json")
+	json.NewEncoder(w).Encode(map[string]string{
+		"status": "ok",
+		"message": "Config saved. Restart the daemon for changes to take effect.",
+	})
 }

@@ -1,6 +1,6 @@
 import React, { useCallback, useEffect, useMemo, useState } from 'react';
 import { Link, useNavigate, useSearchParams } from 'react-router-dom';
-import { disposeSession, getSessions } from '../lib/api.js';
+import { disposeSession, getSessions, getConfig } from '../lib/api.js';
 import { copyToClipboard, extractRepoName, formatRelativeTime } from '../lib/utils.js';
 import { useToast } from '../components/ToastProvider.jsx';
 import { useModal } from '../components/ModalProvider.jsx';
@@ -14,6 +14,7 @@ export default function SessionsPage() {
   const { success, error: toastError } = useToast();
   const { confirm } = useModal();
   const navigate = useNavigate();
+  const [configChecked, setConfigChecked] = useState(false);
 
   const filters = {
     status: searchParams.get('s') || '',
@@ -66,6 +67,27 @@ export default function SessionsPage() {
   useEffect(() => {
     loadWorkspaces();
   }, [loadWorkspaces]);
+
+  // Check if first-run (no repos or agents configured)
+  useEffect(() => {
+    const checkFirstRun = async () => {
+      try {
+        const config = await getConfig();
+        if ((!config.repos || config.repos.length === 0) &&
+            (!config.agents || config.agents.length === 0)) {
+          // First-run - redirect to config
+          navigate('/config?firstRun=true', { replace: true });
+        }
+      } catch (err) {
+        // If we can't load config, just continue - don't block the page
+        console.error('Failed to check config:', err);
+      } finally {
+        setConfigChecked(true);
+      }
+    };
+
+    checkFirstRun();
+  }, [navigate]);
 
   const updateFilter = (key, value) => {
     const next = new URLSearchParams(searchParams);
