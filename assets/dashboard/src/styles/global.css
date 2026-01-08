@@ -500,6 +500,15 @@ body {
     color: white;
 }
 
+.badge--indicator {
+    padding: 2px 6px;
+    font-size: 0.65rem;
+    border-radius: 4px;
+    background-color: #f59e0b;
+    color: white;
+    font-weight: 500;
+}
+
 /* Status Pill */
 .status-pill {
     display: inline-flex;

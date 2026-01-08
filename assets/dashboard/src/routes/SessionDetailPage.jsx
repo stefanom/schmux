@@ -6,6 +6,7 @@ import { disposeSession, getSessions } from '../lib/api.js';
 import { copyToClipboard, formatRelativeTime, formatTimestamp, truncateStart } from '../lib/utils.js';
 import { useToast } from '../components/ToastProvider.jsx';
 import { useModal } from '../components/ModalProvider.jsx';
+import { useConfig } from '../contexts/ConfigContext.jsx';
 import { useViewedSessions } from '../contexts/ViewedSessionsContext.jsx';
 
 // Module-level storage for sidebar collapse state (persists across navigation)
@@ -13,6 +14,7 @@ let savedSidebarCollapsed = false;
 
 export default function SessionDetailPage() {
   const { sessionId } = useParams();
+  const { config } = useConfig();
   const [loading, setLoading] = useState(true);
   const [error, setError] = useState('');
   const [sessionData, setSessionData] = useState(null);
@@ -106,14 +108,15 @@ export default function SessionDetailPage() {
 
   // Keep marking as viewed while WebSocket is connected (you're seeing output live)
   useEffect(() => {
+    const seenInterval = config.internal?.session_seen_interval_ms || 2000;
     const interval = setInterval(() => {
       if (wsStatus === 'connected') {
         markAsViewed(sessionId);
       }
-    }, 2000);
+    }, seenInterval);
 
     return () => clearInterval(interval);
-  }, [sessionId, wsStatus, markAsViewed]);
+  }, [sessionId, wsStatus, markAsViewed, config]);
 
   const toggleSidebar = () => {
     const wasAtBottom = terminalStreamRef.current?.isAtBottom?.(10) || false;

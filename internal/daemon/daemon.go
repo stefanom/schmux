@@ -240,6 +240,29 @@ func Run() error {
 		}
 	}
 
+	// Start background goroutine to monitor log file mtimes for all sessions
+	go func() {
+		pollInterval := time.Duration(cfg.GetMtimePollIntervalMs()) * time.Millisecond
+		ticker := time.NewTicker(pollInterval)
+		defer ticker.Stop()
+		for range ticker.C {
+			for _, sess := range st.GetSessions() {
+				if !sm.IsRunning(sess.ID) {
+					continue
+				}
+				logPath, err := sm.GetLogPath(sess.ID)
+				if err != nil {
+					continue
+				}
+				if info, err := os.Stat(logPath); err == nil {
+					if info.ModTime().After(sess.LastOutputAt) {
+						st.UpdateSessionLastOutput(sess.ID, info.ModTime())
+					}
+				}
+			}
+		}
+	}()
+
 	// Bootstrap log streams for active sessions with missing pipe-pane.
 	seedLines := cfg.GetTerminalSeedLines()
 	if seedLines <= 0 {

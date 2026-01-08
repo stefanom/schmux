@@ -16,10 +16,11 @@ var (
 
 // Config represents the application configuration.
 type Config struct {
-	WorkspacePath string        `json:"workspace_path"`
-	Repos         []Repo        `json:"repos"`
-	Agents        []Agent       `json:"agents"`
-	Terminal      *TerminalSize `json:"terminal,omitempty"`
+	WorkspacePath string             `json:"workspace_path"`
+	Repos         []Repo             `json:"repos"`
+	Agents        []Agent            `json:"agents"`
+	Terminal      *TerminalSize      `json:"terminal,omitempty"`
+	Internal      *InternalIntervals `json:"internal,omitempty"`
 	mu            sync.RWMutex
 }
 
@@ -28,6 +29,14 @@ type TerminalSize struct {
 	Width     int `json:"width"`
 	Height    int `json:"height"`
 	SeedLines int `json:"seed_lines"`
+}
+
+// InternalIntervals represents timing intervals for internal polling and caching.
+type InternalIntervals struct {
+	MtimePollIntervalMs    int `json:"mtime_poll_interval_ms"`
+	SessionsPollIntervalMs int `json:"sessions_poll_interval_ms"`
+	ViewedBufferMs         int `json:"viewed_buffer_ms"`
+	SessionSeenIntervalMs  int `json:"session_seen_interval_ms"`
 }
 
 // Repo represents a git repository configuration.
@@ -174,4 +183,44 @@ func (c *Config) GetTerminalSeedLines() int {
 		return 0
 	}
 	return c.Terminal.SeedLines
+}
+
+// GetMtimePollIntervalMs returns the mtime polling interval in ms. Defaults to 5000ms.
+func (c *Config) GetMtimePollIntervalMs() int {
+	c.mu.RLock()
+	defer c.mu.RUnlock()
+	if c.Internal == nil || c.Internal.MtimePollIntervalMs <= 0 {
+		return 5000
+	}
+	return c.Internal.MtimePollIntervalMs
+}
+
+// GetSessionsPollIntervalMs returns the sessions API polling interval in ms. Defaults to 5000ms.
+func (c *Config) GetSessionsPollIntervalMs() int {
+	c.mu.RLock()
+	defer c.mu.RUnlock()
+	if c.Internal == nil || c.Internal.SessionsPollIntervalMs <= 0 {
+		return 5000
+	}
+	return c.Internal.SessionsPollIntervalMs
+}
+
+// GetViewedBufferMs returns the viewed timestamp buffer in ms. Defaults to 5000ms.
+func (c *Config) GetViewedBufferMs() int {
+	c.mu.RLock()
+	defer c.mu.RUnlock()
+	if c.Internal == nil || c.Internal.ViewedBufferMs <= 0 {
+		return 5000
+	}
+	return c.Internal.ViewedBufferMs
+}
+
+// GetSessionSeenIntervalMs returns the interval for marking sessions as viewed in ms. Defaults to 2000ms.
+func (c *Config) GetSessionSeenIntervalMs() int {
+	c.mu.RLock()
+	defer c.mu.RUnlock()
+	if c.Internal == nil || c.Internal.SessionSeenIntervalMs <= 0 {
+		return 2000
+	}
+	return c.Internal.SessionSeenIntervalMs
 }

@@ -397,10 +397,18 @@ func (s *Server) handleConfig(w http.ResponseWriter, r *http.Request) {
 		Height int `json:"height"`
 	}
 
+	type InternalResponse struct {
+		MtimePollIntervalMs    int `json:"mtime_poll_interval_ms"`
+		SessionsPollIntervalMs int `json:"sessions_poll_interval_ms"`
+		ViewedBufferMs         int `json:"viewed_buffer_ms"`
+		SessionSeenIntervalMs  int `json:"session_seen_interval_ms"`
+	}
+
 	type ConfigResponse struct {
 		Repos    []RepoResponse   `json:"repos"`
 		Agents   []AgentResponse  `json:"agents"`
 		Terminal TerminalResponse `json:"terminal"`
+		Internal InternalResponse `json:"internal"`
 	}
 
 	repos := s.config.GetRepos()
@@ -421,6 +429,12 @@ func (s *Server) handleConfig(w http.ResponseWriter, r *http.Request) {
 		Repos:    repoResp,
 		Agents:   agentResp,
 		Terminal: TerminalResponse{Width: width, Height: height},
+		Internal: InternalResponse{
+			MtimePollIntervalMs:    s.config.GetMtimePollIntervalMs(),
+			SessionsPollIntervalMs: s.config.GetSessionsPollIntervalMs(),
+			ViewedBufferMs:         s.config.GetViewedBufferMs(),
+			SessionSeenIntervalMs:  s.config.GetSessionSeenIntervalMs(),
+		},
 	}
 
 	w.Header().Set("Content-Type", "application/json")

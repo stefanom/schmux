@@ -4,9 +4,11 @@ import { disposeSession, getSessions, getWorkspaces } from '../lib/api.js';
 import { copyToClipboard, extractRepoName } from '../lib/utils.js';
 import { useToast } from '../components/ToastProvider.jsx';
 import { useModal } from '../components/ModalProvider.jsx';
+import { useConfig } from '../contexts/ConfigContext.jsx';
 import SessionTableRow from '../components/SessionTableRow.jsx';
 
 export default function WorkspacesPage() {
+  const { config } = useConfig();
   const [workspaces, setWorkspaces] = useState([]);
   const [sessionsByWorkspace, setSessionsByWorkspace] = useState({});
   const [loading, setLoading] = useState(true);
@@ -51,6 +53,15 @@ export default function WorkspacesPage() {
   useEffect(() => {
     loadWorkspaces();
   }, [loadWorkspaces]);
+
+  // Auto-refresh (silent mode - no flicker)
+  useEffect(() => {
+    const pollInterval = config.internal?.sessions_poll_interval_ms || 5000;
+    const interval = setInterval(() => {
+      loadWorkspaces({ silent: true });
+    }, pollInterval);
+    return () => clearInterval(interval);
+  }, [loadWorkspaces, config]);
 
   const expandAll = () => {
     const next = {};
@@ -211,7 +222,6 @@ export default function WorkspacesPage() {
                           sess={sess}
                           onCopyAttach={handleCopyAttach}
                           onDispose={handleDispose}
-                          showSessionId={true}
                         />
                       ))}
                     </tbody>

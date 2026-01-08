@@ -3,7 +3,7 @@ import { Link } from 'react-router-dom';
 import { formatRelativeTime, formatTimestamp } from '../lib/utils.js';
 import { useViewedSessions } from '../contexts/ViewedSessionsContext.jsx';
 
-export default function SessionTableRow({ sess, onCopyAttach, onDispose, showSessionId = false }) {
+export default function SessionTableRow({ sess, onCopyAttach, onDispose }) {
   const { viewedSessions } = useViewedSessions();
 
   const statusClass = sess.running ? 'status-pill--running' : 'status-pill--stopped';
@@ -25,13 +25,8 @@ export default function SessionTableRow({ sess, onCopyAttach, onDispose, showSes
               {sess.agent}
             </span>
           ) : null}
-          {hasNewUpdates && (
-            <span className="badge badge--primary" style={{ fontSize: '0.7rem' }} title="New updates since you last viewed">
-              New
-            </span>
-          )}
         </div>
-        {showSessionId && (
+        {!sess.nickname && (
           <div style={{ fontSize: '0.75rem', color: 'var(--color-text-subtle)' }}>{sess.id}</div>
         )}
       </td>
@@ -43,7 +38,14 @@ export default function SessionTableRow({ sess, onCopyAttach, onDispose, showSes
       </td>
       <td title={formatTimestamp(sess.created_at)}>{formatRelativeTime(sess.created_at)}</td>
       <td title={sess.last_output_at ? formatTimestamp(sess.last_output_at) : 'Never'}>
-        {sess.last_output_at ? formatRelativeTime(sess.last_output_at) : '-'}
+        <div style={{ display: 'flex', alignItems: 'center', gap: 'var(--spacing-xs)' }}>
+          <span className="badge badge--indicator" style={{
+            visibility: hasNewUpdates ? 'visible' : 'hidden',
+          }} title="New updates since you last viewed">
+            New
+          </span>
+          <span>{sess.last_output_at ? formatRelativeTime(sess.last_output_at) : '-'}</span>
+        </div>
       </td>
       <td>
         <div className="session-table__actions">

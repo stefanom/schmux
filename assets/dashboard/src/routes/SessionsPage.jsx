@@ -4,9 +4,11 @@ import { disposeSession, getSessions } from '../lib/api.js';
 import { copyToClipboard, extractRepoName } from '../lib/utils.js';
 import { useToast } from '../components/ToastProvider.jsx';
 import { useModal } from '../components/ModalProvider.jsx';
+import { useConfig } from '../contexts/ConfigContext.jsx';
 import SessionTableRow from '../components/SessionTableRow.jsx';
 
 export default function SessionsPage() {
+  const { config } = useConfig();
   const [workspaces, setWorkspaces] = useState([]);
   const [loading, setLoading] = useState(true);
   const [error, setError] = useState('');
@@ -69,13 +71,14 @@ export default function SessionsPage() {
     loadWorkspaces();
   }, [loadWorkspaces]);
 
-  // Auto-refresh every 5 seconds (silent mode - no flicker)
+  // Auto-refresh (silent mode - no flicker)
   useEffect(() => {
+    const pollInterval = config.internal?.sessions_poll_interval_ms || 5000;
     const interval = setInterval(() => {
       loadWorkspaces({ silent: true });
-    }, 5000);
+    }, pollInterval);
     return () => clearInterval(interval);
-  }, [loadWorkspaces]);
+  }, [loadWorkspaces, config]);
 
   const updateFilter = (key, value) => {
     const next = new URLSearchParams(searchParams);

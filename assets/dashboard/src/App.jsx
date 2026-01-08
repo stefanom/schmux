@@ -2,6 +2,7 @@ import { Routes, Route } from 'react-router-dom';
 import AppShell from './components/AppShell.jsx';
 import ToastProvider from './components/ToastProvider.jsx';
 import ModalProvider from './components/ModalProvider.jsx';
+import { ConfigProvider } from './contexts/ConfigContext.jsx';
 import { ViewedSessionsProvider } from './contexts/ViewedSessionsContext.jsx';
 import SessionsPage from './routes/SessionsPage.jsx';
 import WorkspacesPage from './routes/WorkspacesPage.jsx';
@@ -13,23 +14,25 @@ import NotFoundPage from './routes/NotFoundPage.jsx';
 
 export default function App() {
   return (
-    <ToastProvider>
-      <ModalProvider>
-        <ViewedSessionsProvider>
-          <Routes>
-            <Route element={<AppShell />}>
-              <Route path="/" element={<SessionsPage />} />
-              <Route path="/sessions" element={<SessionsPage />} />
-              <Route path="/sessions/:sessionId" element={<SessionDetailPage />} />
-              <Route path="/workspaces" element={<WorkspacesPage />} />
-              <Route path="/spawn" element={<SpawnPage />} />
-              <Route path="/tips" element={<TipsPage />} />
-              <Route path="/terminal.html" element={<LegacyTerminalPage />} />
-              <Route path="*" element={<NotFoundPage />} />
-            </Route>
-          </Routes>
-        </ViewedSessionsProvider>
-      </ModalProvider>
-    </ToastProvider>
+    <ConfigProvider>
+      <ToastProvider>
+        <ModalProvider>
+          <ViewedSessionsProvider>
+            <Routes>
+              <Route element={<AppShell />}>
+                <Route path="/" element={<SessionsPage />} />
+                <Route path="/sessions" element={<SessionsPage />} />
+                <Route path="/sessions/:sessionId" element={<SessionDetailPage />} />
+                <Route path="/workspaces" element={<WorkspacesPage />} />
+                <Route path="/spawn" element={<SpawnPage />} />
+                <Route path="/tips" element={<TipsPage />} />
+                <Route path="/terminal.html" element={<LegacyTerminalPage />} />
+                <Route path="*" element={<NotFoundPage />} />
+              </Route>
+            </Routes>
+          </ViewedSessionsProvider>
+        </ModalProvider>
+      </ToastProvider>
+    </ConfigProvider>
   );
 }
