@@ -48,6 +48,7 @@ func (s *Server) Start() error {
 	mux.HandleFunc("/spawn", s.handleSpawn)
 	mux.HandleFunc("/tips", s.handleTips)
 	mux.HandleFunc("/terminal.html", s.handleTerminalHTML)
+	mux.HandleFunc("/diff/", s.handleDiffPage)
 	mux.Handle("/assets/", http.StripPrefix("/assets/", http.FileServer(http.Dir(filepath.Join(s.getDashboardDistPath(), "assets")))))
 
 	// API routes
@@ -58,6 +59,7 @@ func (s *Server) Start() error {
 	mux.HandleFunc("/api/spawn", s.withCORS(s.handleSpawnPost))
 	mux.HandleFunc("/api/dispose/", s.withCORS(s.handleDispose))
 	mux.HandleFunc("/api/config", s.withCORS(s.handleConfig))
+	mux.HandleFunc("/api/diff/", s.withCORS(s.handleDiff))
 
 	// WebSocket for terminal streaming
 	mux.HandleFunc("/ws/terminal/", s.handleTerminalWebSocket)

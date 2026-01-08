@@ -31,3 +31,9 @@ export async function disposeSession(sessionId) {
   if (!response.ok) throw new Error('Failed to dispose session');
   return response.json();
 }
+
+export async function getDiff(workspaceId) {
+  const response = await fetch(`/api/diff/${workspaceId}`);
+  if (!response.ok) throw new Error('Failed to fetch diff');
+  return response.json();
+}
