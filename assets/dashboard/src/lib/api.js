@@ -31,3 +31,9 @@ export async function disposeSession(sessionId) {
   if (!response.ok) throw new Error('Failed to dispose session');
   return response.json();
 }
+
+export async function disposeWorkspace(workspaceId) {
+  const response = await fetch(`/api/dispose-workspace/${workspaceId}`, { method: 'POST' });
+  if (!response.ok) throw new Error('Failed to dispose workspace');
+  return response.json();
+}

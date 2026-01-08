@@ -373,3 +373,34 @@ func (m *Manager) EnsureWorkspaceDir() error {
 	}
 	return nil
 }
+
+// Dispose deletes a workspace by removing its directory and removing it from state.
+func (m *Manager) Dispose(workspaceID string) error {
+	w, found := m.state.GetWorkspace(workspaceID)
+	if !found {
+		return fmt.Errorf("workspace not found: %s", workspaceID)
+	}
+
+	m.logger.Printf("disposing workspace: id=%s path=%s", workspaceID, w.Path)
+
+	// Check if workspace has active sessions
+	for _, s := range m.state.Sessions {
+		if s.WorkspaceID == workspaceID {
+			return fmt.Errorf("workspace has active sessions: %s", workspaceID)
+		}
+	}
+
+	// Delete workspace directory
+	if err := os.RemoveAll(w.Path); err != nil {
+		return fmt.Errorf("failed to delete workspace directory: %w", err)
+	}
+
+	// Remove from state
+	m.state.RemoveWorkspace(workspaceID)
+	if err := m.state.Save(); err != nil {
+		return fmt.Errorf("failed to save state: %w", err)
+	}
+
+	m.logger.Printf("workspace disposed: id=%s", workspaceID)
+	return nil
+}

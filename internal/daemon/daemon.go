@@ -271,7 +271,7 @@ func Run() error {
 	}
 
 	// Create dashboard server
-	server := dashboard.NewServer(cfg, st, sm)
+	server := dashboard.NewServer(cfg, st, sm, wm)
 
 	// Handle shutdown signals
 	sigChan := make(chan os.Signal, 1)
