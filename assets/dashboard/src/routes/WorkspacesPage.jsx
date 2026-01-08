@@ -1,9 +1,10 @@
 import React, { useCallback, useEffect, useState } from 'react';
 import { Link, useNavigate } from 'react-router-dom';
-import { disposeSession, disposeWorkspace, getSessions, getWorkspaces } from '../lib/api.js';
+import { disposeSession, disposeWorkspace, getSessions, getWorkspaces, scanWorkspaces } from '../lib/api.js';
 import { copyToClipboard, extractRepoName, formatRelativeTime } from '../lib/utils.js';
 import { useToast } from '../components/ToastProvider.jsx';
 import { useModal } from '../components/ModalProvider.jsx';
+import ScanResultsModal from '../components/ScanResultsModal.jsx';
 
 export default function WorkspacesPage() {
   const [workspaces, setWorkspaces] = useState([]);
@@ -11,6 +12,8 @@ export default function WorkspacesPage() {
   const [loading, setLoading] = useState(true);
   const [error, setError] = useState('');
   const [expanded, setExpanded] = useState({});
+  const [scanResult, setScanResult] = useState(null);
+  const [scanning, setScanning] = useState(false);
   const { success, error: toastError } = useToast();
   const { confirm } = useModal();
   const navigate = useNavigate();
@@ -99,6 +102,20 @@ export default function WorkspacesPage() {
     }
   };
 
+  const handleScan = async () => {
+    setScanning(true);
+    setError('');
+    try {
+      const result = await scanWorkspaces();
+      await loadWorkspaces();
+      setScanResult(result);
+    } catch (err) {
+      toastError(`Failed to scan workspaces: ${err.message}`);
+    } finally {
+      setScanning(false);
+    }
+  };
+
   const empty = workspaces.length === 0 && !loading && !error;
 
   return (
@@ -106,13 +123,13 @@ export default function WorkspacesPage() {
       <div className="page-header">
         <h1 className="page-header__title">Workspaces</h1>
         <div className="page-header__actions">
-          <button className="btn btn--ghost" onClick={loadWorkspaces}>
+          <button className="btn btn--ghost" onClick={handleScan} disabled={scanning}>
             <svg width="16" height="16" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2">
-              <path d="M23 4v6h-6"></path>
-              <path d="M1 20v-6h6"></path>
-              <path d="M3.51 9a9 9 0 0 1 14.85-3.36L23 10M1 14l4.64 4.36A9 9 0 0 0 20.49 15"></path>
+              <circle cx="12" cy="12" r="10"></circle>
+              <line x1="12" y1="8" x2="12" y2="12"></line>
+              <line x1="12" y1="16" x2="12.01" y2="16"></line>
             </svg>
-            Refresh
+            {scanning ? 'Scanning...' : 'Scan'}
           </button>
           <Link to="/spawn" className="btn btn--primary">
             <svg width="16" height="16" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2">
@@ -319,6 +336,13 @@ export default function WorkspacesPage() {
           );
         })}
       </div>
+
+      {scanResult && (
+        <ScanResultsModal
+          result={scanResult}
+          onClose={() => setScanResult(null)}
+        />
+      )}
     </>
   );
 }
