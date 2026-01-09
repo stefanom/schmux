@@ -682,16 +682,8 @@ func (s *Server) handleDiff(w http.ResponseWriter, r *http.Request) {
 	cmd := exec.Command("git", "-C", ws.Path, "diff", "--numstat", "--find-renames", "--diff-filter=ADM")
 	output, err := cmd.Output()
 	if err != nil {
-		// No changes is not an error - return empty diff
-		response := DiffResponse{
-			WorkspaceID: workspaceID,
-			Repo:        ws.Repo,
-			Branch:      ws.Branch,
-			Files:       []FileDiff{},
-		}
-		w.Header().Set("Content-Type", "application/json")
-		json.NewEncoder(w).Encode(response)
-		return
+		// No changes is not an error - continue, we'll still check for untracked files
+		output = []byte{}
 	}
 
 	// Parse numstat output and get file diffs
@@ -737,6 +729,26 @@ func (s *Server) handleDiff(w http.ResponseWriter, r *http.Request) {
 			NewContent: newContent,
 			Status:     status,
 		})
+	}
+
+	// Get untracked files
+	// ls-files --others --exclude-standard lists untracked files (respecting .gitignore)
+	untrackedCmd := exec.Command("git", "-C", ws.Path, "ls-files", "--others", "--exclude-standard")
+	untrackedOutput, err := untrackedCmd.Output()
+	if err == nil {
+		untrackedLines := strings.Split(string(untrackedOutput), "\n")
+		for _, filePath := range untrackedLines {
+			if filePath == "" {
+				continue
+			}
+			// Get content of untracked file from working directory
+			newContent := s.getFileContent(ws.Path, filePath, "worktree")
+			files = append(files, FileDiff{
+				NewPath:    filePath,
+				NewContent: newContent,
+				Status:     "untracked",
+			})
+		}
 	}
 
 	response := DiffResponse{

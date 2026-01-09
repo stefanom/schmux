@@ -97,7 +97,7 @@ export default function DiffPage() {
                   </svg>
                   <span className="diff-file-item__path">{file.new_path || file.old_path}</span>
                 </div>
-                <span className={`badge badge--${file.status === 'added' ? 'success' : file.status === 'deleted' ? 'danger' : 'neutral'}`}>
+                <span className={`badge badge--${file.status === 'added' ? 'success' : file.status === 'deleted' ? 'danger' : file.status === 'untracked' ? 'info' : 'neutral'}`}>
                   {file.status}
                 </span>
               </button>
