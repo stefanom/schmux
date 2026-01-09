@@ -1567,6 +1567,11 @@ a:hover {
     line-height: 1.4;
 }
 
+/* Remove padding from word diff elements */
+.diff-viewer-wrapper .react-diff-42iver-word-diff {
+    padding: 0 !important;
+}
+
 /* Workspace Actions */
 .workspace-item__actions {
     display: flex;
