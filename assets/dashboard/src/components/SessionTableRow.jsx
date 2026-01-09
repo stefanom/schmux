@@ -20,7 +20,14 @@ export default function SessionTableRow({ sess, onCopyAttach, onDispose }) {
     <tr className="session-row" key={sess.id}>
       <td>
         <div style={{ display: 'flex', alignItems: 'center', gap: 'var(--spacing-xs)' }}>
-          <span className={sess.nickname ? '' : 'mono'}>{displayName}</span>
+          <Tooltip content="View session">
+            <button
+              className="session-table__name-link"
+              onClick={() => window.location.href = `/sessions/${sess.id}`}
+            >
+              <span className={sess.nickname ? '' : 'mono'}>{displayName}</span>
+            </button>
+          </Tooltip>
           {sess.nickname ? (
             <span className="badge badge--secondary" style={{ fontSize: '0.75rem' }}>
               {sess.agent}
@@ -28,7 +35,15 @@ export default function SessionTableRow({ sess, onCopyAttach, onDispose }) {
           ) : null}
         </div>
         {!sess.nickname && (
-          <div style={{ fontSize: '0.75rem', color: 'var(--color-text-subtle)' }}>{sess.id}</div>
+          <Tooltip content="View session">
+            <button
+              className="session-table__name-link"
+              onClick={() => window.location.href = `/sessions/${sess.id}`}
+              style={{ fontSize: '0.75rem', color: 'var(--color-text-subtle)' }}
+            >
+              {sess.id}
+            </button>
+          </Tooltip>
         )}
       </td>
       <td>

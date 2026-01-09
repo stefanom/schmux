@@ -691,6 +691,24 @@ body {
     gap: var(--spacing-sm);
 }
 
+.session-table__name-link {
+    background: none;
+    border: none;
+    padding: 0;
+    margin: 0;
+    color: inherit;
+    text-decoration: none;
+    cursor: pointer;
+    border-radius: 0;
+    font: inherit;
+    text-align: left;
+}
+
+.session-table__name-link:hover {
+    text-decoration: underline;
+    background-color: transparent;
+}
+
 .mono {
     font-family: var(--font-mono);
     font-size: 0.875rem;
