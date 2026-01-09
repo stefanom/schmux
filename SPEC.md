@@ -1,227 +1,150 @@
 # schmux - Smart Cognitive Hub on tmux
 
-## Specification v0.5
+## Specification v0.8
 
 ### Overview
 
-A Golang application that orchestrates multiple AI coding agents (Codex, Claude Code with various LLM backends) running in tmux sessions. Provides a web dashboard for spawning, monitoring, and managing agent sessions across git repositories.
+A Golang application that orchestrates multiple AI coding agents (Claude Code, Codex, and other LLM-backed agents) running in tmux sessions. Provides a web dashboard for spawning, monitoring, and managing agent sessions across git repositories.
 
-### Core Components
-
-1. **Daemon** - Long-running background process (`schmux start` / `schmux stop`)
-2. **Web Dashboard** - localhost, no auth, primary UI for managing sessions
-3. **Workspace Manager** - Manages cloned repo directories
-4. **tmux Integration** - Each agent runs in its own tmux session
+**Core concepts:**
+- Run multiple AI agents simultaneously on the same codebase
+- Each agent gets its own isolated workspace directory
+- Monitor all agents from a web dashboard with live terminal output
+- Compare results across agents by viewing git diffs
 
 ---
 
 ### Configuration
 
-JSON file, hand-edited for v0.5. Location: `~/.schmux/config.json`
+Configuration lives at `~/.schmux/config.json`. You can edit it directly or use the web dashboard's settings page.
 
 ```json
 {
-  "workspace_path": "~/dev/schmux-workspaces",
+  "workspace_path": "~/schmux-workspaces",
   "repos": [
-    {
-      "name": "myproject",
-      "url": "git@github.com:user/myproject.git"
-    }
+    {"name": "myproject", "url": "git@github.com:user/myproject.git"}
   ],
   "agents": [
-    {
-      "name": "codex",
-      "command": "codex"
-    },
-    {
-      "name": "claude",
-      "command": "claude"
-    },
-    {
-      "name": "claude-glm",
-      "command": "/path/to/glm-4.7"
-    },
-    {
-      "name": "claude-minimax",
-      "command": "/path/to/minimax"
-    },
-    {
-      "name": "claude-kimi",
-      "command": "/path/to/kimi-thinking"
-    }
-  ]
+    {"name": "claude", "command": "claude"},
+    {"name": "claude-glm", "command": "/path/to/glm-4.7"}
+  ],
+  "terminal": {
+    "width": 120,
+    "height": 40,
+    "seed_lines": 100
+  }
 }
 ```
 
----
+**Required settings:**
+- `workspace_path` - Where workspace directories are created
+- `repos` - Git repositories you want to work with
+- `agents` - AI agents to spawn (name + terminal command)
+- `terminal` - Terminal dimensions for sessions
 
-### Workspace Management
-
-- **Single global workspace directory** configured in `workspace_path`
-- **Sequential directory naming**: `<repo>-001`, `<repo>-002`, etc.
-- **Directory status tracking**: available (clean, no active session) vs in-use
-- **Multiple sessions per directory**: A directory can have multiple agents running simultaneously
-- **Git operations**:
-  - Clone repo if not already present
-  - Checkout to specified local branch
-  - `git pull --rebase` before starting session (for new directory spawn)
-  - If pull/rebase fails → workspace marked unusable (conflicts need manual resolution)
-  - Cleanup: `git checkout -- .` to reset state when disposing
-
----
-
-### Session Lifecycle
-
-**New Directory Spawn (Worker)**
-1. User spawns session(s) via web dashboard spawn view
-2. schmux creates a new workspace directory for the repo
-3. Clones repo, checks out branch, pulls latest
-4. Creates tmux session, runs agent command with user's prompt
-5. Session tracked in state (process running/stopped)
-
-**Existing Directory Spawn (Reviewer/Subagent)**
-1. User spawns session from directory view in dashboard
-2. schmux uses existing workspace directory (no git operations)
-3. Creates tmux session, runs agent command with user's prompt
-4. Session tracked in state, associated with same workspace
-
-**Common**
-- User can attach via terminal (`tmux attach -t <session>`)
-- tmux session persists after agent process exits (enables resume)
-- User disposes session via dashboard when done
-
----
-
-### Web Dashboard Features
-
-**Dashboard Hierarchy**: Project → Directory → Sessions
-
-**Project/Directory View**
-- Organized by project, then by directory
-- Each directory shows all sessions (N agents per directory)
-- Displays: directory name, branch, session count
-- Expand to see individual sessions
-
-**Session List**
-- Displays: nickname (if set) or agent type, process status (running/stopped), created time
-- Copy-able attach command for each session
-- Dispose button per session
-- **Spawn in this directory** button to add more agents
-
-**Spawn View (New Directory)**
-- Select git repo (dropdown from pre-registered list)
-- Enter branch name
-- Enter prompt (textarea)
-- Optional nickname (human-friendly name for the session)
-- Agent quantity selector ("shopping cart" style - pick count per agent type)
-- Submit spawns all requested sessions with same prompt in new directories
-
-**Session Detail View**
-- Real-time terminal output (scrolling text)
-- Session metadata (nickname if set, repo, branch, agent, created time)
-- Dispose button
-
-**Connection Monitoring**
-- Header pill shows server connection status (Connected/Disconnected)
-- Polls `/api/healthz` every 5 seconds
+**Advanced settings** (optional `internal` section):
+- Polling intervals for status updates
+- Session tracking timing
 
 ---
 
 ### State
 
-JSON file at `~/.schmux/state.json`
-
-```json
-{
-  "workspaces": [
-    {
-      "id": "myproject-001",
-      "repo": "myproject",
-      "branch": "main",
-      "path": "/Users/x/dev/schmux-workspaces/myproject-001",
-      "usable": true
-    }
-  ],
-  "sessions": [
-    {
-      "id": "schmux-session-abc123",
-      "workspace_id": "myproject-001",
-      "agent": "claude-glm",
-      "prompt": "fix the auth bug",
-      "nickname": "Auth fix attempt 1",
-      "tmux_session": "schmux-session-abc123",
-      "created_at": "2025-01-05T10:30:00Z",
-      "pid": 12345
-    },
-    {
-      "id": "schmux-session-def456",
-      "workspace_id": "myproject-001",
-      "agent": "claude-kimi",
-      "prompt": "review the changes",
-      "tmux_session": "schmux-session-def456",
-      "created_at": "2025-01-05T11:00:00Z",
-      "pid": 12346
-    }
-  ]
-}
-```
-
-Note: Multiple sessions can reference the same `workspace_id`.
+Application state is stored at `~/.schmux/state.json` and managed automatically. Tracks your workspaces and sessions.
 
 ---
 
-### CLI Commands (v0.5)
+### Workspaces
+
+Workspaces are directories where agents do their work.
+
+- Each repo gets sequential directories: `myproject-001`, `myproject-002`, etc.
+- Multiple agents can work in the same workspace simultaneously
+- Each workspace tracks git status (dirty, ahead, behind)
+- Workspaces are created on-demand when you spawn sessions
+
+**Git behavior:**
+- New workspaces clone fresh and pull latest
+- Existing workspaces skip git operations (safe for concurrent agents)
+- Disposing a workspace resets git state (`git checkout -- .`)
+
+---
+
+### Sessions
+
+A session is one agent running in one workspace.
+
+**Spawning:**
+- New workspace - Fresh git clone, clean slate
+- Existing workspace - Reuse directory, add another agent to the mix
+- Provide an optional nickname to easily identify sessions
+- Attach via terminal anytime: `tmux attach -t <session>`
+
+**Session lifecycle:**
+- Agent runs in a tmux session (persists after process exits)
+- Dashboard shows real-time terminal output
+- Mark sessions as done when finished (disposes the tmux session)
+
+---
+
+### Web Dashboard
+
+Open `http://localhost:7337` after starting the daemon.
+
+**Pages:**
+- **Sessions** (`/`) - View all sessions grouped by workspace, filter by status or repo
+- **Session Detail** (`/sessions/:id`) - Watch terminal output, view diffs, manage session
+- **Workspaces** (`/workspaces`) - Browse workspaces, see git status, scan for changes
+- **Spawn** (`/spawn`) - Start new sessions with the spawn wizard
+- **Diff** (`/diff/:workspaceId`) - View git changes for a workspace
+- **Settings** (`/config`) - Configure repos, agents, and workspace path
+
+**Key features:**
+- **Spawn wizard** - Multi-step form to pick repo, branch, agents, and prompt
+- **Live terminals** - Real-time output from running agents
+- **Git diffs** - See what agents changed (side-by-side diff viewer)
+- **Filters** - Find sessions by status (running/stopped) or repository
+- **Git status** - See at a glance which workspaces have uncommitted changes
+- **Connection status** - Indicator shows if dashboard is connected to daemon
+
+**Getting started:**
+First-time users see a setup wizard to configure workspace path, repos, and agents.
+
+---
+
+### CLI Commands
 
 ```
 schmux start          # start daemon in background
 schmux stop           # stop daemon
 schmux status         # show daemon status, web dashboard URL
+schmux daemon-run     # run daemon in foreground (debug)
 ```
-
----
-
-### Technical Notes
-
-- **Language**: Go
-- **Web server**: Embedded in daemon, serves dashboard
-- **Terminal streaming**: Capture tmux pane output, stream to browser via websocket
-- **Process tracking**: Get PID from tmux pane (`#{pane_pid}`) at session creation, then check if that PID is running. More reliable than `pgrep` (no false matches, no race conditions).
-- **Dependency check**: Verify tmux is installed on startup, error if not found
-- **License**: Apache 2.0
 
 ---
 
 ## Future Scope
 
-### v0.6 - Now we're cooking with gas
+### v0.9 - Richer collaboration
 
-- **Cross-agent copy** - Select text from one session's terminal, copy with context to another session in same directory
-- **Richer session status** - Beyond just process running/stopped
-- **Batch grouping** - Dashboard groups sessions started together with same prompt
-- **Update nicknames** - Edit session nicknames after creation (from session detail view)
+- **Copy between sessions** - Share text/output from one session to another
+- **Batch grouping** - See which sessions were started together
 
-### v0.9 - CLI catch up
+### v1.0 - Production polish
 
-- **CLI commands for spawning** - `schmux run --repo X --branch Y --agents "claude:3" --prompt "..."`
-- **CLI commands for resume** - `schmux resume <session-id>`
+- **Completion detection** - Know when agents finish vs waiting for input
+- **Easy agent config** - Add new LLMs without wrapper scripts
+- **Documentation** - Installation guide, tutorials, examples
 
-### v1.0 - Usable by others
+### v1.1 - Workflow tools
 
-- **Getting started documentation** - Installation guide, tutorials, examples
-- **Config management UI** - Web and/or CLI interface instead of hand-editing JSON
-- **Completion notification** - Via agent hooks (`--hook` on prompt complete) to distinguish "task complete" vs "waiting for input" vs "running"
-- **Pluggable agent configuration** - Easier way to define new LLM endpoints without wrapper scripts
+- **Saved prompts** - Reuse common task prompts
+- **Better terminal** - Full interactive terminal in browser
 
-### v1.1 - Power tools
-- **Full terminal emulator** - xterm.js in browser with colors, cursor, full interactivity
-- **Show repo diffs in browser** - View what changes agents have made to the codebase
-- **Saved prompts** - Easily spin up agents to run standard workflow
+### v1.9 - Descoped
 
-### v2.0+ - Not in scope (future ideas)
+- **CLI spawning** - `schmux run` commands (use web dashboard instead)
 
-- **Budget tracking** - Track API costs per agent/session
-- **Feedback system** - Rate agent outputs, track which agents/backends perform better on different tasks
-- **SQLite for state** - More robust storage if JSON becomes limiting
-- **Remote branch operations** - Create branches, push, PR creation
-- **Search** - Find prompts and responses across current or historical sessions
-- **Keyboard-first web** - Command palette and advanced keyboard navigation
+### v2.0+ - Future ideas
+
+- Budget tracking, feedback/rating system, search across sessions, remote git operations
