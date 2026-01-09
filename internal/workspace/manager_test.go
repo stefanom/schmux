@@ -38,6 +38,101 @@ func TestExtractWorkspaceNumber(t *testing.T) {
 	}
 }
 
+func TestFindNextWorkspaceNumber(t *testing.T) {
+	tests := []struct {
+		name       string
+		workspaces []state.Workspace
+		want       int
+	}{
+		{
+			name:       "no workspaces",
+			workspaces: []state.Workspace{},
+			want:       1,
+		},
+		{
+			name: "single workspace - returns next",
+			workspaces: []state.Workspace{
+				{ID: "test-001", Repo: "test", Branch: "main", Path: "/tmp/test-001"},
+			},
+			want: 2,
+		},
+		{
+			name: "sequential workspaces - returns next",
+			workspaces: []state.Workspace{
+				{ID: "test-001", Repo: "test", Branch: "main", Path: "/tmp/test-001"},
+				{ID: "test-002", Repo: "test", Branch: "main", Path: "/tmp/test-002"},
+				{ID: "test-003", Repo: "test", Branch: "main", Path: "/tmp/test-003"},
+			},
+			want: 4,
+		},
+		{
+			name: "gap at start - fills first gap",
+			workspaces: []state.Workspace{
+				{ID: "test-003", Repo: "test", Branch: "main", Path: "/tmp/test-003"},
+			},
+			want: 1,
+		},
+		{
+			name: "gap in middle - fills first gap",
+			workspaces: []state.Workspace{
+				{ID: "test-001", Repo: "test", Branch: "main", Path: "/tmp/test-001"},
+				{ID: "test-003", Repo: "test", Branch: "main", Path: "/tmp/test-003"},
+			},
+			want: 2,
+		},
+		{
+			name: "multiple gaps - fills first gap",
+			workspaces: []state.Workspace{
+				{ID: "test-001", Repo: "test", Branch: "main", Path: "/tmp/test-001"},
+				{ID: "test-003", Repo: "test", Branch: "main", Path: "/tmp/test-003"},
+				{ID: "test-006", Repo: "test", Branch: "main", Path: "/tmp/test-006"},
+			},
+			want: 2,
+		},
+		{
+			name: "large gap - fills first gap",
+			workspaces: []state.Workspace{
+				{ID: "test-100", Repo: "test", Branch: "main", Path: "/tmp/test-100"},
+			},
+			want: 1,
+		},
+		{
+			name: "non-sequential with existing middle numbers",
+			workspaces: []state.Workspace{
+				{ID: "test-002", Repo: "test", Branch: "main", Path: "/tmp/test-002"},
+				{ID: "test-004", Repo: "test", Branch: "main", Path: "/tmp/test-004"},
+			},
+			want: 1,
+		},
+		{
+			name: "fills all gaps sequentially",
+			workspaces: []state.Workspace{
+				{ID: "test-001", Repo: "test", Branch: "main", Path: "/tmp/test-001"},
+				{ID: "test-002", Repo: "test", Branch: "main", Path: "/tmp/test-002"},
+			},
+			want: 3,
+		},
+		{
+			name: "handles large numbers",
+			workspaces: []state.Workspace{
+				{ID: "test-001", Repo: "test", Branch: "main", Path: "/tmp/test-001"},
+				{ID: "test-002", Repo: "test", Branch: "main", Path: "/tmp/test-002"},
+				{ID: "test-999", Repo: "test", Branch: "main", Path: "/tmp/test-999"},
+			},
+			want: 3,
+		},
+	}
+
+	for _, tt := range tests {
+		t.Run(tt.name, func(t *testing.T) {
+			got := findNextWorkspaceNumber(tt.workspaces)
+			if got != tt.want {
+				t.Errorf("findNextWorkspaceNumber() = %v, want %v", got, tt.want)
+			}
+		})
+	}
+}
+
 func TestNew(t *testing.T) {
 	cfg := &config.Config{
 		WorkspacePath: "/tmp/workspaces",
@@ -167,10 +262,10 @@ func TestDispose_ActiveSessions(t *testing.T) {
 
 	// Add an active session for this workspace
 	sess := state.Session{
-		ID:         "sess-001",
+		ID:          "sess-001",
 		WorkspaceID: workspaceID,
-		Agent:      "test-agent",
-		Prompt:     "test prompt",
+		Agent:       "test-agent",
+		Prompt:      "test prompt",
 	}
 	st.AddSession(sess)
 

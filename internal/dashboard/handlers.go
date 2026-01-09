@@ -617,15 +617,15 @@ func (s *Server) handleConfigUpdate(w http.ResponseWriter, r *http.Request) {
 	// Return warning if path changed with existing sessions/workspaces
 	if pathChanged {
 		type WarningResponse struct {
-			Warning        string `json:"warning"`
-			SessionCount   int    `json:"session_count"`
-			WorkspaceCount int    `json:"workspace_count"`
-			RequiresRestart bool  `json:"requires_restart"`
+			Warning         string `json:"warning"`
+			SessionCount    int    `json:"session_count"`
+			WorkspaceCount  int    `json:"workspace_count"`
+			RequiresRestart bool   `json:"requires_restart"`
 		}
 		warning := WarningResponse{
-			Warning:        fmt.Sprintf("Changing workspace_path affects only NEW workspaces. %d existing sessions and %d workspaces will keep their current paths.", sessionCount, workspaceCount),
-			SessionCount:   sessionCount,
-			WorkspaceCount: workspaceCount,
+			Warning:         fmt.Sprintf("Changing workspace_path affects only NEW workspaces. %d existing sessions and %d workspaces will keep their current paths.", sessionCount, workspaceCount),
+			SessionCount:    sessionCount,
+			WorkspaceCount:  workspaceCount,
 			RequiresRestart: true,
 		}
 		w.Header().Set("Content-Type", "application/json")
@@ -635,7 +635,7 @@ func (s *Server) handleConfigUpdate(w http.ResponseWriter, r *http.Request) {
 
 	w.Header().Set("Content-Type", "application/json")
 	json.NewEncoder(w).Encode(map[string]string{
-		"status": "ok",
+		"status":  "ok",
 		"message": "Config saved and reloaded. Changes are now in effect.",
 	})
 }
@@ -663,11 +663,11 @@ func (s *Server) handleDiff(w http.ResponseWriter, r *http.Request) {
 
 	// Run git diff in workspace directory
 	type FileDiff struct {
-		OldPath string   `json:"old_path,omitempty"`
-		NewPath string   `json:"new_path,omitempty"`
+		OldPath    string `json:"old_path,omitempty"`
+		NewPath    string `json:"new_path,omitempty"`
 		OldContent string `json:"old_content,omitempty"`
 		NewContent string `json:"new_content,omitempty"`
-		Status string `json:"status,omitempty"` // added, modified, deleted, renamed
+		Status     string `json:"status,omitempty"` // added, modified, deleted, renamed
 	}
 
 	type DiffResponse struct {

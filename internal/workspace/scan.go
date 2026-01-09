@@ -12,9 +12,9 @@ import (
 
 // ScanResult represents the results of a workspace scan operation.
 type ScanResult struct {
-	Added   []state.Workspace   `json:"added"`
-	Updated []WorkspaceChange   `json:"updated"`
-	Removed []state.Workspace   `json:"removed"`
+	Added   []state.Workspace `json:"added"`
+	Updated []WorkspaceChange `json:"updated"`
+	Removed []state.Workspace `json:"removed"`
 }
 
 // WorkspaceChange represents a workspace that was updated, with old and new values.

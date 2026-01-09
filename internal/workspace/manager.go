@@ -136,18 +136,7 @@ func (m *Manager) create(repoURL, branch string) (*state.Workspace, error) {
 
 	// Find the next available workspace number
 	workspaces := m.getWorkspacesForRepo(repoURL)
-	nextNum := len(workspaces) + 1
-
-	// Check for gaps in numbering
-	for _, w := range workspaces {
-		num, err := extractWorkspaceNumber(w.ID)
-		if err != nil {
-			continue
-		}
-		if num >= nextNum {
-			nextNum = num + 1
-		}
-	}
+	nextNum := findNextWorkspaceNumber(workspaces)
 
 	// Create workspace ID
 	workspaceID := fmt.Sprintf("%s-%03d", repoConfig.Name, nextNum)
@@ -355,6 +344,26 @@ func (m *Manager) gitClean(dir string) error {
 	}
 
 	return nil
+}
+
+// findNextWorkspaceNumber finds the next available workspace number, filling gaps.
+// It starts from 1 and returns the first unused number.
+func findNextWorkspaceNumber(workspaces []state.Workspace) int {
+	// Track which numbers are used
+	used := make(map[int]bool)
+	for _, w := range workspaces {
+		num, err := extractWorkspaceNumber(w.ID)
+		if err == nil {
+			used[num] = true
+		}
+	}
+
+	// Find first unused number starting from 1
+	nextNum := 1
+	for used[nextNum] {
+		nextNum++
+	}
+	return nextNum
 }
 
 // extractWorkspaceNumber extracts the numeric suffix from a workspace ID.
