@@ -9,9 +9,7 @@ import { useModal } from '../components/ModalProvider.jsx';
 import { useConfig } from '../contexts/ConfigContext.jsx';
 import { useViewedSessions } from '../contexts/ViewedSessionsContext.jsx';
 import Tooltip from '../components/Tooltip.jsx';
-
-// Module-level storage for sidebar collapse state (persists across navigation)
-let savedSidebarCollapsed = false;
+import useLocalStorage from '../hooks/useLocalStorage.js';
 
 export default function SessionDetailPage() {
   const { sessionId } = useParams();
@@ -22,7 +20,7 @@ export default function SessionDetailPage() {
   const [wsStatus, setWsStatus] = useState('connecting');
   const [showResume, setShowResume] = useState(false);
   const [followTail, setFollowTail] = useState(true);
-  const [sidebarCollapsed, setSidebarCollapsed] = useState(savedSidebarCollapsed);
+  const [sidebarCollapsed, setSidebarCollapsed] = useLocalStorage('sessionSidebarCollapsed', false);
   const terminalRef = useRef(null);
   const terminalStreamRef = useRef(null);
   const { success, error: toastError } = useToast();
@@ -122,11 +120,7 @@ export default function SessionDetailPage() {
 
   const toggleSidebar = () => {
     const wasAtBottom = terminalStreamRef.current?.isAtBottom?.(10) || false;
-    setSidebarCollapsed((prev) => {
-      const next = !prev;
-      savedSidebarCollapsed = next;
-      return next;
-    });
+    setSidebarCollapsed((prev) => !prev);
     setTimeout(() => {
       terminalStreamRef.current?.resizeTerminal?.();
       if (wasAtBottom) {
