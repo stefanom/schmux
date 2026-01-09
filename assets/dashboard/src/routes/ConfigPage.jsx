@@ -1,4 +1,4 @@
-import React, { useEffect, useState, useRef } from 'react';
+import React, { useEffect, useState } from 'react';
 import { getConfig, updateConfig } from '../lib/api.js';
 import { useToast } from '../components/ToastProvider.jsx';
 import { useModal } from '../components/ModalProvider.jsx';
@@ -25,13 +25,10 @@ export default function ConfigPage() {
   const [repos, setRepos] = useState([]);
   const [agents, setAgents] = useState([]);
 
-  // Terminal state (refs for uncontrolled inputs)
+  // Terminal state
   const [terminalWidth, setTerminalWidth] = useState('120');
   const [terminalHeight, setTerminalHeight] = useState('40');
   const [terminalSeedLines, setTerminalSeedLines] = useState('100');
-  const terminalWidthRef = useRef(null);
-  const terminalHeightRef = useRef(null);
-  const terminalSeedLinesRef = useRef(null);
 
   // Internal settings state
   const [mtimePollInterval, setMtimePollInterval] = useState(5000);
@@ -44,6 +41,9 @@ export default function ConfigPage() {
   const [newRepoUrl, setNewRepoUrl] = useState('');
   const [newAgentName, setNewAgentName] = useState('');
   const [newAgentCommand, setNewAgentCommand] = useState('');
+
+  // Validation state per step
+  const [stepErrors, setStepErrors] = useState({ 1: null, 2: null, 3: null, 4: null });
 
   useEffect(() => {
     let active = true;
@@ -77,53 +77,50 @@ export default function ConfigPage() {
     return () => { active = false };
   }, []);
 
-  // Validation for each step
+  // Validation for each step - returns true if valid, also sets error state
   const validateStep = (step) => {
-    if (step === 1) { // Workspace
+    let error = null;
+
+    if (step === 1) {
       if (!workspacePath.trim()) {
-        toastError('Workspace path is required');
-        return false;
+        error = 'Workspace path is required';
       }
-      return true;
-    }
-    if (step === 2) { // Repositories
+    } else if (step === 2) {
       if (repos.length === 0) {
-        toastError('Add at least one repository');
-        return false;
+        error = 'Add at least one repository';
       }
-      return true;
-    }
-    if (step === 3) { // Agents
+    } else if (step === 3) {
       if (agents.length === 0) {
-        toastError('Add at least one agent');
-        return false;
+        error = 'Add at least one agent';
       }
-      return true;
-    }
-    if (step === 4) { // Advanced
-      const width = parseInt(terminalWidthRef.current?.value || '0');
-      const height = parseInt(terminalHeightRef.current?.value || '0');
-      const seedLines = parseInt(terminalSeedLinesRef.current?.value || '0');
-      if (width <= 0 || height <= 0 || seedLines <= 0) {
-        toastError('Terminal settings must be greater than 0');
-        return false;
+    } else if (step === 4) {
+      const width = parseInt(terminalWidth);
+      const height = parseInt(terminalHeight);
+      const seedLines = parseInt(terminalSeedLines);
+      if (!width || !height || !seedLines || width <= 0 || height <= 0 || seedLines <= 0) {
+        error = 'Terminal settings must be greater than 0';
       }
-      return true;
     }
-    return true;
+
+    setStepErrors(prev => ({ ...prev, [step]: error }));
+    return !error;
   };
 
-  // Save current step
   const saveCurrentStep = async () => {
-    if (!validateStep(currentStep)) return;
+    if (!validateStep(currentStep)) {
+      if (stepErrors[currentStep]) {
+        toastError(stepErrors[currentStep]);
+      }
+      return false;
+    }
 
     setSaving(true);
     setWarning('');
 
     try {
-      const width = parseInt(terminalWidthRef.current?.value || terminalWidth);
-      const height = parseInt(terminalHeightRef.current?.value || terminalHeight);
-      const seedLines = parseInt(terminalSeedLinesRef.current?.value || terminalSeedLines);
+      const width = parseInt(terminalWidth);
+      const height = parseInt(terminalHeight);
+      const seedLines = parseInt(terminalSeedLines);
 
       const updateRequest = {
         workspace_path: workspacePath,
@@ -146,20 +143,25 @@ export default function ConfigPage() {
       } else {
         success('Configuration saved');
       }
+      return true;
     } catch (err) {
       toastError(err.message || 'Failed to save config');
+      return false;
     } finally {
       setSaving(false);
     }
   };
 
   const nextStep = async () => {
-    if (!validateStep(currentStep)) return;
+    if (!validateStep(currentStep)) {
+      if (stepErrors[currentStep]) {
+        toastError(stepErrors[currentStep]);
+      }
+      return;
+    }
 
-    // Save before moving to next step
-    await saveCurrentStep();
-
-    if (currentStep < TOTAL_STEPS) {
+    const saved = await saveCurrentStep();
+    if (saved && currentStep < TOTAL_STEPS) {
       setCurrentStep((step) => step + 1);
     }
   };
@@ -218,6 +220,14 @@ export default function ConfigPage() {
     }
   };
 
+  // Check if each step is valid
+  const stepValid = {
+    1: workspacePath.trim().length > 0,
+    2: repos.length > 0,
+    3: agents.length > 0,
+    4: true // Advanced step is always valid (has defaults)
+  };
+
   if (loading) {
     return (
       <div className="loading-state">
@@ -236,374 +246,6 @@ export default function ConfigPage() {
       </div>
     );
   }
-
-  // Render step content
-  const renderStepContent = () => {
-    switch (currentStep) {
-      case 1: // Workspace
-        return (
-          <div className="wizard-step-content" data-step="1">
-            <div className="card">
-              <div className="card__body">
-                <h2 style={{ marginBottom: 'var(--spacing-md)' }}>Workspace Directory</h2>
-                <p className="text-muted" style={{ marginBottom: 'var(--spacing-lg)' }}>
-                  This is where schmux will store cloned repositories. Each session gets its own workspace directory here.
-                  Only affects new sessions - existing workspaces keep their current location.
-                </p>
-
-                <div className="form-group">
-                  <label className="form-group__label">Workspace Path</label>
-                  <input
-                    type="text"
-                    className="input"
-                    value={workspacePath}
-                    onChange={(e) => setWorkspacePath(e.target.value)}
-                    placeholder="~/schmux-workspaces"
-                  />
-                  <p className="form-group__hint">
-                    Directory where cloned repositories will be stored. Can use ~ for home directory.
-                  </p>
-                </div>
-
-                <div className="wizard__actions" style={{ marginTop: 'var(--spacing-lg)', display: 'flex', gap: 'var(--spacing-sm)', justifyContent: 'space-between' }}>
-                  {currentStep > 1 && (
-                    <button
-                      className="btn"
-                      onClick={prevStep}
-                      disabled={saving}
-                    >
-                      Back
-                    </button>
-                  )}
-                  <button
-                    className="btn btn--primary"
-                    onClick={async () => {
-                      await saveCurrentStep();
-                      if (currentStep < TOTAL_STEPS) {
-                        setCurrentStep((step) => step + 1);
-                      }
-                    }}
-                    disabled={saving}
-                  >
-                    {saving ? 'Saving...' : currentStep === TOTAL_STEPS ? 'Finish' : 'Next'}
-                  </button>
-                </div>
-              </div>
-            </div>
-          </div>
-        );
-
-      case 2: // Repositories
-        return (
-          <div className="wizard-step-content" data-step="2">
-            <div className="card">
-              <div className="card__body">
-                <h2 style={{ marginBottom: 'var(--spacing-md)' }}>Repositories</h2>
-                <p className="text-muted" style={{ marginBottom: 'var(--spacing-lg)' }}>
-                  Add the Git repositories that AI agents will work on. Each repository you configure here will be available when spawning sessions.
-                </p>
-
-                {repos.length === 0 ? (
-                  <p className="text-muted" style={{ marginBottom: 'var(--spacing-md)' }}>
-                    No repositories configured. Add at least one to continue.
-                  </p>
-                ) : (
-                  <div style={{ marginBottom: 'var(--spacing-md)' }}>
-                    {repos.map((repo) => (
-                      <div
-                        key={repo.name}
-                        style={{
-                          display: 'flex',
-                          justifyContent: 'space-between',
-                          alignItems: 'center',
-                          gap: 'var(--spacing-md)',
-                          padding: 'var(--spacing-sm)',
-                          backgroundColor: 'var(--color-bg-secondary)',
-                          borderRadius: 'var(--border-radius)',
-                          marginBottom: 'var(--spacing-xs)'
-                        }}
-                      >
-                        <div style={{ flex: 1, fontWeight: 500 }}>{repo.name}</div>
-                        <div className="text-muted" style={{ flex: 2, fontSize: 'var(--font-size-sm)' }}>{repo.url}</div>
-                        <button
-                          className="btn btn--sm btn--danger"
-                          onClick={() => removeRepo(repo.name)}
-                        >
-                          Remove
-                        </button>
-                      </div>
-                    ))}
-                  </div>
-                )}
-
-                <div style={{ display: 'flex', gap: 'var(--spacing-sm)', alignItems: 'flex-end' }}>
-                  <div className="form-group" style={{ flex: 1, marginBottom: 0 }}>
-                    <input
-                      type="text"
-                      className="input"
-                      placeholder="Name"
-                      value={newRepoName}
-                      onChange={(e) => setNewRepoName(e.target.value)}
-                    />
-                  </div>
-                  <div className="form-group" style={{ flex: 2, marginBottom: 0 }}>
-                    <input
-                      type="text"
-                      className="input"
-                      placeholder="git@github.com:user/repo.git"
-                      value={newRepoUrl}
-                      onChange={(e) => setNewRepoUrl(e.target.value)}
-                    />
-                  </div>
-                  <button type="button" className="btn btn--sm" onClick={addRepo}>Add</button>
-                </div>
-
-                <div className="wizard__actions" style={{ marginTop: 'var(--spacing-lg)', display: 'flex', gap: 'var(--spacing-sm)', justifyContent: 'space-between' }}>
-                  {currentStep > 1 && (
-                    <button
-                      className="btn"
-                      onClick={prevStep}
-                      disabled={saving}
-                    >
-                      Back
-                    </button>
-                  )}
-                  <button
-                    className="btn btn--primary"
-                    onClick={async () => {
-                      await saveCurrentStep();
-                      if (currentStep < TOTAL_STEPS) {
-                        setCurrentStep((step) => step + 1);
-                      }
-                    }}
-                    disabled={saving}
-                  >
-                    {saving ? 'Saving...' : currentStep === TOTAL_STEPS ? 'Finish' : 'Next'}
-                  </button>
-                </div>
-              </div>
-            </div>
-          </div>
-        );
-
-      case 3: // Agents
-        return (
-          <div className="wizard-step-content" data-step="3">
-            <div className="card">
-              <div className="card__body">
-                <h2 style={{ marginBottom: 'var(--spacing-md)' }}>AI Agents</h2>
-                <p className="text-muted" style={{ marginBottom: 'var(--spacing-lg)' }}>
-                  Configure the AI coding agents you want to use. Each agent represents a different AI tool (Claude, Codex, etc.).
-                </p>
-
-                {agents.length === 0 ? (
-                  <p className="text-muted" style={{ marginBottom: 'var(--spacing-md)' }}>
-                    No agents configured. Add at least one to continue.
-                  </p>
-                ) : (
-                  <div style={{ marginBottom: 'var(--spacing-md)' }}>
-                    {agents.map((agent) => (
-                      <div
-                        key={agent.name}
-                        style={{
-                          display: 'flex',
-                          justifyContent: 'space-between',
-                          alignItems: 'center',
-                          gap: 'var(--spacing-md)',
-                          padding: 'var(--spacing-sm)',
-                          backgroundColor: 'var(--color-bg-secondary)',
-                          borderRadius: 'var(--border-radius)',
-                          marginBottom: 'var(--spacing-xs)'
-                        }}
-                      >
-                        <div style={{ flex: 1, fontWeight: 500 }}>{agent.name}</div>
-                        <div className="text-muted" style={{ flex: 2, fontSize: 'var(--font-size-sm)' }}>{agent.command}</div>
-                        <button
-                          className="btn btn--sm btn--danger"
-                          onClick={() => removeAgent(agent.name)}
-                        >
-                          Remove
-                        </button>
-                      </div>
-                    ))}
-                  </div>
-                )}
-
-                <div style={{ display: 'flex', gap: 'var(--spacing-sm)', alignItems: 'flex-end' }}>
-                  <div className="form-group" style={{ flex: 1, marginBottom: 0 }}>
-                    <input
-                      type="text"
-                      className="input"
-                      placeholder="Name"
-                      value={newAgentName}
-                      onChange={(e) => setNewAgentName(e.target.value)}
-                    />
-                  </div>
-                  <div className="form-group" style={{ flex: 2, marginBottom: 0 }}>
-                    <input
-                      type="text"
-                      className="input"
-                      placeholder="Command (e.g., claude, codex)"
-                      value={newAgentCommand}
-                      onChange={(e) => setNewAgentCommand(e.target.value)}
-                    />
-                  </div>
-                  <button type="button" className="btn btn--sm" onClick={addAgent}>Add</button>
-                </div>
-
-                <div className="wizard__actions" style={{ marginTop: 'var(--spacing-lg)', display: 'flex', gap: 'var(--spacing-sm)', justifyContent: 'space-between' }}>
-                  {currentStep > 1 && (
-                    <button
-                      className="btn"
-                      onClick={prevStep}
-                      disabled={saving}
-                    >
-                      Back
-                    </button>
-                  )}
-                  <button
-                    className="btn btn--primary"
-                    onClick={async () => {
-                      await saveCurrentStep();
-                      if (currentStep < TOTAL_STEPS) {
-                        setCurrentStep((step) => step + 1);
-                      }
-                    }}
-                    disabled={saving}
-                  >
-                    {saving ? 'Saving...' : currentStep === TOTAL_STEPS ? 'Finish' : 'Next'}
-                  </button>
-                </div>
-              </div>
-            </div>
-          </div>
-        );
-
-      case 4: // Advanced
-        return (
-          <div className="wizard-step-content" data-step="4">
-            <h2 style={{ marginBottom: 'var(--spacing-md)' }}>Advanced Settings</h2>
-            <p className="text-muted" style={{ marginBottom: 'var(--spacing-lg)' }}>
-              Terminal dimensions and internal timing intervals. You can leave these as defaults unless you have specific needs.
-            </p>
-
-            <div className="card" style={{ marginBottom: 'var(--spacing-lg)' }}>
-              <div className="card__header">
-                <h3 className="card__title">Terminal Settings</h3>
-              </div>
-              <div className="card__body">
-                <div style={{ display: 'flex', gap: 'var(--spacing-md)', flexWrap: 'wrap' }}>
-                  <div className="form-group" style={{ flex: '1', minWidth: '150px', marginBottom: 0 }}>
-                    <label className="form-group__label">Width</label>
-                    <input
-                      ref={terminalWidthRef}
-                      type="number"
-                      className="input"
-                      min="1"
-                      defaultValue={terminalWidth}
-                    />
-                    <p className="form-group__hint">Terminal width in columns</p>
-                  </div>
-
-                  <div className="form-group" style={{ flex: '1', minWidth: '150px', marginBottom: 0 }}>
-                    <label className="form-group__label">Height</label>
-                    <input
-                      ref={terminalHeightRef}
-                      type="number"
-                      className="input"
-                      min="1"
-                      defaultValue={terminalHeight}
-                    />
-                    <p className="form-group__hint">Terminal height in rows</p>
-                  </div>
-
-                  <div className="form-group" style={{ flex: '1', minWidth: '150px', marginBottom: 0 }}>
-                    <label className="form-group__label">Seed Lines</label>
-                    <input
-                      ref={terminalSeedLinesRef}
-                      type="number"
-                      className="input"
-                      min="1"
-                      defaultValue={terminalSeedLines}
-                    />
-                    <p className="form-group__hint">Lines to capture when reconnecting</p>
-                  </div>
-                </div>
-              </div>
-            </div>
-
-            <div className="card" style={{ marginBottom: 'var(--spacing-lg)' }}>
-              <div className="card__header">
-                <h3 className="card__title">Internal Settings</h3>
-              </div>
-              <div className="card__body">
-                <div className="form-group" style={{ marginBottom: 'var(--spacing-md)' }}>
-                  <label className="form-group__label">Mtime Poll Interval (ms)</label>
-                  <input
-                    type="number"
-                    className="input"
-                    min="100"
-                    value={mtimePollInterval}
-                    onChange={(e) => setMtimePollInterval(parseInt(e.target.value) || 5000)}
-                    style={{ width: '200px' }}
-                  />
-                  <p className="form-group__hint">How often to check log file mtimes for new output</p>
-                </div>
-
-                <div className="form-group" style={{ marginBottom: 'var(--spacing-md)' }}>
-                  <label className="form-group__label">Sessions Poll Interval (ms)</label>
-                  <input
-                    type="number"
-                    className="input"
-                    min="100"
-                    value={sessionsPollInterval}
-                    onChange={(e) => setSessionsPollInterval(parseInt(e.target.value) || 5000)}
-                    style={{ width: '200px' }}
-                  />
-                  <p className="form-group__hint">How often to refresh sessions list</p>
-                </div>
-
-                <div className="form-group" style={{ marginBottom: 'var(--spacing-md)' }}>
-                  <label className="form-group__label">Viewed Buffer (ms)</label>
-                  <input
-                    type="number"
-                    className="input"
-                    min="100"
-                    value={viewedBuffer}
-                    onChange={(e) => setViewedBuffer(parseInt(e.target.value) || 5000)}
-                    style={{ width: '200px' }}
-                  />
-                  <p className="form-group__hint">Time to keep session marked as "viewed" after last check</p>
-                </div>
-
-                <div className="form-group">
-                  <label className="form-group__label">Session Seen Interval (ms)</label>
-                  <input
-                    type="number"
-                    className="input"
-                    min="100"
-                    value={sessionSeenInterval}
-                    onChange={(e) => setSessionSeenInterval(parseInt(e.target.value) || 2000)}
-                    style={{ width: '200px' }}
-                  />
-                  <p className="form-group__hint">How often to check for session activity</p>
-                </div>
-              </div>
-            </div>
-
-            <div className="form-group">
-              <button
-                className="btn btn--primary"
-                onClick={saveCurrentStep}
-                disabled={saving}
-              >
-                {saving ? 'Saving...' : isNotConfigured ? 'Finish & Save' : 'Save'}
-              </button>
-            </div>
-          </div>
-        );
-    }
-  };
 
   return (
     <>
@@ -629,52 +271,351 @@ export default function ConfigPage() {
         </div>
       )}
 
-      {/* Wizard steps indicator (wizard mode) or tabs (tab mode) */}
+      {/* Steps navigation */}
       {isNotConfigured ? (
         <div className="wizard__steps">
           {STEPS.map((step, index) => {
             const stepNum = index + 1;
-            const className = stepNum === currentStep
-              ? 'wizard__step wizard__step--active'
-              : stepNum < currentStep
-                ? 'wizard__step wizard__step--completed'
-                : 'wizard__step';
+            const isCompleted = stepNum < currentStep;
+            const isCurrent = stepNum === currentStep;
+            const isValid = stepValid[stepNum];
+
             return (
               <div
                 key={stepNum}
-                className={className}
+                className={`wizard__step ${isCurrent ? 'wizard__step--active' : ''} ${isCompleted ? 'wizard__step--completed' : ''}`}
                 data-step={stepNum}
                 onClick={() => {
-                  // Can go back to any completed step, or to the next step
-                  if (stepNum < currentStep || stepNum === currentStep + 1) {
+                  if (isCompleted || (isValid && stepNum === currentStep + 1)) {
                     setCurrentStep(stepNum);
                   }
                 }}
-                style={stepNum > currentStep + 1 ? { cursor: 'not-allowed', opacity: '0.5' } : {}}
+                style={{
+                  cursor: (isCompleted || (isValid && stepNum === currentStep + 1)) ? 'pointer' : 'not-allowed',
+                  opacity: (!isCompleted && !isValid && stepNum !== currentStep) ? 0.5 : 1
+                }}
               >
-                {stepNum}. {step}
+                <span className="wizard__step-number">{stepNum}</span>
+                <span className="wizard__step-label">{step}</span>
+                {isCompleted && <span className="wizard__step-check">✓</span>}
               </div>
             );
           })}
         </div>
       ) : (
-        <div className="tabs" style={{ marginBottom: 'var(--spacing-lg)' }}>
+        <div className="config-tabs" style={{ marginBottom: 'var(--spacing-lg)' }}>
           {STEPS.map((step, index) => {
             const stepNum = index + 1;
+            const isCurrent = stepNum === currentStep;
+            const isValid = stepValid[stepNum];
+
             return (
               <button
                 key={stepNum}
-                className={`tab__button${currentStep === stepNum ? ' tab__button--active' : ''}`}
+                className={`config-tab ${isCurrent ? 'config-tab--active' : ''}`}
                 onClick={() => setCurrentStep(stepNum)}
               >
-                {step}
+                <span className="config-tab__label">{step}</span>
+                {isValid && <span className="config-tab__check">✓</span>}
               </button>
             );
           })}
         </div>
       )}
 
-      {renderStepContent()}
+      {/* Wizard content */}
+      <div className="wizard">
+        <div className="wizard__content">
+          {currentStep === 1 && (
+            <div className="wizard-step-content" data-step="1">
+              <h2 className="wizard-step-content__title">Workspace Directory</h2>
+              <p className="wizard-step-content__description">
+                This is where schmux will store cloned repositories. Each session gets its own workspace directory here.
+                Only affects new sessions - existing workspaces keep their current location.
+              </p>
+
+              <div className="form-group">
+                <label className="form-group__label">Workspace Path</label>
+                <input
+                  type="text"
+                  className="input"
+                  value={workspacePath}
+                  onChange={(e) => {
+                    setWorkspacePath(e.target.value);
+                    if (e.target.value.trim()) {
+                      setStepErrors(prev => ({ ...prev, 1: null }));
+                    }
+                  }}
+                  placeholder="~/schmux-workspaces"
+                  autoFocus
+                />
+                <p className="form-group__hint">
+                  Directory where cloned repositories will be stored. Can use ~ for home directory.
+                </p>
+                {stepErrors[1] && (
+                  <p className="form-group__error">{stepErrors[1]}</p>
+                )}
+              </div>
+            </div>
+          )}
+
+          {currentStep === 2 && (
+            <div className="wizard-step-content" data-step="2">
+              <h2 className="wizard-step-content__title">Repositories</h2>
+              <p className="wizard-step-content__description">
+                Add the Git repositories that AI agents will work on. Each repository you configure here will be available when spawning sessions.
+              </p>
+
+              {repos.length === 0 ? (
+                <div className="empty-state-hint">
+                  No repositories configured. Add at least one to continue.
+                </div>
+              ) : (
+                <div className="item-list">
+                  {repos.map((repo) => (
+                    <div className="item-list__item" key={repo.name}>
+                      <div className="item-list__item-primary">
+                        <span className="item-list__item-name">{repo.name}</span>
+                        <span className="item-list__item-detail">{repo.url}</span>
+                      </div>
+                      <button
+                        className="btn btn--sm btn--danger"
+                        onClick={() => removeRepo(repo.name)}
+                      >
+                        Remove
+                      </button>
+                    </div>
+                  ))}
+                </div>
+              )}
+
+              <div className="add-item-form">
+                <div className="add-item-form__inputs">
+                  <input
+                    type="text"
+                    className="input"
+                    placeholder="Name"
+                    value={newRepoName}
+                    onChange={(e) => setNewRepoName(e.target.value)}
+                    onKeyDown={(e) => e.key === 'Enter' && addRepo()}
+                  />
+                  <input
+                    type="text"
+                    className="input"
+                    placeholder="git@github.com:user/repo.git"
+                    value={newRepoUrl}
+                    onChange={(e) => setNewRepoUrl(e.target.value)}
+                    onKeyDown={(e) => e.key === 'Enter' && addRepo()}
+                  />
+                </div>
+                <button type="button" className="btn btn--sm" onClick={addRepo}>Add</button>
+              </div>
+              {stepErrors[2] && (
+                <p className="form-group__error" style={{ marginTop: 'var(--spacing-md)' }}>{stepErrors[2]}</p>
+              )}
+            </div>
+          )}
+
+          {currentStep === 3 && (
+            <div className="wizard-step-content" data-step="3">
+              <h2 className="wizard-step-content__title">AI Agents</h2>
+              <p className="wizard-step-content__description">
+                Configure the AI coding agents you want to use. Each agent represents a different AI tool (Claude, Codex, etc.).
+              </p>
+
+              {agents.length === 0 ? (
+                <div className="empty-state-hint">
+                  No agents configured. Add at least one to continue.
+                </div>
+              ) : (
+                <div className="item-list">
+                  {agents.map((agent) => (
+                    <div className="item-list__item" key={agent.name}>
+                      <div className="item-list__item-primary">
+                        <span className="item-list__item-name">{agent.name}</span>
+                        <span className="item-list__item-detail">{agent.command}</span>
+                      </div>
+                      <button
+                        className="btn btn--sm btn--danger"
+                        onClick={() => removeAgent(agent.name)}
+                      >
+                        Remove
+                      </button>
+                    </div>
+                  ))}
+                </div>
+              )}
+
+              <div className="add-item-form">
+                <div className="add-item-form__inputs">
+                  <input
+                    type="text"
+                    className="input"
+                    placeholder="Name"
+                    value={newAgentName}
+                    onChange={(e) => setNewAgentName(e.target.value)}
+                    onKeyDown={(e) => e.key === 'Enter' && addAgent()}
+                  />
+                  <input
+                    type="text"
+                    className="input"
+                    placeholder="Command (e.g., claude, codex)"
+                    value={newAgentCommand}
+                    onChange={(e) => setNewAgentCommand(e.target.value)}
+                    onKeyDown={(e) => e.key === 'Enter' && addAgent()}
+                  />
+                </div>
+                <button type="button" className="btn btn--sm" onClick={addAgent}>Add</button>
+              </div>
+              {stepErrors[3] && (
+                <p className="form-group__error" style={{ marginTop: 'var(--spacing-md)' }}>{stepErrors[3]}</p>
+              )}
+            </div>
+          )}
+
+          {currentStep === 4 && (
+            <div className="wizard-step-content" data-step="4">
+              <h2 className="wizard-step-content__title">Advanced Settings</h2>
+              <p className="wizard-step-content__description">
+                Terminal dimensions and internal timing intervals. You can leave these as defaults unless you have specific needs.
+              </p>
+
+              <div className="settings-section">
+                <div className="settings-section__header">
+                  <h3 className="settings-section__title">Terminal Settings</h3>
+                </div>
+                <div className="settings-section__body">
+                  <div className="form-row">
+                    <div className="form-group">
+                      <label className="form-group__label">Width</label>
+                      <input
+                        type="number"
+                        className="input"
+                        min="1"
+                        value={terminalWidth}
+                        onChange={(e) => setTerminalWidth(e.target.value)}
+                      />
+                      <p className="form-group__hint">Terminal width in columns</p>
+                    </div>
+
+                    <div className="form-group">
+                      <label className="form-group__label">Height</label>
+                      <input
+                        type="number"
+                        className="input"
+                        min="1"
+                        value={terminalHeight}
+                        onChange={(e) => setTerminalHeight(e.target.value)}
+                      />
+                      <p className="form-group__hint">Terminal height in rows</p>
+                    </div>
+
+                    <div className="form-group">
+                      <label className="form-group__label">Seed Lines</label>
+                      <input
+                        type="number"
+                        className="input"
+                        min="1"
+                        value={terminalSeedLines}
+                        onChange={(e) => setTerminalSeedLines(e.target.value)}
+                      />
+                      <p className="form-group__hint">Lines to capture when reconnecting</p>
+                    </div>
+                  </div>
+                </div>
+              </div>
+
+              <div className="settings-section">
+                <div className="settings-section__header">
+                  <h3 className="settings-section__title">Internal Settings</h3>
+                </div>
+                <div className="settings-section__body">
+                  <div className="form-group">
+                    <label className="form-group__label">Mtime Poll Interval (ms)</label>
+                    <input
+                      type="number"
+                      className="input input--compact"
+                      min="100"
+                      value={mtimePollInterval}
+                      onChange={(e) => setMtimePollInterval(parseInt(e.target.value) || 5000)}
+                    />
+                    <p className="form-group__hint">How often to check log file mtimes for new output</p>
+                  </div>
+
+                  <div className="form-group">
+                    <label className="form-group__label">Sessions Poll Interval (ms)</label>
+                    <input
+                      type="number"
+                      className="input input--compact"
+                      min="100"
+                      value={sessionsPollInterval}
+                      onChange={(e) => setSessionsPollInterval(parseInt(e.target.value) || 5000)}
+                    />
+                    <p className="form-group__hint">How often to refresh sessions list</p>
+                  </div>
+
+                  <div className="form-group">
+                    <label className="form-group__label">Viewed Buffer (ms)</label>
+                    <input
+                      type="number"
+                      className="input input--compact"
+                      min="100"
+                      value={viewedBuffer}
+                      onChange={(e) => setViewedBuffer(parseInt(e.target.value) || 5000)}
+                    />
+                    <p className="form-group__hint">Time to keep session marked as "viewed" after last check</p>
+                  </div>
+
+                  <div className="form-group">
+                    <label className="form-group__label">Session Seen Interval (ms)</label>
+                    <input
+                      type="number"
+                      className="input input--compact"
+                      min="100"
+                      value={sessionSeenInterval}
+                      onChange={(e) => setSessionSeenInterval(parseInt(e.target.value) || 2000)}
+                    />
+                    <p className="form-group__hint">How often to check for session activity</p>
+                  </div>
+                </div>
+              </div>
+              {stepErrors[4] && (
+                <p className="form-group__error">{stepErrors[4]}</p>
+              )}
+            </div>
+          )}
+        </div>
+
+        {/* Unified wizard footer navigation */}
+        <div className="wizard__actions">
+          <div className="wizard__actions-left">
+            {currentStep > 1 && (
+              <button
+                className="btn"
+                onClick={prevStep}
+                disabled={saving}
+              >
+                ← Back
+              </button>
+            )}
+            {!isNotConfigured && currentStep === 1 && (
+              <span className="wizard__hint">Use tabs above to navigate between sections</span>
+            )}
+          </div>
+          <div className="wizard__actions-right">
+            <button
+              className="btn btn--primary"
+              onClick={isNotConfigured && currentStep < TOTAL_STEPS ? nextStep : saveCurrentStep}
+              disabled={saving}
+            >
+              {saving ? 'Saving...' : isNotConfigured ?
+                (currentStep === TOTAL_STEPS ? 'Finish Setup' : 'Next →') :
+                'Save Changes'
+              }
+            </button>
+          </div>
+        </div>
+      </div>
     </>
   );
 }

@@ -1583,3 +1583,270 @@ a:hover {
     background-color: var(--color-danger-subtle);
     color: var(--color-danger);
 }
+
+/* ============================================================================
+ * ENHANCED WIZARD STYLES
+ * Improved wizard navigation, steps, and content styling
+ * ============================================================================ */
+
+/* Enhanced wizard steps with numbers and checkmarks */
+.wizard__step {
+    display: flex;
+    align-items: center;
+    gap: var(--spacing-sm);
+    position: relative;
+}
+
+.wizard__step-number {
+    display: inline-flex;
+    align-items: center;
+    justify-content: center;
+    width: 24px;
+    height: 24px;
+    border-radius: 50%;
+    background-color: var(--color-border);
+    color: var(--color-text-muted);
+    font-size: 0.75rem;
+    font-weight: 600;
+    flex-shrink: 0;
+    transition: all var(--duration-fast) var(--easing);
+}
+
+.wizard__step--active .wizard__step-number {
+    background-color: var(--color-accent);
+    color: white;
+    box-shadow: 0 0 0 3px var(--color-accent-subtle);
+}
+
+.wizard__step--completed .wizard__step-number {
+    background-color: var(--color-success);
+    color: white;
+}
+
+.wizard__step-label {
+    font-size: 0.875rem;
+    font-weight: 500;
+}
+
+.wizard__step-check {
+    margin-left: auto;
+    color: var(--color-success);
+    font-size: 0.875rem;
+    font-weight: 600;
+}
+
+/* Config tabs (post-onboarding mode) */
+.config-tabs {
+    display: flex;
+    gap: var(--spacing-sm);
+    border-bottom: 2px solid var(--color-border);
+    padding-bottom: 0;
+}
+
+.config-tab {
+    padding: var(--spacing-sm) var(--spacing-md);
+    background: none;
+    border: none;
+    border-bottom: 3px solid transparent;
+    color: var(--color-text-muted);
+    cursor: pointer;
+    font-size: 0.875rem;
+    font-weight: 500;
+    transition: all var(--duration-fast) var(--easing);
+    margin-bottom: -2px;
+    display: flex;
+    align-items: center;
+    gap: var(--spacing-sm);
+}
+
+.config-tab:hover {
+    color: var(--color-text);
+}
+
+.config-tab--active {
+    color: var(--color-accent);
+    border-bottom-color: var(--color-accent);
+}
+
+.config-tab__check {
+    color: var(--color-success);
+    font-size: 0.75rem;
+    font-weight: 600;
+}
+
+/* Wizard step content */
+.wizard-step-content__title {
+    font-size: 1.25rem;
+    font-weight: 600;
+    margin-bottom: var(--spacing-sm);
+    color: var(--color-text);
+}
+
+.wizard-step-content__description {
+    color: var(--color-text-muted);
+    margin-bottom: var(--spacing-lg);
+    line-height: 1.6;
+}
+
+/* Item list (for repos and agents) */
+.item-list {
+    display: flex;
+    flex-direction: column;
+    gap: var(--spacing-sm);
+    margin-bottom: var(--spacing-md);
+}
+
+.item-list__item {
+    display: flex;
+    justify-content: space-between;
+    align-items: center;
+    gap: var(--spacing-md);
+    padding: var(--spacing-md);
+    background-color: var(--color-surface-alt);
+    border: 1px solid var(--color-border);
+    border-radius: var(--radius-md);
+    transition: all var(--duration-fast) var(--easing);
+}
+
+.item-list__item:hover {
+    background-color: var(--color-border-subtle);
+}
+
+.item-list__item-primary {
+    flex: 1;
+    display: flex;
+    flex-direction: column;
+    gap: var(--spacing-xs);
+    min-width: 0;
+}
+
+.item-list__item-name {
+    font-weight: 600;
+    font-size: 0.875rem;
+    color: var(--color-text);
+}
+
+.item-list__item-detail {
+    font-size: 0.8125rem;
+    color: var(--color-text-muted);
+    font-family: var(--font-mono);
+    overflow: hidden;
+    text-overflow: ellipsis;
+    white-space: nowrap;
+}
+
+/* Add item form */
+.add-item-form {
+    display: flex;
+    gap: var(--spacing-sm);
+    align-items: flex-end;
+}
+
+.add-item-form__inputs {
+    display: flex;
+    gap: var(--spacing-sm);
+    flex: 1;
+}
+
+.add-item-form__inputs .input {
+    flex: 1;
+}
+
+/* Empty state hint */
+.empty-state-hint {
+    padding: var(--spacing-lg);
+    text-align: center;
+    color: var(--color-text-muted);
+    font-style: italic;
+    background-color: var(--color-surface-alt);
+    border: 1px dashed var(--color-border);
+    border-radius: var(--radius-md);
+    margin-bottom: var(--spacing-md);
+}
+
+/* Settings section (for advanced step) */
+.settings-section {
+    background-color: var(--color-surface-alt);
+    border: 1px solid var(--color-border);
+    border-radius: var(--radius-lg);
+    margin-bottom: var(--spacing-md);
+    overflow: hidden;
+}
+
+.settings-section__header {
+    padding: var(--spacing-md) var(--spacing-lg);
+    background-color: var(--color-surface);
+    border-bottom: 1px solid var(--color-border);
+}
+
+.settings-section__title {
+    font-size: 0.875rem;
+    font-weight: 600;
+    color: var(--color-text);
+    text-transform: uppercase;
+    letter-spacing: 0.05em;
+}
+
+.settings-section__body {
+    padding: var(--spacing-lg);
+}
+
+/* Form row (for horizontal form layouts) */
+.form-row {
+    display: flex;
+    gap: var(--spacing-md);
+    flex-wrap: wrap;
+}
+
+.form-row .form-group {
+    flex: 1;
+    min-width: 150px;
+}
+
+/* Input compact variant */
+.input--compact {
+    width: 200px;
+}
+
+/* Wizard actions layout */
+.wizard__actions {
+    display: flex;
+    justify-content: space-between;
+    align-items: center;
+    padding-top: var(--spacing-lg);
+    border-top: 1px solid var(--color-border);
+    gap: var(--spacing-md);
+}
+
+.wizard__actions-left,
+.wizard__actions-right {
+    display: flex;
+    gap: var(--spacing-sm);
+    align-items: center;
+}
+
+.wizard__hint {
+    color: var(--color-text-muted);
+    font-size: 0.8125rem;
+    font-style: italic;
+}
+
+/* ============================================================================
+ * ANIMATIONS
+ * Subtle animations for wizard transitions
+ * ============================================================================ */
+
+@keyframes fadeInSlide {
+    from {
+        opacity: 0;
+        transform: translateY(8px);
+    }
+    to {
+        opacity: 1;
+        transform: translateY(0);
+    }
+}
+
+.wizard-step-content {
+    animation: fadeInSlide 0.2s var(--easing);
+}
