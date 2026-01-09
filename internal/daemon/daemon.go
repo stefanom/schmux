@@ -218,15 +218,57 @@ func Run() error {
 		return fmt.Errorf("failed to load config: %w", err)
 	}
 
+	// Compute state path
+	homeDir, err = os.UserHomeDir()
+	if err != nil {
+		return fmt.Errorf("failed to get home directory: %w", err)
+	}
+	statePath := filepath.Join(homeDir, ".schmux", "state.json")
+
 	// Load state
-	st, err := state.Load()
+	st, err := state.Load(statePath)
 	if err != nil {
 		return fmt.Errorf("failed to load state: %w", err)
 	}
 
 	// Create managers
-	wm := workspace.New(cfg, st)
-	sm := session.New(cfg, st, wm)
+	wm := workspace.New(cfg, st, statePath)
+	sm := session.New(cfg, st, statePath, wm)
+
+	// Initialize LastOutputAt from log file mtimes for existing sessions
+	for _, sess := range st.GetSessions() {
+		logPath, err := sm.GetLogPath(sess.ID)
+		if err != nil {
+			continue
+		}
+		if info, err := os.Stat(logPath); err == nil {
+			sess.LastOutputAt = info.ModTime()
+			st.UpdateSession(sess)
+		}
+	}
+
+	// Start background goroutine to monitor log file mtimes for all sessions
+	go func() {
+		pollInterval := time.Duration(cfg.GetMtimePollIntervalMs()) * time.Millisecond
+		ticker := time.NewTicker(pollInterval)
+		defer ticker.Stop()
+		for range ticker.C {
+			for _, sess := range st.GetSessions() {
+				if !sm.IsRunning(sess.ID) {
+					continue
+				}
+				logPath, err := sm.GetLogPath(sess.ID)
+				if err != nil {
+					continue
+				}
+				if info, err := os.Stat(logPath); err == nil {
+					if info.ModTime().After(sess.LastOutputAt) {
+						st.UpdateSessionLastOutput(sess.ID, info.ModTime())
+					}
+				}
+			}
+		}
+	}()
 
 	// Bootstrap log streams for active sessions with missing pipe-pane.
 	seedLines := cfg.GetTerminalSeedLines()
@@ -271,7 +313,7 @@ func Run() error {
 	}
 
 	// Create dashboard server
-	server := dashboard.NewServer(cfg, st, sm)
+	server := dashboard.NewServer(cfg, st, statePath, sm, wm)
 
 	// Handle shutdown signals
 	sigChan := make(chan os.Signal, 1)

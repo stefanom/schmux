@@ -4,8 +4,12 @@ import { disposeSession, getSessions, getConfig } from '../lib/api.js';
 import { copyToClipboard, extractRepoName, formatRelativeTime } from '../lib/utils.js';
 import { useToast } from '../components/ToastProvider.jsx';
 import { useModal } from '../components/ModalProvider.jsx';
+import { useConfig } from '../contexts/ConfigContext.jsx';
+import SessionTableRow from '../components/SessionTableRow.jsx';
+import WorkspaceTableRow from '../components/WorkspaceTableRow.jsx';
 
 export default function SessionsPage() {
+  const { config } = useConfig();
   const [workspaces, setWorkspaces] = useState([]);
   const [loading, setLoading] = useState(true);
   const [error, setError] = useState('');
@@ -42,8 +46,9 @@ export default function SessionsPage() {
     });
   }, [workspaces, filters.repo, filters.status]);
 
-  const loadWorkspaces = useCallback(async () => {
-    setLoading(true);
+  const loadWorkspaces = useCallback(async (options = {}) => {
+    const { silent = false } = options;
+    if (!silent) setLoading(true);
     setError('');
     try {
       const data = await getSessions();
@@ -60,7 +65,7 @@ export default function SessionsPage() {
     } catch (err) {
       setError(err.message || 'Failed to load workspaces');
     } finally {
-      setLoading(false);
+      if (!silent) setLoading(false);
     }
   }, []);
 
@@ -68,13 +73,22 @@ export default function SessionsPage() {
     loadWorkspaces();
   }, [loadWorkspaces]);
 
+  // Auto-refresh (silent mode - no flicker)
+  useEffect(() => {
+    const pollInterval = config.internal?.sessions_poll_interval_ms || 5000;
+    const interval = setInterval(() => {
+      loadWorkspaces({ silent: true });
+    }, pollInterval);
+    return () => clearInterval(interval);
+  }, [loadWorkspaces, config]);
+
   // Check if first-run (no repos or agents configured)
   useEffect(() => {
     const checkFirstRun = async () => {
       try {
-        const config = await getConfig();
-        if ((!config.repos || config.repos.length === 0) &&
-            (!config.agents || config.agents.length === 0)) {
+        const cfg = await getConfig();
+        if ((!cfg.repos || cfg.repos.length === 0) &&
+            (!cfg.agents || cfg.agents.length === 0)) {
           // First-run - redirect to config
           navigate('/config?firstRun=true', { replace: true });
         }
@@ -248,18 +262,13 @@ export default function SessionsPage() {
             : ws.sessions;
 
           return (
-            <div className="workspace-item" key={ws.id}>
-              <div className="workspace-item__header" onClick={() => toggleWorkspace(ws.id)}>
-                <div className="workspace-item__info">
-                  <span className={`workspace-item__toggle${expanded[ws.id] ? '' : ' workspace-item__toggle--collapsed'}`}>
-                    <svg width="16" height="16" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2">
-                      <polyline points="6 9 12 15 18 9"></polyline>
-                    </svg>
-                  </span>
-                  <span className="workspace-item__name">{ws.id}</span>
-                  <span className="workspace-item__meta">{ws.repo} · {ws.branch}</span>
-                  <span className="badge badge--neutral">{ws.session_count} session{ws.session_count !== 1 ? 's' : ''}</span>
-                </div>
+            <WorkspaceTableRow
+              key={ws.id}
+              workspace={ws}
+              onToggle={() => toggleWorkspace(ws.id)}
+              expanded={expanded[ws.id]}
+              sessionCount={sessions.length}
+              actions={
                 <button
                   className="btn btn--sm"
                   onClick={(event) => {
@@ -275,86 +284,31 @@ export default function SessionsPage() {
                   </svg>
                   Add Agent
                 </button>
-              </div>
-
-              <div className={`workspace-item__sessions${expanded[ws.id] ? ' workspace-item__sessions--expanded' : ''}`}>
+              }
+              sessions={
                 <table className="session-table">
                   <thead>
                     <tr>
                       <th>Session</th>
                       <th>Status</th>
                       <th>Created</th>
+                      <th>Last Activity</th>
                       <th className="text-right">Actions</th>
                     </tr>
                   </thead>
                   <tbody>
-                    {sessions.map((sess) => {
-                      const statusClass = sess.running ? 'status-pill--running' : 'status-pill--stopped';
-                      const statusText = sess.running ? 'Running' : 'Stopped';
-                      const displayName = sess.nickname || sess.agent;
-                      return (
-                        <tr className="session-row" key={sess.id}>
-                          <td>
-                            <div style={{ display: 'flex', alignItems: 'center' }}>
-                              <span className={sess.nickname ? '' : 'mono'}>{displayName}</span>
-                              {sess.nickname ? (
-                                <span className="badge badge--secondary" style={{ fontSize: '0.75rem', marginLeft: 'var(--spacing-xs)' }}>
-                                  {sess.agent}
-                                </span>
-                              ) : null}
-                            </div>
-                          </td>
-                          <td>
-                            <span className={`status-pill ${statusClass}`}>
-                              <span className="status-pill__dot"></span>
-                              {statusText}
-                            </span>
-                          </td>
-                          <td>{formatRelativeTime(sess.created_at)}</td>
-                          <td>
-                            <div className="session-table__actions">
-                              <button
-                                className="btn btn--sm btn--ghost"
-                                onClick={() => navigate(`/sessions/${sess.id}`)}
-                                title="View session"
-                                aria-label={`View ${sess.id}`}
-                              >
-                                <svg width="14" height="14" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2">
-                                  <path d="M1 12s4-8 11-8 11 8 11 8-4 8-11 8-11-8-11-8z"></path>
-                                  <circle cx="12" cy="12" r="3"></circle>
-                                </svg>
-                              </button>
-                              <button
-                                className="btn btn--sm btn--ghost"
-                                onClick={() => handleCopyAttach(sess.attach_cmd)}
-                                title="Copy attach command"
-                                aria-label="Copy attach command"
-                              >
-                                <svg width="14" height="14" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2">
-                                  <rect x="9" y="9" width="13" height="13" rx="2" ry="2"></rect>
-                                  <path d="M5 15H4a2 2 0 0 1-2-2V4a2 2 0 0 1 2-2h9a2 2 0 0 1 2 2v1"></path>
-                                </svg>
-                              </button>
-                              <button
-                                className="btn btn--sm btn--ghost btn--danger"
-                                onClick={() => handleDispose(sess.id)}
-                                title="Dispose session"
-                                aria-label={`Dispose ${sess.id}`}
-                              >
-                                <svg width="14" height="14" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2">
-                                  <polyline points="3 6 5 6 21 6"></polyline>
-                                  <path d="M19 6v14a2 2 0 0 1-2 2H7a2 2 0 0 1-2-2V6m3 0V4a2 2 0 0 1 2-2h4a2 2 0 0 1 2 2v2"></path>
-                                </svg>
-                              </button>
-                            </div>
-                          </td>
-                        </tr>
-                      );
-                    })}
+                    {sessions.map((sess) => (
+                      <SessionTableRow
+                        key={sess.id}
+                        sess={sess}
+                        onCopyAttach={handleCopyAttach}
+                        onDispose={handleDispose}
+                      />
+                    ))}
                   </tbody>
                 </table>
-              </div>
-            </div>
+              }
+            />
           );
         })}
       </div>

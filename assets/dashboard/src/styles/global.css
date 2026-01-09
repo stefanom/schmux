@@ -500,6 +500,15 @@ body {
     color: white;
 }
 
+.badge--indicator {
+    padding: 2px 6px;
+    font-size: 0.65rem;
+    border-radius: 4px;
+    background-color: #f59e0b;
+    color: white;
+    font-weight: 500;
+}
+
 /* Status Pill */
 .status-pill {
     display: inline-flex;
@@ -634,22 +643,27 @@ body {
 
 .session-table th:nth-child(1),
 .session-table td:nth-child(1) {
-    width: 40%;
+    width: 35%;
 }
 
 .session-table th:nth-child(2),
 .session-table td:nth-child(2) {
-    width: 20%;
+    width: 15%;
 }
 
 .session-table th:nth-child(3),
 .session-table td:nth-child(3) {
-    width: 25%;
+    width: 15%;
 }
 
 .session-table th:nth-child(4),
 .session-table td:nth-child(4) {
     width: 15%;
+}
+
+.session-table th:nth-child(5),
+.session-table td:nth-child(5) {
+    width: 20%;
 }
 
 .session-table th,
@@ -675,6 +689,24 @@ body {
 .session-table__actions {
     display: flex;
     gap: var(--spacing-sm);
+}
+
+.session-table__name-link {
+    background: none;
+    border: none;
+    padding: 0;
+    margin: 0;
+    color: inherit;
+    text-decoration: none;
+    cursor: pointer;
+    border-radius: 0;
+    font: inherit;
+    text-align: left;
+}
+
+.session-table__name-link:hover {
+    text-decoration: underline;
+    background-color: transparent;
 }
 
 .mono {
@@ -1220,6 +1252,138 @@ body {
     content: "🌙";
 }
 
+/* ============================================================================
+ * TOOLTIP COMPONENT STYLES
+ * Refined, accessible tooltips with intelligent positioning
+ *
+ * Note: These styles target the React component's class structure.
+ * The old CSS-only tooltips are preserved below for backwards compatibility.
+ * ============================================================================ */
+
+/* React Tooltip component styles (new) */
+.tooltip-react {
+    font-family: var(--font-mono);
+    font-size: 0.75rem;
+    line-height: 1.4;
+    padding: var(--spacing-xs) var(--spacing-sm);
+    background-color: var(--color-text);
+    color: var(--color-surface);
+    border-radius: var(--radius-sm);
+    white-space: nowrap;
+    pointer-events: none;
+    box-shadow: var(--shadow-md);
+    animation: tooltip-fade-in 0.15s var(--easing);
+    max-width: 300px;
+    white-space: normal;
+}
+
+@keyframes tooltip-fade-in {
+    from {
+        opacity: 0;
+        transform: translateY(2px);
+    }
+    to {
+        opacity: 1;
+        transform: translateY(0);
+    }
+}
+
+.tooltip-react--default {
+    background-color: var(--color-surface);
+    color: var(--color-text);
+    border: 1px solid var(--color-border);
+}
+
+.tooltip-react--warning {
+    background-color: var(--color-surface);
+    color: var(--color-text);
+    border: 1px solid var(--color-warning);
+}
+
+.tooltip-react--error {
+    background-color: var(--color-surface);
+    color: var(--color-danger);
+    border: 1px solid var(--color-danger);
+}
+
+.tooltip-react__content {
+    display: block;
+}
+
+.tooltip-react__arrow {
+    position: absolute;
+    width: 0;
+    height: 0;
+    border: 5px solid transparent;
+}
+
+.tooltip-react__arrow--top {
+    bottom: -10px;
+    left: 50%;
+    transform: translateX(-50%);
+    border-top-color: var(--color-text);
+}
+
+.tooltip-react__arrow--bottom {
+    top: -10px;
+    left: 50%;
+    transform: translateX(-50%);
+    border-bottom-color: var(--color-text);
+}
+
+.tooltip-react__arrow--left {
+    right: -10px;
+    top: 50%;
+    transform: translateY(-50%);
+    border-left-color: var(--color-text);
+}
+
+.tooltip-react__arrow--right {
+    left: -10px;
+    top: 50%;
+    transform: translateY(-50%);
+    border-right-color: var(--color-text);
+}
+
+.tooltip-react--warning .tooltip-react__arrow--top {
+    border-top-color: var(--color-warning);
+}
+.tooltip-react--warning .tooltip-react__arrow--bottom {
+    border-bottom-color: var(--color-warning);
+}
+.tooltip-react--warning .tooltip-react__arrow--left {
+    border-left-color: var(--color-warning);
+}
+.tooltip-react--warning .tooltip-react__arrow--right {
+    border-right-color: var(--color-warning);
+}
+
+.tooltip-react--error .tooltip-react__arrow--top {
+    border-top-color: var(--color-danger);
+}
+
+.tooltip-react--default .tooltip-react__arrow--top {
+    border-top-color: var(--color-border);
+}
+.tooltip-react--default .tooltip-react__arrow--bottom {
+    border-bottom-color: var(--color-border);
+}
+.tooltip-react--default .tooltip-react__arrow--left {
+    border-left-color: var(--color-border);
+}
+.tooltip-react--default .tooltip-react__arrow--right {
+    border-right-color: var(--color-border);
+}
+.tooltip-react--error .tooltip-react__arrow--bottom {
+    border-bottom-color: var(--color-danger);
+}
+.tooltip-react--error .tooltip-react__arrow--left {
+    border-left-color: var(--color-danger);
+}
+.tooltip-react--error .tooltip-react__arrow--right {
+    border-right-color: var(--color-danger);
+}
+
 /* Utility */
 .sr-only {
     position: absolute;
@@ -1247,4 +1411,134 @@ a {
 
 a:hover {
     text-decoration: underline;
+}
+
+/* Diff Page Layout */
+.diff-layout {
+    display: grid;
+    grid-template-columns: 300px 1fr;
+    gap: var(--spacing-md);
+    height: calc(100vh - 180px);
+}
+
+.diff-sidebar {
+    background-color: var(--color-surface);
+    border: 1px solid var(--color-border);
+    border-radius: var(--radius-lg);
+    display: flex;
+    flex-direction: column;
+    overflow: hidden;
+}
+
+.diff-sidebar__title {
+    padding: var(--spacing-md) var(--spacing-lg);
+    font-size: 0.875rem;
+    font-weight: 600;
+    border-bottom: 1px solid var(--color-border);
+    background-color: var(--color-surface-alt);
+}
+
+.diff-file-list {
+    overflow-y: auto;
+    flex: 1;
+}
+
+.diff-file-item {
+    width: 100%;
+    padding: var(--spacing-sm) var(--spacing-md);
+    background: none;
+    border: none;
+    border-bottom: 1px solid var(--color-border-subtle);
+    cursor: pointer;
+    display: flex;
+    justify-content: space-between;
+    align-items: center;
+    gap: var(--spacing-sm);
+    text-align: left;
+    transition: background-color var(--duration-fast) var(--easing);
+}
+
+.diff-file-item:hover {
+    background-color: var(--color-surface-alt);
+}
+
+.diff-file-item--active {
+    background-color: var(--color-accent-subtle);
+    border-left: 3px solid var(--color-accent);
+}
+
+.diff-file-item__info {
+    display: flex;
+    align-items: center;
+    gap: var(--spacing-sm);
+    flex: 1;
+    min-width: 0;
+    color: var(--color-text);
+}
+
+.diff-file-item__path {
+    font-size: 0.875rem;
+    font-family: var(--font-mono);
+    overflow: hidden;
+    text-overflow: ellipsis;
+    white-space: nowrap;
+    color: inherit;
+}
+
+.diff-content {
+    background-color: var(--color-surface);
+    border: 1px solid var(--color-border);
+    border-radius: var(--radius-lg);
+    display: flex;
+    flex-direction: column;
+    overflow: hidden;
+}
+
+.diff-content__header {
+    padding: var(--spacing-md) var(--spacing-lg);
+    border-bottom: 1px solid var(--color-border);
+    background-color: var(--color-surface-alt);
+    display: flex;
+    align-items: center;
+    gap: var(--spacing-md);
+}
+
+.diff-content__title {
+    flex: 1;
+    font-size: 0.875rem;
+    font-weight: 600;
+    font-family: var(--font-mono);
+    overflow: hidden;
+    text-overflow: ellipsis;
+    white-space: nowrap;
+}
+
+.diff-viewer-wrapper {
+    flex: 1;
+    overflow: auto;
+    font-size: 0.8125rem;
+}
+
+/* Override react-diff-viewer-continued default font size */
+.diff-viewer-wrapper code,
+.diff-viewer-wrapper pre {
+    font-size: 0.8125rem !important;
+    line-height: 1.4;
+}
+
+/* Workspace Actions */
+.workspace-item__actions {
+    display: flex;
+    gap: var(--spacing-sm);
+}
+
+/* Badge status colors */
+.badge--success {
+    background-color: var(--color-success-subtle);
+    color: var(--color-success);
+}
+
+.badge--danger {
+    background-color: var(--color-danger-subtle);
+    color: var(--color-danger);
 }

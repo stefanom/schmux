@@ -2,16 +2,20 @@ import React, { useEffect, useRef, useState } from 'react';
 import { Link, useNavigate, useParams } from 'react-router-dom';
 import '@xterm/xterm/css/xterm.css';
 import TerminalStream from '../lib/terminalStream.js';
-import { disposeSession, getSessions } from '../lib/api.js';
-import { copyToClipboard, formatTimestamp, truncateStart } from '../lib/utils.js';
+import { disposeSession, getSessions, updateNickname } from '../lib/api.js';
+import { copyToClipboard, formatRelativeTime, formatTimestamp, truncateStart } from '../lib/utils.js';
 import { useToast } from '../components/ToastProvider.jsx';
 import { useModal } from '../components/ModalProvider.jsx';
+import { useConfig } from '../contexts/ConfigContext.jsx';
+import { useViewedSessions } from '../contexts/ViewedSessionsContext.jsx';
+import Tooltip from '../components/Tooltip.jsx';
 
 // Module-level storage for sidebar collapse state (persists across navigation)
 let savedSidebarCollapsed = false;
 
 export default function SessionDetailPage() {
   const { sessionId } = useParams();
+  const { config } = useConfig();
   const [loading, setLoading] = useState(true);
   const [error, setError] = useState('');
   const [sessionData, setSessionData] = useState(null);
@@ -22,8 +26,9 @@ export default function SessionDetailPage() {
   const terminalRef = useRef(null);
   const terminalStreamRef = useRef(null);
   const { success, error: toastError } = useToast();
-  const { show } = useModal();
+  const { show, prompt } = useModal();
   const navigate = useNavigate();
+  const { markAsViewed } = useViewedSessions();
 
   useEffect(() => {
     let active = true;
@@ -56,6 +61,9 @@ export default function SessionDetailPage() {
 
         setSessionData(session);
         setLoading(false);
+
+        // Mark session as viewed
+        markAsViewed(sessionId);
       } catch (err) {
         if (!active) return;
         setError(`Failed to load session: ${err.message}`);
@@ -97,7 +105,19 @@ export default function SessionDetailPage() {
     return () => {
       terminalStream.disconnect();
     };
-  }, [sessionData]);
+  }, [sessionData?.id]);
+
+  // Keep marking as viewed while WebSocket is connected (you're seeing output live)
+  useEffect(() => {
+    const seenInterval = config.internal?.session_seen_interval_ms || 2000;
+    const interval = setInterval(() => {
+      if (wsStatus === 'connected') {
+        markAsViewed(sessionId);
+      }
+    }, seenInterval);
+
+    return () => clearInterval(interval);
+  }, [sessionId, wsStatus, markAsViewed, config]);
 
   const toggleSidebar = () => {
     const wasAtBottom = terminalStreamRef.current?.isAtBottom?.(10) || false;
@@ -154,6 +174,24 @@ export default function SessionDetailPage() {
     setFollowTail(follow);
   };
 
+  const handleEditNickname = async () => {
+    const newNickname = await prompt('Edit Nickname', {
+      defaultValue: sessionData.nickname || '',
+      placeholder: 'Enter nickname (optional)',
+      confirmText: 'Save'
+    });
+    if (newNickname === null) return; // User cancelled
+
+    try {
+      await updateNickname(sessionId, newNickname);
+      success('Nickname updated');
+      // Refresh session data to show updated nickname
+      setSessionData(prev => ({ ...prev, nickname: newNickname }));
+    } catch (err) {
+      toastError(`Failed to update nickname: ${err.message}`);
+    }
+  };
+
   if (loading) {
     return (
       <div className="loading-state">
@@ -189,12 +227,14 @@ export default function SessionDetailPage() {
       <div className="page-header">
         <h1 className="page-header__title">Session <span className="mono">{titleText}</span></h1>
         <div className="page-header__actions">
-          <button className="btn btn--ghost" title="Toggle sidebar" onClick={toggleSidebar}>
-            <svg width="16" height="16" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2">
-              <rect x="3" y="3" width="18" height="18" rx="2" ry="2"></rect>
-              <line x1="9" y1="3" x2="9" y2="21"></line>
-            </svg>
-          </button>
+          <Tooltip content="Toggle sidebar">
+            <button className="btn btn--ghost" onClick={toggleSidebar}>
+              <svg width="16" height="16" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2">
+                <rect x="3" y="3" width="18" height="18" rx="2" ry="2"></rect>
+                <line x1="9" y1="3" x2="9" y2="21"></line>
+              </svg>
+            </button>
+          </Tooltip>
           <Link to="/sessions" className="btn btn--ghost">
             <svg width="16" height="16" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2">
               <line x1="19" y1="12" x2="5" y2="12"></line>
@@ -224,20 +264,21 @@ export default function SessionDetailPage() {
                   <input type="checkbox" checked={followTail} onChange={handleFollowChange} />
                   <span>Follow</span>
                 </label>
-                <button
-                  className="btn btn--sm"
-                  title="Download log"
-                  onClick={() => {
-                    terminalStreamRef.current?.downloadOutput();
-                    success('Downloaded session log');
-                  }}
-                >
-                  <svg width="14" height="14" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2">
-                    <path d="M21 15v4a2 2 0 0 1-2 2H5a2 2 0 0 1-2-2v-4"></path>
-                    <polyline points="7 10 12 15 17 10"></polyline>
-                    <line x1="12" y1="15" x2="12" y2="3"></line>
-                  </svg>
-                </button>
+                <Tooltip content="Download log">
+                  <button
+                    className="btn btn--sm"
+                    onClick={() => {
+                      terminalStreamRef.current?.downloadOutput();
+                      success('Downloaded session log');
+                    }}
+                  >
+                    <svg width="14" height="14" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2">
+                      <path d="M21 15v4a2 2 0 0 1-2 2H5a2 2 0 0 1-2-2v-4"></path>
+                      <polyline points="7 10 12 15 17 10"></polyline>
+                      <line x1="12" y1="15" x2="12" y2="3"></line>
+                    </svg>
+                  </button>
+                </Tooltip>
               </div>
             </div>
             <div id="terminal" className="log-viewer__output" ref={terminalRef}></div>
@@ -264,12 +305,14 @@ export default function SessionDetailPage() {
             <div className="metadata-field">
               <div style={{ display: 'flex', alignItems: 'center', justifyContent: 'space-between', width: '100%' }}>
                 <span className="metadata-field__label">Nickname</span>
-                <button className="btn btn--sm btn--ghost" onClick={() => success('Nickname editing coming soon')} title="Edit nickname">
-                  <svg width="12" height="12" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2">
-                    <path d="M11 4H4a2 2 0 0 0-2 2v14a2 2 0 0 0 2 2h14a2 2 0 0 0 2-2v-7"></path>
-                    <path d="M18.5 2.5a2.121 2.121 0 0 1 3 3L12 15l-4 1 1-4 9.5-9.5z"></path>
-                  </svg>
-                </button>
+                <Tooltip content="Edit nickname">
+                  <button className="btn btn--sm btn--ghost" onClick={handleEditNickname}>
+                    <svg width="12" height="12" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2">
+                      <path d="M11 4H4a2 2 0 0 0-2 2v14a2 2 0 0 0 2 2h14a2 2 0 0 0 2-2v-7"></path>
+                      <path d="M18.5 2.5a2.121 2.121 0 0 1 3 3L12 15l-4 1 1-4 9.5-9.5z"></path>
+                    </svg>
+                  </button>
+                </Tooltip>
               </div>
               <span className="metadata-field__value">{sessionData.nickname}</span>
             </div>
@@ -277,12 +320,14 @@ export default function SessionDetailPage() {
             <div className="metadata-field">
               <div style={{ display: 'flex', alignItems: 'center', justifyContent: 'space-between', width: '100%' }}>
                 <span className="metadata-field__label">Nickname</span>
-                <button className="btn btn--sm btn--ghost" onClick={() => success('Nickname editing coming soon')} title="Add nickname">
-                  <svg width="12" height="12" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2">
-                    <line x1="12" y1="5" x2="12" y2="19"></line>
-                    <line x1="5" y1="12" x2="19" y2="12"></line>
-                  </svg>
-                </button>
+                <Tooltip content="Add nickname">
+                  <button className="btn btn--sm btn--ghost" onClick={handleEditNickname}>
+                    <svg width="12" height="12" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2">
+                      <line x1="12" y1="5" x2="12" y2="19"></line>
+                      <line x1="5" y1="12" x2="19" y2="12"></line>
+                    </svg>
+                  </button>
+                </Tooltip>
               </div>
               <span className="metadata-field__value" style={{ color: 'var(--color-text-muted)', fontStyle: 'italic' }}>Not set</span>
             </div>
@@ -295,7 +340,9 @@ export default function SessionDetailPage() {
 
           <div className="metadata-field">
             <span className="metadata-field__label">Repository</span>
-            <a className="metadata-field__value" href={sessionData.repo} target="_blank" rel="noopener noreferrer" title={sessionData.repo}>{truncateStart(sessionData.repo)}</a>
+            <Tooltip content={sessionData.repo}>
+              <a className="metadata-field__value" href={sessionData.repo} target="_blank" rel="noopener noreferrer" style={{ alignSelf: 'flex-start' }}>{truncateStart(sessionData.repo)}</a>
+            </Tooltip>
           </div>
 
           <div className="metadata-field">
@@ -305,7 +352,18 @@ export default function SessionDetailPage() {
 
           <div className="metadata-field">
             <span className="metadata-field__label">Created</span>
-            <span className="metadata-field__value">{formatTimestamp(sessionData.created_at)}</span>
+            <Tooltip content={formatTimestamp(sessionData.created_at)}>
+              <span className="metadata-field__value" style={{ alignSelf: 'flex-start' }}>{formatRelativeTime(sessionData.created_at)}</span>
+            </Tooltip>
+          </div>
+
+          <div className="metadata-field">
+            <span className="metadata-field__label">Last Activity</span>
+            <Tooltip content={sessionData.last_output_at ? formatTimestamp(sessionData.last_output_at) : 'Never'}>
+              <span className="metadata-field__value" style={{ alignSelf: 'flex-start' }}>
+                {sessionData.last_output_at ? formatRelativeTime(sessionData.last_output_at) : 'Never'}
+              </span>
+            </Tooltip>
           </div>
 
           <div className="metadata-field">
@@ -324,12 +382,14 @@ export default function SessionDetailPage() {
             <label className="form-group__label">Attach Command</label>
             <div className="copy-field">
               <span className="copy-field__value">{sessionData.attach_cmd}</span>
-              <button className="copy-field__btn" title="Copy command" onClick={handleCopyAttach}>
-                <svg width="14" height="14" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2">
-                  <rect x="9" y="9" width="13" height="13" rx="2" ry="2"></rect>
-                  <path d="M5 15H4a2 2 0 0 1-2-2V4a2 2 0 0 1 2-2h9a2 2 0 0 1 2 2v1"></path>
-                </svg>
-              </button>
+              <Tooltip content="Copy attach command">
+                <button className="copy-field__btn" onClick={handleCopyAttach}>
+                  <svg width="14" height="14" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2">
+                    <rect x="9" y="9" width="13" height="13" rx="2" ry="2"></rect>
+                    <path d="M5 15H4a2 2 0 0 1-2-2V4a2 2 0 0 1 2-2h9a2 2 0 0 1 2 2v1"></path>
+                  </svg>
+                </button>
+              </Tooltip>
             </div>
           </div>
 

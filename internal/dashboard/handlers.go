@@ -5,6 +5,7 @@ import (
 	"fmt"
 	"net/http"
 	"os"
+	"os/exec"
 	"path"
 	"path/filepath"
 	"sort"
@@ -106,14 +107,15 @@ func (s *Server) handleSessions(w http.ResponseWriter, r *http.Request) {
 
 	// Group sessions by workspace
 	type SessionResponse struct {
-		ID        string `json:"id"`
-		Agent     string `json:"agent"`
-		Branch    string `json:"branch"`
-		Prompt    string `json:"prompt"`
-		Nickname  string `json:"nickname,omitempty"`
-		CreatedAt string `json:"created_at"`
-		Running   bool   `json:"running"`
-		AttachCmd string `json:"attach_cmd"`
+		ID           string `json:"id"`
+		Agent        string `json:"agent"`
+		Branch       string `json:"branch"`
+		Prompt       string `json:"prompt"`
+		Nickname     string `json:"nickname,omitempty"`
+		CreatedAt    string `json:"created_at"`
+		LastOutputAt string `json:"last_output_at,omitempty"`
+		Running      bool   `json:"running"`
+		AttachCmd    string `json:"attach_cmd"`
 	}
 
 	type WorkspaceResponse struct {
@@ -146,15 +148,20 @@ func (s *Server) handleSessions(w http.ResponseWriter, r *http.Request) {
 		}
 
 		attachCmd, _ := s.session.GetAttachCommand(sess.ID)
+		lastOutputAt := ""
+		if !sess.LastOutputAt.IsZero() {
+			lastOutputAt = sess.LastOutputAt.Format("2006-01-02T15:04:05")
+		}
 		wsResp.Sessions = append(wsResp.Sessions, SessionResponse{
-			ID:        sess.ID,
-			Agent:     sess.Agent,
-			Branch:    ws.Branch,
-			Prompt:    sess.Prompt,
-			Nickname:  sess.Nickname,
-			CreatedAt: sess.CreatedAt.Format("2006-01-02T15:04:05"),
-			Running:   s.session.IsRunning(sess.ID),
-			AttachCmd: attachCmd,
+			ID:           sess.ID,
+			Agent:        sess.Agent,
+			Branch:       ws.Branch,
+			Prompt:       sess.Prompt,
+			Nickname:     sess.Nickname,
+			CreatedAt:    sess.CreatedAt.Format("2006-01-02T15:04:05"),
+			LastOutputAt: lastOutputAt,
+			Running:      s.session.IsRunning(sess.ID),
+			AttachCmd:    attachCmd,
 		})
 		wsResp.SessionCount = len(wsResp.Sessions)
 	}
@@ -220,6 +227,23 @@ func (s *Server) handleWorkspacesAPI(w http.ResponseWriter, r *http.Request) {
 
 	w.Header().Set("Content-Type", "application/json")
 	json.NewEncoder(w).Encode(response)
+}
+
+// handleWorkspacesScan scans the workspace directory and reconciles with state.
+func (s *Server) handleWorkspacesScan(w http.ResponseWriter, r *http.Request) {
+	if r.Method != http.MethodPost {
+		http.Error(w, "Method not allowed", http.StatusMethodNotAllowed)
+		return
+	}
+
+	result, err := s.workspace.Scan()
+	if err != nil {
+		http.Error(w, fmt.Sprintf("Failed to scan workspaces: %v", err), http.StatusInternalServerError)
+		return
+	}
+
+	w.Header().Set("Content-Type", "application/json")
+	json.NewEncoder(w).Encode(result)
 }
 
 // handleHealthz returns a simple health check response.
@@ -328,6 +352,29 @@ func (s *Server) handleDispose(w http.ResponseWriter, r *http.Request) {
 	json.NewEncoder(w).Encode(map[string]string{"status": "ok"})
 }
 
+// handleDisposeWorkspace handles workspace disposal requests.
+func (s *Server) handleDisposeWorkspace(w http.ResponseWriter, r *http.Request) {
+	if r.Method != http.MethodPost {
+		http.Error(w, "Method not allowed", http.StatusMethodNotAllowed)
+		return
+	}
+
+	// Extract workspace ID from URL
+	workspaceID := strings.TrimPrefix(r.URL.Path, "/api/dispose-workspace/")
+	if workspaceID == "" {
+		http.Error(w, "workspace ID is required", http.StatusBadRequest)
+		return
+	}
+
+	if err := s.workspace.Dispose(workspaceID); err != nil {
+		http.Error(w, fmt.Sprintf("Failed to dispose workspace: %v", err), http.StatusInternalServerError)
+		return
+	}
+
+	w.Header().Set("Content-Type", "application/json")
+	json.NewEncoder(w).Encode(map[string]string{"status": "ok"})
+}
+
 // UpdateNicknameRequest represents a request to update a session's nickname.
 type UpdateNicknameRequest struct {
 	Nickname string `json:"nickname"`
@@ -353,18 +400,9 @@ func (s *Server) handleUpdateNickname(w http.ResponseWriter, r *http.Request) {
 		return
 	}
 
-	// Get the session
-	sess, found := s.state.GetSession(sessionID)
-	if !found {
-		http.Error(w, "session not found", http.StatusNotFound)
-		return
-	}
-
-	// Update nickname
-	sess.Nickname = req.Nickname
-	s.state.UpdateSession(sess)
-	if err := s.state.Save(); err != nil {
-		http.Error(w, fmt.Sprintf("Failed to save state: %v", err), http.StatusInternalServerError)
+	// Update nickname (and rename tmux session)
+	if err := s.session.RenameSession(sessionID, req.Nickname); err != nil {
+		http.Error(w, fmt.Sprintf("Failed to rename session: %v", err), http.StatusInternalServerError)
 		return
 	}
 
@@ -403,11 +441,19 @@ func (s *Server) handleConfigGet(w http.ResponseWriter, r *http.Request) {
 		SeedLines int `json:"seed_lines"`
 	}
 
+	type InternalResponse struct {
+		MtimePollIntervalMs    int `json:"mtime_poll_interval_ms"`
+		SessionsPollIntervalMs int `json:"sessions_poll_interval_ms"`
+		ViewedBufferMs         int `json:"viewed_buffer_ms"`
+		SessionSeenIntervalMs  int `json:"session_seen_interval_ms"`
+	}
+
 	type ConfigResponse struct {
-		WorkspacePath string            `json:"workspace_path"`
-		Repos         []RepoResponse    `json:"repos"`
-		Agents        []AgentResponse   `json:"agents"`
-		Terminal      TerminalResponse  `json:"terminal"`
+		WorkspacePath string           `json:"workspace_path"`
+		Repos         []RepoResponse   `json:"repos"`
+		Agents        []AgentResponse  `json:"agents"`
+		Terminal      TerminalResponse `json:"terminal"`
+		Internal      InternalResponse `json:"internal"`
 	}
 
 	repos := s.config.GetRepos()
@@ -430,6 +476,12 @@ func (s *Server) handleConfigGet(w http.ResponseWriter, r *http.Request) {
 		Repos:         repoResp,
 		Agents:        agentResp,
 		Terminal:      TerminalResponse{Width: width, Height: height, SeedLines: seedLines},
+		Internal: InternalResponse{
+			MtimePollIntervalMs:    s.config.GetMtimePollIntervalMs(),
+			SessionsPollIntervalMs: s.config.GetSessionsPollIntervalMs(),
+			ViewedBufferMs:         s.config.GetViewedBufferMs(),
+			SessionSeenIntervalMs:  s.config.GetSessionSeenIntervalMs(),
+		},
 	}
 
 	w.Header().Set("Content-Type", "application/json")
@@ -575,4 +627,140 @@ func (s *Server) handleConfigUpdate(w http.ResponseWriter, r *http.Request) {
 		"status": "ok",
 		"message": "Config saved. Restart the daemon for changes to take effect.",
 	})
+}
+
+// handleDiff returns git diff for a workspace.
+func (s *Server) handleDiff(w http.ResponseWriter, r *http.Request) {
+	if r.Method != http.MethodGet {
+		http.Error(w, "Method not allowed", http.StatusMethodNotAllowed)
+		return
+	}
+
+	// Extract workspace ID from URL: /api/diff/{workspace-id}
+	workspaceID := strings.TrimPrefix(r.URL.Path, "/api/diff/")
+	if workspaceID == "" {
+		http.Error(w, "workspace ID is required", http.StatusBadRequest)
+		return
+	}
+
+	// Get workspace from state
+	ws, found := s.state.GetWorkspace(workspaceID)
+	if !found {
+		http.Error(w, "workspace not found", http.StatusNotFound)
+		return
+	}
+
+	// Run git diff in workspace directory
+	type FileDiff struct {
+		OldPath string   `json:"old_path,omitempty"`
+		NewPath string   `json:"new_path,omitempty"`
+		OldContent string `json:"old_content,omitempty"`
+		NewContent string `json:"new_content,omitempty"`
+		Status string `json:"status,omitempty"` // added, modified, deleted, renamed
+	}
+
+	type DiffResponse struct {
+		WorkspaceID string     `json:"workspace_id"`
+		Repo        string     `json:"repo"`
+		Branch      string     `json:"branch"`
+		Files       []FileDiff `json:"files"`
+	}
+
+	// Get git diff output using porcelain format
+	// --numstat shows: added/deleted lines filename
+	// -z uses null terminators for parsing
+	// --find-renames finds renames
+	cmd := exec.Command("git", "-C", ws.Path, "diff", "--numstat", "--find-renames", "--diff-filter=ADM")
+	output, err := cmd.Output()
+	if err != nil {
+		// No changes is not an error - return empty diff
+		response := DiffResponse{
+			WorkspaceID: workspaceID,
+			Repo:        ws.Repo,
+			Branch:      ws.Branch,
+			Files:       []FileDiff{},
+		}
+		w.Header().Set("Content-Type", "application/json")
+		json.NewEncoder(w).Encode(response)
+		return
+	}
+
+	// Parse numstat output and get file diffs
+	files := make([]FileDiff, 0)
+	lines := strings.Split(string(output), "\n")
+	for _, line := range lines {
+		if line == "" {
+			continue
+		}
+		parts := strings.Split(line, "\t")
+		if len(parts) < 3 {
+			continue
+		}
+
+		added := parts[0]
+		_ = parts[1] // deleted lines (not currently used)
+		filePath := parts[2]
+
+		// Skip if file was deleted (added is "-")
+		if added == "-" {
+			// For deleted files, get old content
+			oldContent := s.getFileContent(ws.Path, filePath, "HEAD")
+			files = append(files, FileDiff{
+				NewPath:    filePath,
+				OldContent: oldContent,
+				Status:     "deleted",
+			})
+			continue
+		}
+
+		// Check if file is new (deleted is "0" and file doesn't exist in HEAD)
+		newContent := s.getFileContent(ws.Path, filePath, "worktree")
+		oldContent := s.getFileContent(ws.Path, filePath, "HEAD")
+
+		status := "modified"
+		if oldContent == "" {
+			status = "added"
+		}
+
+		files = append(files, FileDiff{
+			NewPath:    filePath,
+			OldContent: oldContent,
+			NewContent: newContent,
+			Status:     status,
+		})
+	}
+
+	response := DiffResponse{
+		WorkspaceID: workspaceID,
+		Repo:        ws.Repo,
+		Branch:      ws.Branch,
+		Files:       files,
+	}
+
+	w.Header().Set("Content-Type", "application/json")
+	json.NewEncoder(w).Encode(response)
+}
+
+// getFileContent gets file content from a specific git tree-ish.
+// For "worktree", it reads from the working directory directly.
+func (s *Server) getFileContent(workspacePath, filePath, treeish string) string {
+	if treeish == "worktree" {
+		fullPath := filepath.Join(workspacePath, filePath)
+		content, err := os.ReadFile(fullPath)
+		if err != nil {
+			return ""
+		}
+		return string(content)
+	}
+	cmd := exec.Command("git", "-C", workspacePath, "show", fmt.Sprintf("%s:%s", treeish, filePath))
+	output, err := cmd.Output()
+	if err != nil {
+		return ""
+	}
+	return string(output)
+}
+
+// handleDiffPage serves the React app entry point for the diff page.
+func (s *Server) handleDiffPage(w http.ResponseWriter, r *http.Request) {
+	s.handleApp(w, r)
 }
