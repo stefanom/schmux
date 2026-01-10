@@ -199,23 +199,6 @@ export default function SessionDetailPage() {
     }
   };
 
-  const handleSessionDispose = async (sessionId) => {
-    const accepted = await show('Dispose Session', `Dispose session ${sessionId}?`, {
-      danger: true,
-      confirmText: 'Dispose',
-      detailedMessage: 'This will stop tracking the session and clean up resources. The tmux session will remain available if you need to attach manually.'
-    });
-    if (!accepted) return;
-
-    try {
-      await disposeSession(sessionId);
-      success('Session disposed');
-      navigate('/sessions');
-    } catch (err) {
-      toastError(`Failed to dispose: ${err.message}`);
-    }
-  };
-
   if (loading) {
     return (
       <div className="loading-state">
@@ -253,49 +236,6 @@ export default function SessionDetailPage() {
           workspaceId={sessionData.workspaceId}
           currentSessionId={sessionId}
           showControls={false}
-          renderActions={(workspace) => (
-            <>
-              <Tooltip content="View git diff">
-                <button
-                  className="btn btn--sm btn--ghost"
-                  onClick={(event) => {
-                    event.stopPropagation();
-                    navigate(`/diff/${workspace.id}`);
-                  }}
-                  aria-label={`View diff for ${workspace.id}`}
-                >
-                  <svg width="14" height="14" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2">
-                    <path d="M11 4H4a2 2 0 0 0-2 2v14a2 2 0 0 0 2 2h14a2 2 0 0 0 2-2v-7"></path>
-                    <path d="M18.5 2.5a2.121 2.121 0 0 1 3 3L12 15l-4 1 1-4 9.5-9.5z"></path>
-                  </svg>
-                  Diff
-                </button>
-              </Tooltip>
-              <Tooltip content="Spawn session in this workspace">
-                <button
-                  className="btn btn--sm btn--primary"
-                  onClick={(event) => {
-                    event.stopPropagation();
-                    navigate(`/spawn?workspace_id=${workspace.id}`);
-                  }}
-                  aria-label={`Spawn in ${workspace.id}`}
-                >
-                  <svg width="14" height="14" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2">
-                    <circle cx="12" cy="12" r="10"></circle>
-                    <line x1="12" y1="8" x2="12" y2="16"></line>
-                    <line x1="8" y1="12" x2="16" y2="12"></line>
-                  </svg>
-                  Spawn
-                </button>
-              </Tooltip>
-            </>
-          )}
-          renderSessionActions={(action, sess) => {
-            if (action === 'dispose') {
-              return () => handleSessionDispose(sess.id);
-            }
-            return undefined;
-          }}
         />
       )}
 
