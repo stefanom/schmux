@@ -44,6 +44,7 @@ export default class TerminalStream {
 
     this.tmuxCols = cols;
     this.tmuxRows = rows;
+    this.baseFontSize = 14;
 
     this.terminal = new Terminal({
       cols,
@@ -108,6 +109,13 @@ export default class TerminalStream {
         this.scaleTerminal();
       });
       resizeObserver.observe(this.containerElement);
+
+      // Also watch the .session-detail parent to detect viewport changes
+      // This catches cases where the window grows but our container doesn't
+      const sessionDetail = this.containerElement.closest('.session-detail');
+      if (sessionDetail) {
+        resizeObserver.observe(sessionDetail);
+      }
     }
 
     window.addEventListener('resize', () => {
@@ -122,24 +130,27 @@ export default class TerminalStream {
   scaleTerminal() {
     if (!this.terminal) return;
 
-    const screenElement = this.terminal.element?.querySelector('.xterm-screen');
-    if (!screenElement) return;
-
     const containerRect = this.containerElement.getBoundingClientRect();
     const containerWidth = containerRect.width || 800;
     const containerHeight = containerRect.height || 600;
 
-    const charWidth = 9;
-    const charHeight = 17;
-    const screenWidth = this.tmuxCols * charWidth;
-    const screenHeight = this.tmuxRows * charHeight;
+    // Character dimensions at base fontSize (14px)
+    const charWidthAt14 = 9;
+    const charHeightAt14 = 17;
 
-    const scaleX = containerWidth / screenWidth;
-    const scaleY = containerHeight / screenHeight;
+    // Terminal's natural size at base fontSize
+    const terminalWidthAt14 = this.tmuxCols * charWidthAt14;
+    const terminalHeightAt14 = this.tmuxRows * charHeightAt14;
+
+    // Calculate scale factor needed to fit container
+    const scaleX = containerWidth / terminalWidthAt14;
+    const scaleY = containerHeight / terminalHeightAt14;
     const scale = Math.min(scaleX, scaleY, 1);
 
-    screenElement.style.transformOrigin = 'top left';
-    screenElement.style.transform = `scale(${scale})`;
+    // Set fontSize to scale the terminal (no CSS transform = coordinates work)
+    const newFontSize = Math.max(1, Math.round(this.baseFontSize * scale));
+    this.terminal.options.fontSize = newFontSize;
+    this.terminal.refresh(0, this.terminal.rows - 1);
   }
 
   resizeTerminal() {
