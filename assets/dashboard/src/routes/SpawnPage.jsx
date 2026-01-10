@@ -4,14 +4,18 @@ import { getConfig, getWorkspaces, spawnSessions } from '../lib/api.js';
 import { useToast } from '../components/ToastProvider.jsx';
 import { useRequireConfig } from '../contexts/ConfigContext.jsx';
 
-const TOTAL_STEPS = 4;
+const STEPS = ['Target', 'Command', 'Review'];
+const TOTAL_STEPS = STEPS.length;
 
 export default function SpawnPage() {
   useRequireConfig();
   const [currentStep, setCurrentStep] = useState(1);
   const [repos, setRepos] = useState([]);
   const [agents, setAgents] = useState([]);
+  const [commands, setCommands] = useState([]);
   const [agentCounts, setAgentCounts] = useState({});
+  const [selectedCommand, setSelectedCommand] = useState('');
+  const [spawnMode, setSpawnMode] = useState(null); // 'agent' | 'command' | null
   const [repo, setRepo] = useState('');
   const [branch, setBranch] = useState('main');
   const [prompt, setPrompt] = useState('');
@@ -35,9 +39,15 @@ export default function SpawnPage() {
         const config = await getConfig();
         if (!active) return;
         setRepos(config.repos || []);
-        setAgents(config.agents || []);
+
+        // Separate agents and commands
+        const agentItems = (config.agents || []).filter(a => a.agentic !== false);
+        const commandItems = (config.agents || []).filter(a => a.agentic === false);
+        setAgents(agentItems);
+        setCommands(commandItems);
+
         const counts = {};
-        (config.agents || []).forEach((agent) => {
+        agentItems.forEach((agent) => {
           counts[agent.name] = 0;
         });
         setAgentCounts(counts);
@@ -145,16 +155,19 @@ export default function SpawnPage() {
     }
 
     if (currentStep === 2) {
-      if (totalAgentCount === 0) {
-        toastError('Please select at least one agent');
-        setShowAgentError(true);
-        return false;
+      if (spawnMode === 'agent') {
+        if (totalAgentCount === 0) {
+          toastError('Please select at least one agent');
+          setShowAgentError(true);
+          return false;
+        }
+        if (!prompt.trim()) {
+          toastError('Please enter a prompt');
+          return false;
+        }
       }
-    }
-
-    if (currentStep === 3) {
-      if (!prompt.trim()) {
-        toastError('Please enter a prompt');
+      if (spawnMode === 'command' && !selectedCommand) {
+        toastError('Please select a command');
         return false;
       }
     }
@@ -162,14 +175,8 @@ export default function SpawnPage() {
     return true;
   };
 
-  const nextStep = async () => {
+  const nextStep = () => {
     if (!validateStep()) return;
-
-    if (currentStep === TOTAL_STEPS) {
-      await handleSpawn();
-      return;
-    }
-
     setCurrentStep((step) => Math.min(TOTAL_STEPS, step + 1));
   };
 
@@ -178,10 +185,15 @@ export default function SpawnPage() {
   };
 
   const handleSpawn = async () => {
-    const selectedAgents = {};
-    Object.entries(agentCounts).forEach(([name, count]) => {
-      if (count > 0) selectedAgents[name] = count;
-    });
+    let selectedAgents = {};
+
+    if (spawnMode === 'command') {
+      selectedAgents[selectedCommand] = 1;
+    } else {
+      Object.entries(agentCounts).forEach(([name, count]) => {
+        if (count > 0) selectedAgents[name] = count;
+      });
+    }
 
     setSpawning(true);
 
@@ -189,7 +201,7 @@ export default function SpawnPage() {
       const response = await spawnSessions({
         repo,
         branch,
-        prompt,
+        prompt: spawnMode === 'agent' ? prompt : '',
         nickname: nickname.trim(),
         agents: selectedAgents,
         workspace_id: prefillWorkspaceId || ''
@@ -246,16 +258,12 @@ export default function SpawnPage() {
           <h1 className="page-header__title">Spawn Sessions</h1>
         </div>
         <div>
-          <h3 style={{ marginBottom: 'var(--spacing-md)' }}>Results</h3>
+          <h2 style={{ marginBottom: 'var(--spacing-lg)' }}>Results</h2>
           {successCount > 0 ? (
-            <div className="results-panel" style={{ marginBottom: 'var(--spacing-md)' }}>
+            <div className="results-panel" style={{ marginBottom: 'var(--spacing-lg)' }}>
               <div className="results-panel__title">Successfully spawned {successCount} session(s)</div>
               {results.filter((r) => !r.error).map((r, index) => (
-                <div
-                  className="results-panel__item results-panel__item--success"
-                  style={{ display: 'flex', justifyContent: 'space-between', alignItems: 'center' }}
-                  key={r.session_id}
-                >
+                <div className="results-panel__item results-panel__item--success" style={{ display: 'flex', justifyContent: 'space-between', alignItems: 'center' }} key={r.session_id}>
                   <div>
                     <span className="badge badge--primary" style={{ marginRight: 'var(--spacing-sm)' }}>{index + 1}</span>
                     <span className="mono">{r.workspace_id}</span>
@@ -293,7 +301,8 @@ export default function SpawnPage() {
 
       <div className="wizard">
         <div className="wizard__steps">
-          {[1, 2, 3, 4].map((step) => {
+          {STEPS.map((label, index) => {
+            const step = index + 1;
             const className = step === currentStep
               ? 'wizard__step wizard__step--active'
               : step < currentStep
@@ -301,7 +310,7 @@ export default function SpawnPage() {
                 : 'wizard__step';
             return (
               <div className={className} data-step={step} key={step}>
-                {step}. {step === 1 ? 'Target' : step === 2 ? 'Agents' : step === 3 ? 'Prompt' : 'Review'}
+                {step}. {label}
               </div>
             );
           })}
@@ -349,45 +358,156 @@ export default function SpawnPage() {
 
           {currentStep === 2 && (
             <div className="wizard-step-content" data-step="2">
-              <div className="preset-buttons">
-                <button type="button" className="btn btn--sm" onClick={() => applyPreset('each')}>1 Each</button>
-                <button type="button" className="btn btn--sm" onClick={() => applyPreset('review')}>Review Squad</button>
-                <button type="button" className="btn btn--sm" onClick={() => applyPreset('reset')}>Reset</button>
+              {/* Mode Selection */}
+              <div className="form-group">
+                <label className="form-group__label">Mode</label>
+                <div className="button-group">
+                  <button
+                    type="button"
+                    className={`btn${spawnMode === 'agent' ? ' btn--primary' : ''}`}
+                    onClick={() => {
+                      if (agents.length > 0) {
+                        setSpawnMode('agent');
+                        setShowAgentError(false);
+                      }
+                    }}
+                    disabled={agents.length === 0}
+                  >
+                    Coding Agent
+                  </button>
+                  <button
+                    type="button"
+                    className={`btn${spawnMode === 'command' ? ' btn--primary' : ''}`}
+                    onClick={() => {
+                      if (commands.length > 0) setSpawnMode('command');
+                    }}
+                    disabled={commands.length === 0}
+                  >
+                    Command
+                  </button>
+                </div>
+                {spawnMode === 'agent' && agents.length === 0 && (
+                  <p className="form-group__hint">No agents configured. Add some in the configuration page first.</p>
+                )}
+                {spawnMode === 'command' && commands.length === 0 && (
+                  <p className="form-group__hint">No commands configured. Add some in the configuration page first.</p>
+                )}
               </div>
-              <div className="agent-grid">
-                {agentList.map((agent) => (
-                  <div className="agent-card" key={agent.name}>
-                    <div className="agent-card__label">{agent.name}</div>
-                    <div className="agent-card__control">
-                      <button className="agent-card__btn" onClick={() => updateAgentCount(agent.name, -1)} aria-label={`Decrease ${agent.name} count`}>−</button>
-                      <span className="agent-card__count">{agent.count}</span>
-                      <button className="agent-card__btn" onClick={() => updateAgentCount(agent.name, 1)} aria-label={`Increase ${agent.name} count`}>+</button>
+
+              {/* Content that shows AFTER selection */}
+              {spawnMode === 'agent' && agents.length > 0 && (
+                <>
+                  {/* Presets - first, so you can quickly set then adjust */}
+                  <div className="form-group">
+                    <label className="form-group__label">Quick Select</label>
+                    <div className="preset-buttons">
+                      <button type="button" className="btn btn--sm" onClick={() => applyPreset('each')}>1 Each</button>
+                      <button type="button" className="btn btn--sm" onClick={() => applyPreset('review')}>Review Squad</button>
+                      <button type="button" className="btn btn--sm" onClick={() => applyPreset('reset')}>Reset</button>
                     </div>
                   </div>
-                ))}
-              </div>
-              {showAgentError ? (
-                <div className="text-error" style={{ marginTop: 'var(--spacing-md)' }}>
-                  Please select at least one agent
+
+                  {/* Agent Grid */}
+                  <div className="agent-grid">
+                    {agentList.map((agent) => (
+                      <div className="agent-card" key={agent.name}>
+                        <div className="agent-card__label">{agent.name}</div>
+                        <div className="agent-card__control">
+                          <button className="agent-card__btn" onClick={() => updateAgentCount(agent.name, -1)} aria-label={`Decrease ${agent.name} count`}>−</button>
+                          <span className="agent-card__count">{agent.count}</span>
+                          <button className="agent-card__btn" onClick={() => updateAgentCount(agent.name, 1)} aria-label={`Increase ${agent.name} count`}>+</button>
+                        </div>
+                      </div>
+                    ))}
+                  </div>
+
+                  {showAgentError && (
+                    <div className="form-group__error">
+                      Please select at least one agent
+                    </div>
+                  )}
+
+                  {/* Separator before prompt */}
+                  <hr style={{ border: 'none', borderTop: '1px solid var(--color-border)', margin: 'var(--spacing-xl) 0' }} />
+
+                  {/* Prompt field */}
+                  <div className="form-group">
+                    <label htmlFor="prompt" className="form-group__label">Prompt</label>
+                    <textarea
+                      id="prompt"
+                      className="textarea"
+                      rows={8}
+                      placeholder="Describe the task you want the agents to work on..."
+                      value={prompt}
+                      onChange={(event) => setPrompt(event.target.value)}
+                    />
+                    <p className="form-group__hint">Be specific about what you want the agents to do. This prompt will be sent to all spawned agents.</p>
+                  </div>
+                </>
+              )}
+
+              {spawnMode === 'command' && commands.length > 0 && (
+                <div className="form-group">
+                  <label htmlFor="command" className="form-group__label">Command</label>
+                  <select
+                    id="command"
+                    className="select"
+                    required
+                    value={selectedCommand}
+                    onChange={(event) => setSelectedCommand(event.target.value)}
+                  >
+                    <option value="">Select a command...</option>
+                    {commands.map((cmd) => (
+                      <option key={cmd.name} value={cmd.name}>
+                        {cmd.name}
+                      </option>
+                    ))}
+                  </select>
+                  <p className="form-group__hint">
+                    This command will run directly in the workspace without a prompt.
+                  </p>
                 </div>
-              ) : null}
+              )}
             </div>
           )}
 
           {currentStep === 3 && (
             <div className="wizard-step-content" data-step="3">
-              <div className="form-group">
-                <label htmlFor="prompt" className="form-group__label">Prompt</label>
-                <textarea
-                  id="prompt"
-                  className="textarea"
-                  rows={10}
-                  placeholder="Describe the task you want the agents to work on..."
-                  value={prompt}
-                  onChange={(event) => setPrompt(event.target.value)}
-                />
-                <p className="form-group__hint">Be specific about what you want the agents to do. This prompt will be sent to all spawned agents.</p>
+              <h2 style={{ marginBottom: 'var(--spacing-lg)' }}>Review and Spawn</h2>
+              <div className="card" style={{ marginBottom: 'var(--spacing-lg)' }}>
+                <div className="card__body">
+                  <div className="metadata-field">
+                    <span className="metadata-field__label">Repository</span>
+                    <span className="metadata-field__value">{repo}</span>
+                  </div>
+                  <div className="metadata-field">
+                    <span className="metadata-field__label">Branch</span>
+                    <span className="metadata-field__value">{branch}</span>
+                  </div>
+                  <div className="metadata-field">
+                    <span className="metadata-field__label">Workspace</span>
+                    <span className="metadata-field__value">{prefillWorkspaceId || 'New workspace'}</span>
+                  </div>
+                  {spawnMode === 'agent' ? (
+                    <div className="metadata-field">
+                      <span className="metadata-field__label">Agents</span>
+                      <span className="metadata-field__value">
+                        {Object.entries(agentCounts)
+                          .filter(([_, count]) => count > 0)
+                          .map(([name, count]) => `${count}× ${name}`)
+                          .join(', ')}
+                      </span>
+                    </div>
+                  ) : (
+                    <div className="metadata-field">
+                      <span className="metadata-field__label">Command</span>
+                      <span className="metadata-field__value mono">{commands.find(c => c.name === selectedCommand)?.command}</span>
+                    </div>
+                  )}
+                </div>
               </div>
+
+              {/* Nickname field */}
               <div className="form-group">
                 <label htmlFor="nickname" className="form-group__label">Nickname <span className="text-muted">(optional)</span></label>
                 <input
@@ -399,48 +519,7 @@ export default function SpawnPage() {
                   value={nickname}
                   onChange={(event) => setNickname(event.target.value)}
                 />
-                <p className="form-group__hint">A human-friendly name to help you identify this session later. If not provided, the session ID will be used.</p>
-              </div>
-            </div>
-          )}
-
-          {currentStep === 4 && (
-            <div className="wizard-step-content" data-step="4">
-              <h3 style={{ marginBottom: 'var(--spacing-lg)' }}>Review and Spawn</h3>
-              <div className="card" style={{ marginBottom: 'var(--spacing-lg)' }}>
-                <div className="card__body">
-                  <div className="metadata-field" style={{ marginBottom: 'var(--spacing-md)' }}>
-                    <span className="metadata-field__label">Repository</span>
-                    <span className="metadata-field__value">{repo}</span>
-                  </div>
-                  <div className="metadata-field" style={{ marginBottom: 'var(--spacing-md)' }}>
-                    <span className="metadata-field__label">Branch</span>
-                    <span className="metadata-field__value">{branch}</span>
-                  </div>
-                  <div className="metadata-field" style={{ marginBottom: 'var(--spacing-md)' }}>
-                    <span className="metadata-field__label">Workspace</span>
-                    <span className="metadata-field__value">{prefillWorkspaceId || 'New workspace'}</span>
-                  </div>
-                  <div className="metadata-field" style={{ marginBottom: 'var(--spacing-md)' }}>
-                    <span className="metadata-field__label">Agents</span>
-                    <span className="metadata-field__value">
-                      {Object.entries(agentCounts)
-                        .filter(([_, count]) => count > 0)
-                        .map(([name, count]) => `${count}× ${name}`)
-                        .join(', ')}
-                    </span>
-                  </div>
-                  <div className="metadata-field">
-                    <span className="metadata-field__label">Prompt</span>
-                    <span className="metadata-field__value">{prompt.length > 200 ? `${prompt.substring(0, 200)}...` : prompt}</span>
-                  </div>
-                  {nickname.trim() ? (
-                    <div className="metadata-field" style={{ marginTop: 'var(--spacing-md)' }}>
-                      <span className="metadata-field__label">Nickname</span>
-                      <span className="metadata-field__value">{nickname.trim()}</span>
-                    </div>
-                  ) : null}
-                </div>
+                <p className="form-group__hint">A human-friendly name to help you identify this session later.</p>
               </div>
             </div>
           )}
@@ -450,8 +529,19 @@ export default function SpawnPage() {
           <button type="button" className="btn" onClick={prevStep} disabled={currentStep === 1 || spawning}>
             Back
           </button>
-          <button type="button" className="btn btn--primary" onClick={nextStep} disabled={spawning}>
-            {currentStep === TOTAL_STEPS ? 'Spawn' : 'Next'}
+          <button
+            type="button"
+            className="btn btn--primary"
+            onClick={currentStep === TOTAL_STEPS ? handleSpawn : nextStep}
+            disabled={spawning}
+            style={{ display: 'flex', alignItems: 'center', gap: 'var(--spacing-sm)' }}
+          >
+            {spawning ? (
+              <>
+                <span className="spinner spinner--small"></span>
+                Spawning...
+              </>
+            ) : currentStep === TOTAL_STEPS ? 'Spawn' : 'Next'}
           </button>
         </div>
       </div>

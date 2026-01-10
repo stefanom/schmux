@@ -33,7 +33,6 @@ type Session struct {
 	ID           string    `json:"id"`
 	WorkspaceID  string    `json:"workspace_id"`
 	Agent        string    `json:"agent"`
-	Prompt       string    `json:"prompt"`
 	Nickname     string    `json:"nickname,omitempty"` // Optional human-friendly name
 	TmuxSession  string    `json:"tmux_session"`
 	CreatedAt    time.Time `json:"created_at"`

@@ -110,7 +110,6 @@ func (s *Server) handleSessions(w http.ResponseWriter, r *http.Request) {
 		ID           string `json:"id"`
 		Agent        string `json:"agent"`
 		Branch       string `json:"branch"`
-		Prompt       string `json:"prompt"`
 		Nickname     string `json:"nickname,omitempty"`
 		CreatedAt    string `json:"created_at"`
 		LastOutputAt string `json:"last_output_at,omitempty"`
@@ -164,7 +163,6 @@ func (s *Server) handleSessions(w http.ResponseWriter, r *http.Request) {
 			ID:           sess.ID,
 			Agent:        sess.Agent,
 			Branch:       ws.Branch,
-			Prompt:       sess.Prompt,
 			Nickname:     sess.Nickname,
 			CreatedAt:    sess.CreatedAt.Format("2006-01-02T15:04:05"),
 			LastOutputAt: lastOutputAt,
@@ -298,12 +296,21 @@ func (s *Server) handleSpawnPost(w http.ResponseWriter, r *http.Request) {
 		http.Error(w, "branch is required", http.StatusBadRequest)
 		return
 	}
-	if req.Prompt == "" {
-		http.Error(w, "prompt is required", http.StatusBadRequest)
-		return
-	}
 	if len(req.Agents) == 0 {
 		http.Error(w, "at least one agent is required", http.StatusBadRequest)
+		return
+	}
+
+	// Check if any agentic agents are being spawned (require prompt)
+	hasAgentic := false
+	for agentName := range req.Agents {
+		if agent, found := s.config.FindAgent(agentName); found && agent.Agentic != nil && *agent.Agentic {
+			hasAgentic = true
+			break
+		}
+	}
+	if hasAgentic && req.Prompt == "" {
+		http.Error(w, "prompt is required when spawning agentic agents", http.StatusBadRequest)
 		return
 	}
 
@@ -318,9 +325,27 @@ func (s *Server) handleSpawnPost(w http.ResponseWriter, r *http.Request) {
 	results := make([]SessionResult, 0)
 
 	for agentName, count := range req.Agents {
-		for i := 0; i < count; i++ {
+		// Get agent config to check if it's agentic
+		agent, found := s.config.FindAgent(agentName)
+		if !found {
+			results = append(results, SessionResult{
+				Agent: agentName,
+				Error: fmt.Sprintf("agent not found: %s", agentName),
+			})
+			continue
+		}
+
+		isAgentic := agent.Agentic != nil && *agent.Agentic
+
+		// Non-agentic commands spawn single instance (ignore count)
+		spawnCount := count
+		if !isAgentic {
+			spawnCount = 1
+		}
+
+		for i := 0; i < spawnCount; i++ {
 			nickname := req.Nickname
-			if nickname != "" && count > 1 {
+			if nickname != "" && spawnCount > 1 {
 				nickname = fmt.Sprintf("%s (%d)", nickname, i+1)
 			}
 			sess, err := s.session.Spawn(req.Repo, req.Branch, agentName, req.Prompt, nickname, req.WorkspaceID)
@@ -447,6 +472,7 @@ func (s *Server) handleConfigGet(w http.ResponseWriter, r *http.Request) {
 	type AgentResponse struct {
 		Name    string `json:"name"`
 		Command string `json:"command"`
+		Agentic *bool  `json:"agentic,omitempty"` // true = takes prompt, false = command only
 	}
 
 	type TerminalResponse struct {
@@ -483,7 +509,7 @@ func (s *Server) handleConfigGet(w http.ResponseWriter, r *http.Request) {
 
 	agentResp := make([]AgentResponse, len(agents))
 	for i, agent := range agents {
-		agentResp[i] = AgentResponse{Name: agent.Name, Command: agent.Command}
+		agentResp[i] = AgentResponse{Name: agent.Name, Command: agent.Command, Agentic: agent.Agentic}
 	}
 
 	response := ConfigResponse{
@@ -514,6 +540,7 @@ type ConfigUpdateRequest struct {
 	Agents []struct {
 		Name    string `json:"name"`
 		Command string `json:"command"`
+		Agentic *bool  `json:"agentic,omitempty"`
 	} `json:"agents,omitempty"`
 	Terminal *struct {
 		Width     *int `json:"width,omitempty"`
@@ -600,7 +627,7 @@ func (s *Server) handleConfigUpdate(w http.ResponseWriter, r *http.Request) {
 		}
 		agents = make([]config.Agent, len(req.Agents))
 		for i, a := range req.Agents {
-			agents[i] = config.Agent{Name: a.Name, Command: a.Command}
+			agents[i] = config.Agent{Name: a.Name, Command: a.Command, Agentic: a.Agentic}
 		}
 	}
 

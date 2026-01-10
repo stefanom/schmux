@@ -5,7 +5,7 @@ import { useModal } from '../components/ModalProvider.jsx';
 import { useConfig } from '../contexts/ConfigContext.jsx';
 
 const TOTAL_STEPS = 4;
-const STEPS = ['Workspace', 'Repositories', 'Agents', 'Advanced'];
+const TABS = ['Workspace', 'Repositories', 'Agents', 'Commands', 'Advanced'];
 
 export default function ConfigPage() {
   const { isNotConfigured, reloadConfig } = useConfig();
@@ -24,6 +24,7 @@ export default function ConfigPage() {
   const [workspacePath, setWorkspacePath] = useState('');
   const [repos, setRepos] = useState([]);
   const [agents, setAgents] = useState([]);
+  const [commands, setCommands] = useState([]);
 
   // Terminal state
   const [terminalWidth, setTerminalWidth] = useState('120');
@@ -42,9 +43,11 @@ export default function ConfigPage() {
   const [newRepoUrl, setNewRepoUrl] = useState('');
   const [newAgentName, setNewAgentName] = useState('');
   const [newAgentCommand, setNewAgentCommand] = useState('');
+  const [newCommandName, setNewCommandName] = useState('');
+  const [newCommandCommand, setNewCommandCommand] = useState('');
 
   // Validation state per step
-  const [stepErrors, setStepErrors] = useState({ 1: null, 2: null, 3: null, 4: null });
+  const [stepErrors, setStepErrors] = useState({ 1: null, 2: null, 3: null, 4: null, 5: null });
 
   useEffect(() => {
     let active = true;
@@ -61,7 +64,13 @@ export default function ConfigPage() {
         setTerminalHeight(String(data.terminal?.height || 40));
         setTerminalSeedLines(String(data.terminal?.seed_lines || 100));
         setRepos(data.repos || []);
-        setAgents(data.agents || []);
+
+        // Separate agents and commands based on agentic field
+        const agentItems = (data.agents || []).filter(a => a.agentic !== false);
+        const commandItems = (data.agents || []).filter(a => a.agentic === false);
+        setAgents(agentItems);
+        setCommands(commandItems);
+
         setMtimePollInterval(data.internal?.mtime_poll_interval_ms || 5000);
         setSessionsPollInterval(data.internal?.sessions_poll_interval_ms || 5000);
         setViewedBuffer(data.internal?.viewed_buffer_ms || 5000);
@@ -96,6 +105,8 @@ export default function ConfigPage() {
         error = 'Add at least one agent';
       }
     } else if (step === 4) {
+      // Commands are optional
+    } else if (step === 5) {
       const width = parseInt(terminalWidth);
       const height = parseInt(terminalHeight);
       const seedLines = parseInt(terminalSeedLines);
@@ -124,11 +135,17 @@ export default function ConfigPage() {
       const height = parseInt(terminalHeight);
       const seedLines = parseInt(terminalSeedLines);
 
+      // Combine agents and commands for the API
+      const allAgents = [
+        ...agents.map(a => ({ ...a, agentic: true })),
+        ...commands.map(c => ({ ...c, agentic: false }))
+      ];
+
       const updateRequest = {
         workspace_path: workspacePath,
         terminal: { width, height, seed_lines: seedLines },
         repos: repos,
-        agents: agents,
+        agents: allAgents,
         internal: {
           mtime_poll_interval_ms: mtimePollInterval,
           sessions_poll_interval_ms: sessionsPollInterval,
@@ -211,7 +228,7 @@ export default function ConfigPage() {
       toastError('Agent name already exists');
       return;
     }
-    setAgents([...agents, { name: newAgentName, command: newAgentCommand }]);
+    setAgents([...agents, { name: newAgentName, command: newAgentCommand, agentic: true }]);
     setNewAgentName('');
     setNewAgentCommand('');
   };
@@ -223,12 +240,49 @@ export default function ConfigPage() {
     }
   };
 
+  const addCommand = () => {
+    if (!newCommandName.trim()) {
+      toastError('Command name is required');
+      return;
+    }
+    if (!newCommandCommand.trim()) {
+      toastError('Command is required');
+      return;
+    }
+    if (commands.some(c => c.name === newCommandName)) {
+      toastError('Command name already exists');
+      return;
+    }
+    setCommands([...commands, { name: newCommandName, command: newCommandCommand, agentic: false }]);
+    setNewCommandName('');
+    setNewCommandCommand('');
+  };
+
+  const removeCommand = async (name) => {
+    const confirmed = await confirm('Remove command?', `Remove "${name}" from the config?`);
+    if (confirmed) {
+      setCommands(commands.filter(c => c.name !== name));
+    }
+  };
+
+  // Map step number to tab index (skip commands step in setup wizard)
+  const getTabForStep = (step) => {
+    if (step <= 3) return step;
+    return step + 1; // Skip commands in initial setup
+  };
+
+  const getCurrentTab = () => {
+    // For normal config mode, tab = step directly
+    return currentStep;
+  };
+
   // Check if each step is valid
   const stepValid = {
     1: workspacePath.trim().length > 0,
     2: repos.length > 0,
     3: agents.length > 0,
-    4: true // Advanced step is always valid (has defaults)
+    4: true, // Commands are optional
+    5: true // Advanced step is always valid (has defaults)
   };
 
   if (loading) {
@@ -250,6 +304,8 @@ export default function ConfigPage() {
     );
   }
 
+  const currentTab = getCurrentTab();
+
   return (
     <>
       <div className="page-header">
@@ -261,7 +317,7 @@ export default function ConfigPage() {
       {isNotConfigured && (
         <div className="banner banner--info" style={{ marginBottom: 'var(--spacing-lg)' }}>
           <p style={{ margin: 0 }}>
-            <strong>Welcome to schmux!</strong> Let's get you set up. Complete these 4 steps to start spawning sessions.
+            <strong>Welcome to schmux!</strong> Complete these steps to start spawning sessions.
           </p>
         </div>
       )}
@@ -277,11 +333,11 @@ export default function ConfigPage() {
       {/* Steps navigation */}
       {isNotConfigured ? (
         <div className="wizard__steps">
-          {STEPS.map((step, index) => {
-            const stepNum = index + 1;
+          {[1, 2, 3, 5].map((stepNum) => {
             const isCompleted = stepNum < currentStep;
             const isCurrent = stepNum === currentStep;
             const isValid = stepValid[stepNum];
+            const stepLabel = TABS[stepNum - 1];
 
             return (
               <div
@@ -299,7 +355,7 @@ export default function ConfigPage() {
                 }}
               >
                 <span className="wizard__step-number">{stepNum}</span>
-                <span className="wizard__step-label">{step}</span>
+                <span className="wizard__step-label">{stepLabel}</span>
                 {isCompleted && <span className="wizard__step-check">✓</span>}
               </div>
             );
@@ -307,9 +363,9 @@ export default function ConfigPage() {
         </div>
       ) : (
         <div className="config-tabs" style={{ marginBottom: 'var(--spacing-lg)' }}>
-          {STEPS.map((step, index) => {
+          {TABS.map((tab, index) => {
             const stepNum = index + 1;
-            const isCurrent = stepNum === currentStep;
+            const isCurrent = stepNum === currentTab;
             const isValid = stepValid[stepNum];
 
             return (
@@ -318,7 +374,7 @@ export default function ConfigPage() {
                 className={`config-tab ${isCurrent ? 'config-tab--active' : ''}`}
                 onClick={() => setCurrentStep(stepNum)}
               >
-                <span className="config-tab__label">{step}</span>
+                <span className="config-tab__label">{tab}</span>
                 {isValid && <span className="config-tab__check">✓</span>}
               </button>
             );
@@ -329,7 +385,7 @@ export default function ConfigPage() {
       {/* Wizard content */}
       <div className="wizard">
         <div className="wizard__content">
-          {currentStep === 1 && (
+          {currentTab === 1 && (
             <div className="wizard-step-content" data-step="1">
               <h2 className="wizard-step-content__title">Workspace Directory</h2>
               <p className="wizard-step-content__description">
@@ -362,11 +418,11 @@ export default function ConfigPage() {
             </div>
           )}
 
-          {currentStep === 2 && (
+          {currentTab === 2 && (
             <div className="wizard-step-content" data-step="2">
               <h2 className="wizard-step-content__title">Repositories</h2>
               <p className="wizard-step-content__description">
-                Add the Git repositories that AI agents will work on. Each repository you configure here will be available when spawning sessions.
+                Add the Git repositories that AI agents will work on.
               </p>
 
               {repos.length === 0 ? (
@@ -419,11 +475,11 @@ export default function ConfigPage() {
             </div>
           )}
 
-          {currentStep === 3 && (
+          {currentTab === 3 && (
             <div className="wizard-step-content" data-step="3">
               <h2 className="wizard-step-content__title">AI Agents</h2>
               <p className="wizard-step-content__description">
-                Configure the AI coding agents you want to use. Each agent represents a different AI tool (Claude, Codex, etc.).
+                Configure the AI coding agents that take prompts and spawn multiple parallel sessions.
               </p>
 
               {agents.length === 0 ? (
@@ -476,8 +532,62 @@ export default function ConfigPage() {
             </div>
           )}
 
-          {currentStep === 4 && (
+          {currentTab === 4 && (
             <div className="wizard-step-content" data-step="4">
+              <h2 className="wizard-step-content__title">Commands</h2>
+              <p className="wizard-step-content__description">
+                Configure shorthand commands that run without prompts (e.g., build, test, lint).
+              </p>
+
+              {commands.length === 0 ? (
+                <div className="empty-state-hint">
+                  No commands configured. Commands are optional - you can add them later.
+                </div>
+              ) : (
+                <div className="item-list">
+                  {commands.map((cmd) => (
+                    <div className="item-list__item" key={cmd.name}>
+                      <div className="item-list__item-primary">
+                        <span className="item-list__item-name">{cmd.name}</span>
+                        <span className="item-list__item-detail">{cmd.command}</span>
+                      </div>
+                      <button
+                        className="btn btn--sm btn--danger"
+                        onClick={() => removeCommand(cmd.name)}
+                      >
+                        Remove
+                      </button>
+                    </div>
+                  ))}
+                </div>
+              )}
+
+              <div className="add-item-form">
+                <div className="add-item-form__inputs">
+                  <input
+                    type="text"
+                    className="input"
+                    placeholder="Name"
+                    value={newCommandName}
+                    onChange={(e) => setNewCommandName(e.target.value)}
+                    onKeyDown={(e) => e.key === 'Enter' && addCommand()}
+                  />
+                  <input
+                    type="text"
+                    className="input"
+                    placeholder="Command (e.g., go build ./...)"
+                    value={newCommandCommand}
+                    onChange={(e) => setNewCommandCommand(e.target.value)}
+                    onKeyDown={(e) => e.key === 'Enter' && addCommand()}
+                  />
+                </div>
+                <button type="button" className="btn btn--sm" onClick={addCommand}>Add</button>
+              </div>
+            </div>
+          )}
+
+          {currentTab === 5 && (
+            <div className="wizard-step-content" data-step="5">
               <h2 className="wizard-step-content__title">Advanced Settings</h2>
               <p className="wizard-step-content__description">
                 Terminal dimensions and internal timing intervals. You can leave these as defaults unless you have specific needs.
@@ -594,8 +704,8 @@ export default function ConfigPage() {
                   </div>
                 </div>
               </div>
-              {stepErrors[4] && (
-                <p className="form-group__error">{stepErrors[4]}</p>
+              {stepErrors[5] && (
+                <p className="form-group__error">{stepErrors[5]}</p>
               )}
             </div>
           )}

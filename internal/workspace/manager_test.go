@@ -265,7 +265,6 @@ func TestDispose_ActiveSessions(t *testing.T) {
 		ID:          "sess-001",
 		WorkspaceID: workspaceID,
 		Agent:       "test-agent",
-		Prompt:      "test prompt",
 	}
 	st.AddSession(sess)
 

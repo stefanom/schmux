@@ -229,7 +229,6 @@ func TestScan_SkipActiveSessionWorkspaces(t *testing.T) {
 		ID:          "sess-001",
 		WorkspaceID: "test-001",
 		Agent:       "test-agent",
-		Prompt:      "test prompt",
 	}
 	st.AddSession(sess)
 

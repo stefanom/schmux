@@ -899,6 +899,16 @@ body {
     flex-wrap: wrap;
 }
 
+/* Button Group - cohesive segmented control */
+.button-group {
+    display: inline-flex;
+    gap: 2px;
+}
+
+.button-group .btn {
+    margin: 0;
+}
+
 /* Results Panel */
 .results-panel {
     background-color: var(--color-surface-alt);
@@ -1174,6 +1184,12 @@ body {
     border-top-color: var(--color-accent);
     border-radius: 50%;
     animation: spin 0.8s linear infinite;
+}
+
+.spinner--small {
+    width: 14px;
+    height: 14px;
+    border-width: 2px;
 }
 
 @keyframes spin {

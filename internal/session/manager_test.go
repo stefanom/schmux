@@ -47,7 +47,6 @@ func TestGetAttachCommand(t *testing.T) {
 		ID:          "session-001",
 		WorkspaceID: "test-001",
 		Agent:       "test",
-		Prompt:      "test prompt",
 		TmuxSession: "schmux-test-001-abc123",
 	}
 
@@ -91,8 +90,8 @@ func TestGetAllSessions(t *testing.T) {
 
 	// Add test sessions
 	sessions := []state.Session{
-		{ID: "s1", WorkspaceID: "w1", Agent: "a1", Prompt: "p1", TmuxSession: "t1"},
-		{ID: "s2", WorkspaceID: "w2", Agent: "a2", Prompt: "p2", TmuxSession: "t2"},
+		{ID: "s1", WorkspaceID: "w1", Agent: "a1", TmuxSession: "t1"},
+		{ID: "s2", WorkspaceID: "w2", Agent: "a2", TmuxSession: "t2"},
 	}
 
 	for _, sess := range sessions {
@@ -118,7 +117,6 @@ func TestGetSession(t *testing.T) {
 		ID:          "session-002",
 		WorkspaceID: "test-002",
 		Agent:       "test",
-		Prompt:      "test prompt",
 		TmuxSession: "schmux-test-002-def456",
 	}
 
@@ -152,7 +150,6 @@ func TestIsRunning(t *testing.T) {
 		ID:          "session-003",
 		WorkspaceID: "test-003",
 		Agent:       "test",
-		Prompt:      "test prompt",
 		TmuxSession: "schmux-test-003-ghi789",
 	}
 

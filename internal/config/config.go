@@ -59,6 +59,7 @@ type Repo struct {
 type Agent struct {
 	Name    string `json:"name"`
 	Command string `json:"command"`
+	Agentic *bool  `json:"agentic"` // true = takes prompt (agent), false = command only, nil = defaults to true
 }
 
 // Load loads the configuration from ~/.schmux/config.json.
@@ -100,13 +101,18 @@ func Load() (*Config, error) {
 			return nil, fmt.Errorf("%w: repo URL is required for %s", ErrInvalidConfig, repo.Name)
 		}
 	}
-	// Validate agents
-	for _, agent := range cfg.Agents {
-		if agent.Name == "" {
+	// Validate agents and set default for agentic
+	for i := range cfg.Agents {
+		if cfg.Agents[i].Name == "" {
 			return nil, fmt.Errorf("%w: agent name is required", ErrInvalidConfig)
 		}
-		if agent.Command == "" {
-			return nil, fmt.Errorf("%w: agent command is required for %s", ErrInvalidConfig, agent.Name)
+		if cfg.Agents[i].Command == "" {
+			return nil, fmt.Errorf("%w: agent command is required for %s", ErrInvalidConfig, cfg.Agents[i].Name)
+		}
+		// Default agentic to true for backward compatibility
+		if cfg.Agents[i].Agentic == nil {
+			trueVal := true
+			cfg.Agents[i].Agentic = &trueVal
 		}
 	}
 

@@ -38,6 +38,7 @@ func New(cfg *config.Config, st *state.State, statePath string, wm *workspace.Ma
 // If workspaceID is provided, spawn into that specific workspace (Existing Directory Spawn mode).
 // Otherwise, find or create a workspace by repoURL/branch.
 // nickname is an optional human-friendly name for the session.
+// prompt is only used if the agent is agentic (takes prompts).
 func (m *Manager) Spawn(repoURL, branch, agentName, prompt, nickname string, workspaceID string) (*state.Session, error) {
 	// Find agent config
 	agent, found := m.config.FindAgent(agentName)
@@ -63,9 +64,16 @@ func (m *Manager) Spawn(repoURL, branch, agentName, prompt, nickname string, wor
 		}
 	}
 
-	// Build agent command with prompt - properly quote the prompt to prevent command injection
-	// The prompt is quoted so it's passed as a single argument to the agent
-	command := fmt.Sprintf("%s %s", agent.Command, strconv.Quote(prompt))
+	// Build command based on whether agent is agentic
+	var command string
+	isAgentic := agent.Agentic != nil && *agent.Agentic
+	if isAgentic {
+		// Agentic: append prompt to command, properly quote the prompt to prevent command injection
+		command = fmt.Sprintf("%s %s", agent.Command, strconv.Quote(prompt))
+	} else {
+		// Non-agentic: run command as-is without prompt
+		command = agent.Command
+	}
 
 	// Create session ID
 	sessionID := fmt.Sprintf("%s-%s", w.ID, uuid.New().String()[:8])
@@ -106,12 +114,11 @@ func (m *Manager) Spawn(repoURL, branch, agentName, prompt, nickname string, wor
 		return nil, fmt.Errorf("failed to get pane PID: %w", err)
 	}
 
-	// Create session state with cached PID
+	// Create session state with cached PID (no Prompt field)
 	sess := state.Session{
 		ID:          sessionID,
 		WorkspaceID: w.ID,
 		Agent:       agentName,
-		Prompt:      prompt,
 		Nickname:    nickname,
 		TmuxSession: tmuxSession,
 		CreatedAt:   time.Now(),

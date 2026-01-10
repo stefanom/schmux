@@ -81,7 +81,6 @@ func TestAddAndGetSession(t *testing.T) {
 		ID:          "session-001",
 		WorkspaceID: "test-001",
 		Agent:       "claude",
-		Prompt:      "fix the bug",
 		TmuxSession: "schmux-test-001-abc123",
 		CreatedAt:   time.Now(),
 	}
@@ -108,7 +107,6 @@ func TestRemoveSession(t *testing.T) {
 		ID:          "session-002",
 		WorkspaceID: "test-001",
 		Agent:       "codex",
-		Prompt:      "add feature",
 		TmuxSession: "schmux-test-001-def456",
 		CreatedAt:   time.Now(),
 	}
@@ -131,8 +129,8 @@ func TestGetSessions(t *testing.T) {
 	s.Sessions = []Session{}
 
 	sessions := []Session{
-		{ID: "s1", WorkspaceID: "w1", Agent: "a1", Prompt: "p1", TmuxSession: "t1", CreatedAt: time.Now()},
-		{ID: "s2", WorkspaceID: "w2", Agent: "a2", Prompt: "p2", TmuxSession: "t2", CreatedAt: time.Now()},
+		{ID: "s1", WorkspaceID: "w1", Agent: "a1", TmuxSession: "t1", CreatedAt: time.Now()},
+		{ID: "s2", WorkspaceID: "w2", Agent: "a2", TmuxSession: "t2", CreatedAt: time.Now()},
 	}
 
 	for _, sess := range sessions {
