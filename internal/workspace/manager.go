@@ -16,13 +16,13 @@ import (
 // Manager manages workspace directories.
 type Manager struct {
 	config    *config.Config
-	state     *state.State
+	state     state.StateStore
 	statePath string
 	logger    *log.Logger
 }
 
 // New creates a new workspace manager.
-func New(cfg *config.Config, st *state.State, statePath string) *Manager {
+func New(cfg *config.Config, st state.StateStore, statePath string) *Manager {
 	homeDir, err := os.UserHomeDir()
 	if err != nil {
 		homeDir = ""
@@ -60,7 +60,7 @@ func (m *Manager) GetByID(workspaceID string) (*state.Workspace, bool) {
 // Returns a workspace ready for use (fetch/pull/clean already done).
 func (m *Manager) GetOrCreate(repoURL, branch string) (*state.Workspace, error) {
 	// Try to find an existing workspace with matching repoURL and branch
-	for _, w := range m.state.Workspaces {
+	for _, w := range m.state.GetWorkspaces() {
 		// Check if workspace directory still exists
 		if _, err := os.Stat(w.Path); os.IsNotExist(err) {
 			m.logger.Printf("workspace directory missing, skipping: id=%s path=%s", w.ID, w.Path)
@@ -69,7 +69,7 @@ func (m *Manager) GetOrCreate(repoURL, branch string) (*state.Workspace, error) 
 		if w.Repo == repoURL && w.Branch == branch {
 			// Check if workspace has active sessions
 			hasActiveSessions := false
-			for _, s := range m.state.Sessions {
+			for _, s := range m.state.GetSessions() {
 				if s.WorkspaceID == w.ID {
 					hasActiveSessions = true
 					break
@@ -87,11 +87,11 @@ func (m *Manager) GetOrCreate(repoURL, branch string) (*state.Workspace, error) 
 	}
 
 	// Try to find any unused workspace for this repo (different branch OK)
-	for _, w := range m.state.Workspaces {
+	for _, w := range m.state.GetWorkspaces() {
 		if w.Repo == repoURL {
 			// Check if workspace has active sessions
 			hasActiveSessions := false
-			for _, s := range m.state.Sessions {
+			for _, s := range m.state.GetSessions() {
 				if s.WorkspaceID == w.ID {
 					hasActiveSessions = true
 					break
@@ -105,7 +105,9 @@ func (m *Manager) GetOrCreate(repoURL, branch string) (*state.Workspace, error) 
 				}
 				// Update branch in state only after successful prepare
 				w.Branch = branch
-				m.state.UpdateWorkspace(w)
+				if err := m.state.UpdateWorkspace(w); err != nil {
+					return nil, fmt.Errorf("failed to update workspace in state: %w", err)
+				}
 				return &w, nil
 			}
 		}
@@ -157,8 +159,10 @@ func (m *Manager) create(repoURL, branch string) (*state.Workspace, error) {
 		Path:   workspacePath,
 	}
 
-	m.state.AddWorkspace(w)
-	if err := state.Save(m.state, m.statePath); err != nil {
+	if err := m.state.AddWorkspace(w); err != nil {
+		return nil, fmt.Errorf("failed to add workspace to state: %w", err)
+	}
+	if err := m.state.Save(); err != nil {
 		return nil, fmt.Errorf("failed to save state: %w", err)
 	}
 
@@ -173,7 +177,7 @@ func (m *Manager) prepare(workspaceID, branch string) error {
 	}
 
 	// Check if workspace has active sessions
-	for _, s := range m.state.Sessions {
+	for _, s := range m.state.GetSessions() {
 		if s.WorkspaceID == workspaceID {
 			return fmt.Errorf("workspace has active sessions: %s", workspaceID)
 		}
@@ -236,7 +240,7 @@ func (m *Manager) Cleanup(workspaceID string) error {
 // getWorkspacesForRepo returns all workspaces for a given repoURL.
 func (m *Manager) getWorkspacesForRepo(repoURL string) []state.Workspace {
 	var result []state.Workspace
-	for _, w := range m.state.Workspaces {
+	for _, w := range m.state.GetWorkspaces() {
 		if w.Repo == repoURL {
 			result = append(result, w)
 		}
@@ -394,7 +398,9 @@ func (m *Manager) UpdateGitStatus(workspaceID string) (*state.Workspace, error) 
 	w.GitBehind = behind
 
 	// Update the workspace in state (this updates the in-memory copy)
-	m.state.UpdateWorkspace(w)
+	if err := m.state.UpdateWorkspace(w); err != nil {
+		return nil, fmt.Errorf("failed to update workspace in state: %w", err)
+	}
 
 	return &w, nil
 }
@@ -465,7 +471,7 @@ func (m *Manager) Dispose(workspaceID string) error {
 	m.logger.Printf("disposing workspace: id=%s path=%s", workspaceID, w.Path)
 
 	// Check if workspace has active sessions
-	for _, s := range m.state.Sessions {
+	for _, s := range m.state.GetSessions() {
 		if s.WorkspaceID == workspaceID {
 			return fmt.Errorf("workspace has active sessions: %s", workspaceID)
 		}
@@ -477,8 +483,10 @@ func (m *Manager) Dispose(workspaceID string) error {
 	}
 
 	// Remove from state
-	m.state.RemoveWorkspace(workspaceID)
-	if err := state.Save(m.state, m.statePath); err != nil {
+	if err := m.state.RemoveWorkspace(workspaceID); err != nil {
+		return fmt.Errorf("failed to remove workspace from state: %w", err)
+	}
+	if err := m.state.Save(); err != nil {
 		return fmt.Errorf("failed to save state: %w", err)
 	}
 

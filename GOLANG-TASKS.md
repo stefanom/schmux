@@ -95,7 +95,7 @@ The agent should:
 
 ---
 
-### 2. Add Interfaces for Testability [🔴 Full Block] - ⬜
+### 2. Add Interfaces for Testability [🔴 Full Block] - ✅
 
 **Why P1:** Can't mock anything, tests are slow/fragile, have to run real tmux/git
 
@@ -527,13 +527,16 @@ Concurrency Tests (7) [P2, 🟡] [Independent]
 ## Progress Tracking
 
 **Total Tasks:** 7
-**Completed:** 0
+**Completed:** 1
 **In Progress:** 0
 **Blocked:** 0
 
 ### By Priority
-- **P1 Critical:** 5 tasks (0% complete)
+- **P1 Critical:** 5 tasks (20% complete)
 - **P2 Medium:** 2 tasks (0% complete)
+
+### Completed Tasks
+- ✅ **Task #2: Add Interfaces for Testability** - Created StateStore, TmuxService, WorkspaceManager interfaces; refactored structs to accept interfaces; added error returns to state methods; added error path tests
 
 ### By Parallelizability
 - 🔴 **Full Block:** 3 tasks (blocks feature work)

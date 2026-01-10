@@ -15,7 +15,7 @@ func TestNew(t *testing.T) {
 			{Name: "test", Command: "test"},
 		},
 	}
-	st := state.New()
+	st := state.New("")
 	statePath := t.TempDir() + "/state.json"
 	wm := workspace.New(cfg, st, statePath)
 
@@ -36,7 +36,7 @@ func TestNew(t *testing.T) {
 
 func TestGetAttachCommand(t *testing.T) {
 	cfg := &config.Config{WorkspacePath: "/tmp/workspaces"}
-	st := state.New()
+	st := state.New("")
 	statePath := t.TempDir() + "/state.json"
 	wm := workspace.New(cfg, st, statePath)
 
@@ -65,7 +65,7 @@ func TestGetAttachCommand(t *testing.T) {
 
 func TestGetAttachCommandNotFound(t *testing.T) {
 	cfg := &config.Config{WorkspacePath: "/tmp/workspaces"}
-	st := state.New()
+	st := state.New("")
 	statePath := t.TempDir() + "/state.json"
 	wm := workspace.New(cfg, st, statePath)
 
@@ -79,7 +79,7 @@ func TestGetAttachCommandNotFound(t *testing.T) {
 
 func TestGetAllSessions(t *testing.T) {
 	cfg := &config.Config{WorkspacePath: "/tmp/workspaces"}
-	st := state.New()
+	st := state.New("")
 	statePath := t.TempDir() + "/state.json"
 	wm := workspace.New(cfg, st, statePath)
 
@@ -106,7 +106,7 @@ func TestGetAllSessions(t *testing.T) {
 
 func TestGetSession(t *testing.T) {
 	cfg := &config.Config{WorkspacePath: "/tmp/workspaces"}
-	st := state.New()
+	st := state.New("")
 	statePath := t.TempDir() + "/state.json"
 	wm := workspace.New(cfg, st, statePath)
 
@@ -139,7 +139,7 @@ func TestGetSession(t *testing.T) {
 
 func TestIsRunning(t *testing.T) {
 	cfg := &config.Config{WorkspacePath: "/tmp/workspaces"}
-	st := state.New()
+	st := state.New("")
 	statePath := t.TempDir() + "/state.json"
 	wm := workspace.New(cfg, st, statePath)
 

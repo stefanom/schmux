@@ -13,6 +13,7 @@ import (
 type State struct {
 	Workspaces []Workspace `json:"workspaces"`
 	Sessions   []Session   `json:"sessions"`
+	path       string      // path to the state file
 	mu         sync.RWMutex
 }
 
@@ -41,10 +42,11 @@ type Session struct {
 }
 
 // New creates a new empty State instance.
-func New() *State {
+func New(path string) *State {
 	return &State{
 		Workspaces: []Workspace{},
 		Sessions:   []Session{},
+		path:       path,
 	}
 }
 
@@ -54,12 +56,13 @@ func Load(path string) (*State, error) {
 	data, err := os.ReadFile(path)
 	if err != nil {
 		if os.IsNotExist(err) {
-			return New(), nil
+			return New(path), nil
 		}
 		return nil, fmt.Errorf("failed to read state: %w", err)
 	}
 
 	var st State
+	st.path = path
 	if err := json.Unmarshal(data, &st); err != nil {
 		return nil, fmt.Errorf("failed to unmarshal state: %w", err)
 	}
@@ -67,21 +70,25 @@ func Load(path string) (*State, error) {
 	return &st, nil
 }
 
-// Save saves the state to the given path.
-func Save(st *State, path string) error {
-	st.mu.Lock()
-	defer st.mu.Unlock()
+// Save saves the state to its configured path.
+func (s *State) Save() error {
+	s.mu.Lock()
+	defer s.mu.Unlock()
 
-	if err := os.MkdirAll(filepath.Dir(path), 0755); err != nil {
+	if s.path == "" {
+		return fmt.Errorf("state path is empty, cannot save")
+	}
+
+	if err := os.MkdirAll(filepath.Dir(s.path), 0755); err != nil {
 		return fmt.Errorf("failed to create state directory: %w", err)
 	}
 
-	data, err := json.MarshalIndent(st, "", "  ")
+	data, err := json.MarshalIndent(s, "", "  ")
 	if err != nil {
 		return fmt.Errorf("failed to marshal state: %w", err)
 	}
 
-	if err := os.WriteFile(path, data, 0644); err != nil {
+	if err := os.WriteFile(s.path, data, 0644); err != nil {
 		return fmt.Errorf("failed to write state: %w", err)
 	}
 
@@ -89,10 +96,11 @@ func Save(st *State, path string) error {
 }
 
 // AddWorkspace adds a workspace to the state.
-func (s *State) AddWorkspace(w Workspace) {
+func (s *State) AddWorkspace(w Workspace) error {
 	s.mu.Lock()
 	defer s.mu.Unlock()
 	s.Workspaces = append(s.Workspaces, w)
+	return nil
 }
 
 // GetWorkspace returns a workspace by ID.
@@ -118,22 +126,25 @@ func (s *State) GetWorkspaces() []Workspace {
 }
 
 // UpdateWorkspace updates a workspace in the state.
-func (s *State) UpdateWorkspace(w Workspace) {
+// Returns an error if the workspace is not found.
+func (s *State) UpdateWorkspace(w Workspace) error {
 	s.mu.Lock()
 	defer s.mu.Unlock()
 	for i, existing := range s.Workspaces {
 		if existing.ID == w.ID {
 			s.Workspaces[i] = w
-			return
+			return nil
 		}
 	}
+	return fmt.Errorf("workspace not found: %s", w.ID)
 }
 
 // AddSession adds a session to the state.
-func (s *State) AddSession(sess Session) {
+func (s *State) AddSession(sess Session) error {
 	s.mu.Lock()
 	defer s.mu.Unlock()
 	s.Sessions = append(s.Sessions, sess)
+	return nil
 }
 
 // GetSession returns a session by ID.
@@ -159,15 +170,17 @@ func (s *State) GetSessions() []Session {
 }
 
 // UpdateSession updates a session in the state.
-func (s *State) UpdateSession(sess Session) {
+// Returns an error if the session is not found.
+func (s *State) UpdateSession(sess Session) error {
 	s.mu.Lock()
 	defer s.mu.Unlock()
 	for i, existing := range s.Sessions {
 		if existing.ID == sess.ID {
 			s.Sessions[i] = sess
-			return
+			return nil
 		}
 	}
+	return fmt.Errorf("session not found: %s", sess.ID)
 }
 
 // UpdateSessionLastOutput atomically updates just the LastOutputAt field.
@@ -184,25 +197,27 @@ func (s *State) UpdateSessionLastOutput(sessionID string, t time.Time) {
 }
 
 // RemoveSession removes a session from the state.
-func (s *State) RemoveSession(id string) {
+func (s *State) RemoveSession(id string) error {
 	s.mu.Lock()
 	defer s.mu.Unlock()
 	for i, sess := range s.Sessions {
 		if sess.ID == id {
 			s.Sessions = append(s.Sessions[:i], s.Sessions[i+1:]...)
-			return
+			return nil
 		}
 	}
+	return nil
 }
 
 // RemoveWorkspace removes a workspace from the state.
-func (s *State) RemoveWorkspace(id string) {
+func (s *State) RemoveWorkspace(id string) error {
 	s.mu.Lock()
 	defer s.mu.Unlock()
 	for i, w := range s.Workspaces {
 		if w.ID == id {
 			s.Workspaces = append(s.Workspaces[:i], s.Workspaces[i+1:]...)
-			return
+			return nil
 		}
 	}
+	return nil
 }

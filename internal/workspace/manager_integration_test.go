@@ -13,7 +13,7 @@ import (
 func TestGetOrCreate_BranchReuse_Success(t *testing.T) {
 	// Set up isolated state with temp path
 	statePath := filepath.Join(t.TempDir(), "state.json")
-	st := state.New()
+	st := state.New(statePath)
 
 	// Skip if git not available
 	if _, err := exec.LookPath("git"); err != nil {

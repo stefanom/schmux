@@ -137,8 +137,8 @@ func TestNew(t *testing.T) {
 	cfg := &config.Config{
 		WorkspacePath: "/tmp/workspaces",
 	}
-	st := state.New()
 	statePath := t.TempDir() + "/state.json"
+	st := state.New(statePath)
 
 	m := New(cfg, st, statePath)
 	if m == nil {
@@ -153,7 +153,8 @@ func TestNew(t *testing.T) {
 }
 
 func TestGetWorkspacesForRepo(t *testing.T) {
-	st := state.New()
+	statePath := t.TempDir() + "/state.json"
+	st := state.New(statePath)
 
 	// Add some workspaces
 	st.Workspaces = []state.Workspace{
@@ -163,7 +164,7 @@ func TestGetWorkspacesForRepo(t *testing.T) {
 	}
 
 	cfg := &config.Config{WorkspacePath: "/tmp/workspaces"}
-	m := New(cfg, st, t.TempDir()+"/state.json")
+	m := New(cfg, st, statePath)
 
 	workspaces := m.getWorkspacesForRepo("test")
 	if len(workspaces) != 2 {
@@ -185,7 +186,7 @@ func TestDispose(t *testing.T) {
 	tmpDir := t.TempDir()
 	statePath := filepath.Join(tmpDir, "state.json")
 	cfg := &config.Config{WorkspacePath: tmpDir}
-	st := state.New()
+	st := state.New(statePath)
 	m := New(cfg, st, statePath)
 
 	// Create test workspace directory and state entry
@@ -225,7 +226,7 @@ func TestDispose_NotFound(t *testing.T) {
 	tmpDir := t.TempDir()
 	statePath := filepath.Join(tmpDir, "state.json")
 	cfg := &config.Config{WorkspacePath: tmpDir}
-	st := state.New()
+	st := state.New(statePath)
 	m := New(cfg, st, statePath)
 
 	// Try to dispose non-existent workspace
@@ -242,7 +243,7 @@ func TestDispose_ActiveSessions(t *testing.T) {
 	tmpDir := t.TempDir()
 	statePath := filepath.Join(tmpDir, "state.json")
 	cfg := &config.Config{WorkspacePath: tmpDir}
-	st := state.New()
+	st := state.New(statePath)
 	m := New(cfg, st, statePath)
 
 	// Create test workspace directory and state entry
@@ -297,7 +298,7 @@ func TestDispose_Integration(t *testing.T) {
 
 	tmpDir := t.TempDir()
 	statePath := filepath.Join(tmpDir, "state.json")
-	st := state.New()
+	st := state.New(statePath)
 
 	// Create test repo with a branch
 	repoDir := gitTestWorkTree(t)

@@ -10,19 +10,6 @@ import (
 	"github.com/sergek/schmux/internal/state"
 )
 
-// ScanResult represents the results of a workspace scan operation.
-type ScanResult struct {
-	Added   []state.Workspace `json:"added"`
-	Updated []WorkspaceChange `json:"updated"`
-	Removed []state.Workspace `json:"removed"`
-}
-
-// WorkspaceChange represents a workspace that was updated, with old and new values.
-type WorkspaceChange struct {
-	Old state.Workspace `json:"old"`
-	New state.Workspace `json:"new"`
-}
-
 // Scan scans the workspace directory and reconciles state with filesystem.
 // Returns what was added, updated, and removed.
 func (m *Manager) Scan() (ScanResult, error) {
@@ -95,7 +82,7 @@ func (m *Manager) Scan() (ScanResult, error) {
 	for _, ws := range existingWorkspaces {
 		// Check if workspace has active sessions - skip these
 		hasActiveSessions := false
-		for _, s := range m.state.Sessions {
+		for _, s := range m.state.GetSessions() {
 			if s.WorkspaceID == ws.ID {
 				hasActiveSessions = true
 				break
@@ -157,7 +144,7 @@ func (m *Manager) Scan() (ScanResult, error) {
 
 	// Step 4: Save state if anything changed
 	if len(result.Added) > 0 || len(result.Updated) > 0 || len(result.Removed) > 0 {
-		if err := state.Save(m.state, m.statePath); err != nil {
+		if err := m.state.Save(); err != nil {
 			return ScanResult{}, fmt.Errorf("failed to save state: %w", err)
 		}
 	}

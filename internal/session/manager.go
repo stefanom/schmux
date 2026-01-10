@@ -19,13 +19,13 @@ import (
 // Manager manages sessions.
 type Manager struct {
 	config    *config.Config
-	state     *state.State
+	state     state.StateStore
 	statePath string
-	workspace *workspace.Manager
+	workspace workspace.WorkspaceManager
 }
 
 // New creates a new session manager.
-func New(cfg *config.Config, st *state.State, statePath string, wm *workspace.Manager) *Manager {
+func New(cfg *config.Config, st state.StateStore, statePath string, wm workspace.WorkspaceManager) *Manager {
 	return &Manager{
 		config:    cfg,
 		state:     st,
@@ -125,8 +125,10 @@ func (m *Manager) Spawn(repoURL, branch, agentName, prompt, nickname string, wor
 		Pid:         pid,
 	}
 
-	m.state.AddSession(sess)
-	if err := state.Save(m.state, m.statePath); err != nil {
+	if err := m.state.AddSession(sess); err != nil {
+		return nil, fmt.Errorf("failed to add session to state: %w", err)
+	}
+	if err := m.state.Save(); err != nil {
 		return nil, fmt.Errorf("failed to save state: %w", err)
 	}
 
@@ -179,8 +181,10 @@ func (m *Manager) Dispose(sessionID string) error {
 	// Workspaces persist and are only reset when reused for a new spawn.
 
 	// Remove session from state
-	m.state.RemoveSession(sessionID)
-	if err := state.Save(m.state, m.statePath); err != nil {
+	if err := m.state.RemoveSession(sessionID); err != nil {
+		return fmt.Errorf("failed to remove session from state: %w", err)
+	}
+	if err := m.state.Save(); err != nil {
 		return fmt.Errorf("failed to save state: %w", err)
 	}
 
@@ -243,8 +247,10 @@ func (m *Manager) RenameSession(sessionID, newNickname string) error {
 	// Update session state
 	sess.Nickname = newNickname
 	sess.TmuxSession = newTmuxName
-	m.state.UpdateSession(sess)
-	if err := state.Save(m.state, m.statePath); err != nil {
+	if err := m.state.UpdateSession(sess); err != nil {
+		return fmt.Errorf("failed to update session in state: %w", err)
+	}
+	if err := m.state.Save(); err != nil {
 		return fmt.Errorf("failed to save state: %w", err)
 	}
 

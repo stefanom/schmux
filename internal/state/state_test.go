@@ -3,6 +3,7 @@ package state
 import (
 	"os"
 	"path/filepath"
+	"strings"
 	"testing"
 	"time"
 )
@@ -21,7 +22,7 @@ func TestLoad(t *testing.T) {
 }
 
 func TestAddAndGetWorkspace(t *testing.T) {
-	s := New()
+	s := New("")
 
 	w := Workspace{
 		ID:     "test-001",
@@ -49,7 +50,7 @@ func TestAddAndGetWorkspace(t *testing.T) {
 }
 
 func TestUpdateWorkspace(t *testing.T) {
-	s := New()
+	s := New("")
 
 	w := Workspace{
 		ID:     "test-002",
@@ -75,7 +76,7 @@ func TestUpdateWorkspace(t *testing.T) {
 }
 
 func TestAddAndGetSession(t *testing.T) {
-	s := New()
+	s := New("")
 
 	sess := Session{
 		ID:          "session-001",
@@ -101,7 +102,7 @@ func TestAddAndGetSession(t *testing.T) {
 }
 
 func TestRemoveSession(t *testing.T) {
-	s := New()
+	s := New("")
 
 	sess := Session{
 		ID:          "session-002",
@@ -123,7 +124,7 @@ func TestRemoveSession(t *testing.T) {
 }
 
 func TestGetSessions(t *testing.T) {
-	s := New()
+	s := New("")
 
 	// Clear existing sessions
 	s.Sessions = []Session{}
@@ -140,5 +141,126 @@ func TestGetSessions(t *testing.T) {
 	retrieved := s.GetSessions()
 	if len(retrieved) != len(sessions) {
 		t.Errorf("expected %d sessions, got %d", len(sessions), len(retrieved))
+	}
+}
+
+// Error path tests
+
+func TestUpdateWorkspaceNotFound(t *testing.T) {
+	s := New("")
+
+	w := Workspace{
+		ID:     "nonexistent",
+		Repo:   "https://github.com/test/repo",
+		Branch: "main",
+		Path:   "/tmp/test",
+	}
+
+	err := s.UpdateWorkspace(w)
+	if err == nil {
+		t.Fatal("expected error when updating nonexistent workspace, got nil")
+	}
+	if !strings.Contains(err.Error(), "not found") {
+		t.Errorf("expected 'not found' error, got: %v", err)
+	}
+}
+
+func TestUpdateSessionNotFound(t *testing.T) {
+	s := New("")
+
+	sess := Session{
+		ID:          "nonexistent",
+		WorkspaceID: "test-001",
+		Agent:       "claude",
+		TmuxSession: "test",
+		CreatedAt:   time.Now(),
+	}
+
+	err := s.UpdateSession(sess)
+	if err == nil {
+		t.Fatal("expected error when updating nonexistent session, got nil")
+	}
+	if !strings.Contains(err.Error(), "not found") {
+		t.Errorf("expected 'not found' error, got: %v", err)
+	}
+}
+
+func TestSaveEmptyPath(t *testing.T) {
+	s := New("")
+
+	err := s.Save()
+	if err == nil {
+		t.Fatal("expected error when saving with empty path, got nil")
+	}
+	if !strings.Contains(err.Error(), "empty") {
+		t.Errorf("expected 'empty' error, got: %v", err)
+	}
+}
+
+func TestSaveValidPath(t *testing.T) {
+	tmpDir := t.TempDir()
+	statePath := tmpDir + "/state.json"
+	s := New(statePath)
+
+	w := Workspace{
+		ID:     "test-001",
+		Repo:   "https://github.com/test/repo",
+		Branch: "main",
+		Path:   "/tmp/test",
+	}
+	s.AddWorkspace(w)
+
+	err := s.Save()
+	if err != nil {
+		t.Fatalf("failed to save state: %v", err)
+	}
+
+	// Verify the file was created
+	data, err := os.ReadFile(statePath)
+	if err != nil {
+		t.Fatalf("failed to read state file: %v", err)
+	}
+	if len(data) == 0 {
+		t.Fatal("state file is empty")
+	}
+}
+
+func TestUpdateWorkspaceThenSave(t *testing.T) {
+	tmpDir := t.TempDir()
+	statePath := tmpDir + "/state.json"
+	s := New(statePath)
+
+	w := Workspace{
+		ID:     "test-001",
+		Repo:   "https://github.com/test/repo",
+		Branch: "main",
+		Path:   "/tmp/test",
+	}
+	s.AddWorkspace(w)
+
+	// Update the workspace
+	w.Branch = "develop"
+	err := s.UpdateWorkspace(w)
+	if err != nil {
+		t.Fatalf("failed to update workspace: %v", err)
+	}
+
+	// Save and reload
+	err = s.Save()
+	if err != nil {
+		t.Fatalf("failed to save state: %v", err)
+	}
+
+	s2, err := Load(statePath)
+	if err != nil {
+		t.Fatalf("failed to load state: %v", err)
+	}
+
+	retrieved, found := s2.GetWorkspace("test-001")
+	if !found {
+		t.Fatal("workspace not found after reload")
+	}
+	if retrieved.Branch != "develop" {
+		t.Errorf("expected branch 'develop', got '%s'", retrieved.Branch)
 	}
 }

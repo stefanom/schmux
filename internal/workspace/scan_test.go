@@ -24,7 +24,7 @@ func TestScan_EmptyWorkspaceDirectory(t *testing.T) {
 			{Name: "test", URL: "https://example.com/test.git"},
 		},
 	}
-	st := state.New()
+	st := state.New(statePath)
 	m := New(cfg, st, statePath)
 
 	result, err := m.Scan()
@@ -65,7 +65,7 @@ func TestScan_AddNewWorkspace(t *testing.T) {
 			{Name: "test", URL: "https://example.com/test.git"},
 		},
 	}
-	st := state.New()
+	st := state.New(statePath)
 	m := New(cfg, st, statePath)
 
 	// Scan should not add because the repo URL doesn't match
@@ -102,7 +102,7 @@ func TestScan_RemoveMissingWorkspace(t *testing.T) {
 			{Name: "test", URL: "https://example.com/test.git"},
 		},
 	}
-	st := state.New()
+	st := state.New(statePath)
 
 	// Add workspace to state
 	ws := state.Workspace{
@@ -164,7 +164,7 @@ func TestScan_UpdateWorkspaceBranch(t *testing.T) {
 			{Name: "test", URL: "https://example.com/test.git"},
 		},
 	}
-	st := state.New()
+	st := state.New(statePath)
 
 	// Add workspace to state with old branch
 	ws := state.Workspace{
@@ -206,7 +206,7 @@ func TestScan_SkipActiveSessionWorkspaces(t *testing.T) {
 			{Name: "test", URL: "https://example.com/test.git"},
 		},
 	}
-	st := state.New()
+	st := state.New(statePath)
 
 	// Create a git repo in the workspace directory
 	repoDir := gitTestWorkTree(t)
@@ -282,7 +282,7 @@ func TestScan_Integration(t *testing.T) {
 			{Name: "test", URL: "https://example.com/test.git"},
 		},
 	}
-	st := state.New()
+	st := state.New(statePath)
 
 	// Add workspace to state with old branch
 	ws1 := state.Workspace{

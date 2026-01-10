@@ -30,8 +30,8 @@ var (
 // Daemon represents the schmux daemon.
 type Daemon struct {
 	config    *config.Config
-	state     *state.State
-	workspace *workspace.Manager
+	state     state.StateStore
+	workspace workspace.WorkspaceManager
 	session   *session.Manager
 	server    *dashboard.Server
 }
@@ -251,7 +251,9 @@ func Run() error {
 		}
 		if info, err := os.Stat(logPath); err == nil {
 			sess.LastOutputAt = info.ModTime()
-			st.UpdateSession(sess)
+			if err := st.UpdateSession(sess); err != nil {
+				fmt.Printf("warning: failed to update session %s: %v\n", sess.ID, err)
+			}
 		}
 	}
 

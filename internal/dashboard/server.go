@@ -23,15 +23,15 @@ const (
 // Server represents the dashboard HTTP server.
 type Server struct {
 	config     *config.Config
-	state      *state.State
+	state      state.StateStore
 	statePath  string
 	session    *session.Manager
-	workspace  *workspace.Manager
+	workspace  workspace.WorkspaceManager
 	httpServer *http.Server
 }
 
 // NewServer creates a new dashboard server.
-func NewServer(cfg *config.Config, st *state.State, statePath string, sm *session.Manager, wm *workspace.Manager) *Server {
+func NewServer(cfg *config.Config, st state.StateStore, statePath string, sm *session.Manager, wm workspace.WorkspaceManager) *Server {
 	return &Server{
 		config:    cfg,
 		state:     st,
