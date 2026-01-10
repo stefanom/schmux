@@ -1,6 +1,7 @@
 package main
 
 import (
+	"os"
 	"testing"
 
 	"github.com/sergek/schmux/pkg/cli"
@@ -128,3 +129,94 @@ func TestListOutputHumanEmpty(t *testing.T) {
 		t.Fatalf("outputHuman() error = %v", err)
 	}
 }
+
+// TestListCommand_Run tests the list command Run method
+func TestListCommand_Run(t *testing.T) {
+	tests := []struct {
+		name      string
+		args      []string
+		isRunning bool
+		sessions  []cli.WorkspaceWithSessions
+		wantErr   bool
+	}{
+		{
+			name:      "lists sessions successfully",
+			args:      []string{},
+			isRunning: true,
+			sessions: []cli.WorkspaceWithSessions{
+				{
+					ID:       "test-001",
+					Branch:   "main",
+					GitDirty: false,
+					GitAhead: 0,
+					GitBehind: 0,
+					Sessions: []cli.Session{
+						{ID: "test-001-abc", Agent: "claude", Running: true},
+					},
+				},
+			},
+			wantErr: false,
+		},
+		{
+			name:      "lists empty sessions",
+			args:      []string{},
+			isRunning: true,
+			sessions:  []cli.WorkspaceWithSessions{},
+			wantErr:   false,
+		},
+		{
+			name:      "daemon not running",
+			args:      []string{},
+			isRunning: false,
+			wantErr:   true,
+		},
+		{
+			name:      "lists with json flag",
+			args:      []string{"--json"},
+			isRunning: true,
+			sessions: []cli.WorkspaceWithSessions{
+				{
+					ID:       "test-001",
+					Branch:   "main",
+					Sessions: []cli.Session{
+						{ID: "test-001-abc", Agent: "claude"},
+					},
+				},
+			},
+			wantErr: false,
+		},
+	}
+
+	for _, tt := range tests {
+		t.Run(tt.name, func(t *testing.T) {
+			mock := &MockDaemonClient{
+				isRunning: tt.isRunning,
+				sessions:  tt.sessions,
+			}
+
+			cmd := NewListCommand(mock)
+
+			// Capture output
+			oldStdout := os.Stdout
+			r, w, _ := os.Pipe()
+			os.Stdout = w
+
+			err := cmd.Run(tt.args)
+
+			w.Close()
+			os.Stdout = oldStdout
+			r.Close()
+
+			if tt.wantErr {
+				if err == nil {
+					t.Error("expected error, got nil")
+				}
+			} else {
+				if err != nil {
+					t.Errorf("unexpected error: %v", err)
+				}
+			}
+		})
+	}
+}
+

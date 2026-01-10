@@ -1,7 +1,8 @@
 package main
 
 import (
-	"context"
+	"os"
+	"strings"
 	"testing"
 
 	"github.com/sergek/schmux/pkg/cli"
@@ -58,58 +59,6 @@ func TestParseTmuxSession(t *testing.T) {
 			}
 		})
 	}
-}
-
-// MockDaemonClient is a mock implementation for testing
-type MockDaemonClient struct {
-	isRunning    bool
-	config       *cli.Config
-	workspaces   []cli.Workspace
-	sessions     []cli.WorkspaceWithSessions
-	scanResult   *cli.ScanResult
-	scanErr      error
-	spawnResults []cli.SpawnResult
-	spawnErr     error
-}
-
-func (m *MockDaemonClient) IsRunning() bool {
-	return m.isRunning
-}
-
-func (m *MockDaemonClient) GetConfig() (*cli.Config, error) {
-	return m.config, nil
-}
-
-func (m *MockDaemonClient) GetWorkspaces() ([]cli.Workspace, error) {
-	return m.workspaces, nil
-}
-
-func (m *MockDaemonClient) GetSessions() ([]cli.WorkspaceWithSessions, error) {
-	return m.sessions, nil
-}
-
-func (m *MockDaemonClient) ScanWorkspaces(ctx context.Context) (*cli.ScanResult, error) {
-	return m.scanResult, m.scanErr
-}
-
-func (m *MockDaemonClient) Spawn(ctx context.Context, req cli.SpawnRequest) ([]cli.SpawnResult, error) {
-	if m.spawnErr != nil {
-		return nil, m.spawnErr
-	}
-	if m.spawnResults != nil {
-		return m.spawnResults, nil
-	}
-	return []cli.SpawnResult{
-		{
-			SessionID:   "test-session-123",
-			WorkspaceID: "test-workspace-001",
-			Agent:       "test-agent",
-		},
-	}, nil
-}
-
-func (m *MockDaemonClient) DisposeSession(ctx context.Context, sessionID string) error {
-	return nil
 }
 
 func TestAutoDetectWorkspace(t *testing.T) {
@@ -246,4 +195,202 @@ func TestFindRepo(t *testing.T) {
 
 func boolPtr(b bool) *bool {
 	return &b
+}
+
+// TestSpawnCommand_Run tests the spawn command Run method
+func TestSpawnCommand_Run(t *testing.T) {
+	agenticTrue := true
+
+	tests := []struct {
+		name        string
+		args        []string
+		isRunning   bool
+		config      *cli.Config
+		workspaces  []cli.Workspace
+		scanResult  *cli.ScanResult
+		scanErr     error
+		spawnResults []cli.SpawnResult
+		spawnErr    error
+		wantErr     bool
+		errContains string
+	}{
+		{
+			name:        "requires agent flag",
+			args:        []string{},
+			isRunning:   true,
+			wantErr:     true,
+			errContains: "required flag -a",
+		},
+		{
+			name:      "daemon not running",
+			args:      []string{"-a", "test"},
+			isRunning: false,
+			wantErr:   true,
+			errContains: "daemon is not running",
+		},
+		{
+			name:    "spawn with repo flag (skip workspace check)",
+			args:    []string{"-r", "schmux", "-a", "claude", "-p", "test"},
+			isRunning: true,
+			config: &cli.Config{
+				Agents: []cli.Agent{
+					{Name: "claude", Agentic: &agenticTrue},
+				},
+				Repos: []cli.Repo{
+					{Name: "schmux", URL: "https://github.com/user/schmux.git"},
+				},
+			},
+			spawnResults: []cli.SpawnResult{
+				{SessionID: "new-001", WorkspaceID: "schmux-001", Agent: "claude"},
+			},
+			wantErr: false,
+		},
+		{
+			name:    "spawn with agentic agent without prompt (repo flag)",
+			args:    []string{"-r", "schmux", "-a", "claude"},
+			isRunning: true,
+			config: &cli.Config{
+				Agents: []cli.Agent{
+					{Name: "claude", Agentic: &agenticTrue},
+				},
+				Repos: []cli.Repo{
+					{Name: "schmux", URL: "https://github.com/user/schmux.git"},
+				},
+			},
+			wantErr:     true,
+			errContains: "prompt (-p/--prompt) is required",
+		},
+		{
+			name:      "spawn with invalid repo",
+			args:      []string{"-r", "unknown", "-a", "test"},
+			isRunning: true,
+			config: &cli.Config{
+				Repos: []cli.Repo{
+					{Name: "schmux", URL: "https://github.com/user/schmux.git"},
+				},
+			},
+			wantErr:     true,
+			errContains: "repo not found",
+		},
+	}
+
+	for _, tt := range tests {
+		t.Run(tt.name, func(t *testing.T) {
+			mock := &MockDaemonClient{
+				isRunning:     tt.isRunning,
+				config:        tt.config,
+				workspaces:    tt.workspaces,
+				scanResult:    tt.scanResult,
+				scanErr:       tt.scanErr,
+				spawnResults:  tt.spawnResults,
+				spawnErr:      tt.spawnErr,
+			}
+
+			cmd := NewSpawnCommand(mock)
+
+			// Capture output by redirecting os.Stdout
+			oldStdout := os.Stdout
+			r, w, _ := os.Pipe()
+			os.Stdout = w
+
+			err := cmd.Run(tt.args)
+
+			w.Close()
+			os.Stdout = oldStdout
+			r.Close()
+
+			if tt.wantErr {
+				if err == nil {
+					t.Errorf("expected error containing %q, got nil", tt.errContains)
+				}
+				if !strings.Contains(err.Error(), tt.errContains) {
+					t.Errorf("expected error containing %q, got %q", tt.errContains, err.Error())
+				}
+			} else {
+				if err != nil {
+					t.Errorf("unexpected error: %v", err)
+				}
+			}
+		})
+	}
+}
+
+// TestSpawnCommand_ResolveWorkspace tests workspace resolution
+func TestSpawnCommand_ResolveWorkspace(t *testing.T) {
+	// Simple test - just verify the method exists and handles basic cases
+	mock := &MockDaemonClient{
+		workspaces: []cli.Workspace{
+			{ID: "test-001", Path: "/Users/test/workspace-001"},
+		},
+		scanResult: &cli.ScanResult{},
+		isRunning:  true,
+		config:     &cli.Config{},
+	}
+
+	cmd := NewSpawnCommand(mock)
+
+	// Test with exact path match
+	result, err := cmd.resolveWorkspace("/Users/test/workspace-001", mock.config)
+
+	if err != nil {
+		t.Errorf("unexpected error: %v", err)
+	}
+	if result != "test-001" {
+		t.Errorf("got %q, want %q", result, "test-001")
+	}
+
+	// Test with non-existent path
+	_, err = cmd.resolveWorkspace("/nonexistent", mock.config)
+	if err == nil {
+		t.Error("expected error for non-existent workspace")
+	}
+}
+
+// TestSpawnCommand_OutputHuman tests human-readable output formatting
+func TestSpawnCommand_OutputHuman(t *testing.T) {
+	cmd := &SpawnCommand{}
+
+	results := []cli.SpawnResult{
+		{SessionID: "ws-001-abc", WorkspaceID: "ws-001", Agent: "claude"},
+		{SessionID: "ws-002-def", WorkspaceID: "ws-002", Agent: "glm", Error: "some error"},
+	}
+
+	// Capture output
+	oldStdout := os.Stdout
+	r, w, _ := os.Pipe()
+	os.Stdout = w
+
+	err := cmd.outputHuman(results, "ws-001")
+
+	w.Close()
+	os.Stdout = oldStdout
+	r.Close()
+
+	if err != nil {
+		t.Fatalf("unexpected error: %v", err)
+	}
+}
+
+// TestSpawnCommand_OutputJSON tests JSON output formatting
+func TestSpawnCommand_OutputJSON(t *testing.T) {
+	cmd := &SpawnCommand{}
+
+	results := []cli.SpawnResult{
+		{SessionID: "ws-001-abc", WorkspaceID: "ws-001", Agent: "claude"},
+	}
+
+	// Capture output
+	oldStdout := os.Stdout
+	r, w, _ := os.Pipe()
+	os.Stdout = w
+
+	err := cmd.outputJSON(results)
+
+	w.Close()
+	os.Stdout = oldStdout
+	r.Close()
+
+	if err != nil {
+		t.Fatalf("unexpected error: %v", err)
+	}
 }
