@@ -311,17 +311,42 @@ func Run() error {
 			cancel()
 			continue
 		}
-		if tmux.IsPipePaneActive(ctx, sess.TmuxSession) {
-			cancel()
-			continue
-		}
+
+		// Check if pipe-pane is active
+		pipePaneActive := tmux.IsPipePaneActive(ctx, sess.TmuxSession)
 		cancel()
 
+		// Get log path
 		logPath, err := sm.GetLogPath(sess.ID)
 		if err != nil {
 			return fmt.Errorf("failed to get log path for %s: %w", sess.ID, err)
 		}
 
+		// Check if log file exists
+		_, err = os.Stat(logPath)
+		logFileExists := !os.IsNotExist(err)
+
+		// Skip if pipe-pane is active AND log file exists (everything is good)
+		if pipePaneActive && logFileExists {
+			continue
+		}
+
+		// If pipe-pane is active but log is missing, stop the old pipe-pane
+		if pipePaneActive && !logFileExists {
+			fmt.Printf("[bootstrap] %s: pipe-pane active but log missing, stopping pipe-pane\n", sess.ID)
+			ctx, cancel = context.WithTimeout(context.Background(), time.Duration(cfg.GetTmuxOperationTimeoutSeconds())*time.Second)
+			if err := tmux.StopPipePane(ctx, sess.TmuxSession); err != nil {
+				cancel()
+				return fmt.Errorf("failed to stop pipe-pane for %s: %w", sess.ID, err)
+			}
+			cancel()
+		}
+
+		if !pipePaneActive {
+			fmt.Printf("[bootstrap] %s: pipe-pane not active, bootstrapping\n", sess.ID)
+		}
+
+		// Bootstrap: capture screen content and write to log, start pipe-pane
 		ctx, cancel = context.WithTimeout(context.Background(), time.Duration(cfg.GetTmuxOperationTimeoutSeconds())*time.Second)
 		snapshot, err := tmux.CaptureLastLines(ctx, sess.TmuxSession, seedLines)
 		cancel()
@@ -339,6 +364,7 @@ func Run() error {
 			return fmt.Errorf("failed to attach pipe-pane for %s: %w", sess.ID, err)
 		}
 		cancel()
+		fmt.Printf("[bootstrap] %s: pipe-pane started\n", sess.ID)
 	}
 
 	// Start log pruner (every 60 minutes)

@@ -246,3 +246,35 @@ func RenameSession(ctx context.Context, oldName, newName string) error {
 	}
 	return nil
 }
+
+// GetCursorPosition returns the cursor position (x, y) for a session.
+// Coordinates are 0-indexed.
+func GetCursorPosition(ctx context.Context, sessionName string) (x, y int, err error) {
+	args := []string{
+		"display-message", "-p", "-t", sessionName,
+		"#{cursor_x}", "#{cursor_y}",
+	}
+	cmd := exec.CommandContext(ctx, "tmux", args...)
+	var stdout bytes.Buffer
+	cmd.Stdout = &stdout
+	if err := cmd.Run(); err != nil {
+		return 0, 0, fmt.Errorf("failed to get cursor position: %w", err)
+	}
+
+	// Parse output: "x y" on two lines
+	parts := strings.Split(strings.TrimSpace(stdout.String()), " ")
+	if len(parts) != 2 {
+		return 0, 0, fmt.Errorf("unexpected cursor position format: %q", stdout.String())
+	}
+
+	_, err = fmt.Sscanf(parts[0], "%d", &x)
+	if err != nil {
+		return 0, 0, fmt.Errorf("failed to parse cursor_x: %w", err)
+	}
+	_, err = fmt.Sscanf(parts[1], "%d", &y)
+	if err != nil {
+		return 0, 0, fmt.Errorf("failed to parse cursor_y: %w", err)
+	}
+
+	return x, y, nil
+}

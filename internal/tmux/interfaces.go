@@ -118,3 +118,7 @@ func (t *tmuxService) IsPipePaneActive(ctx context.Context, sessionName string) 
 func (t *tmuxService) RenameSession(ctx context.Context, oldName, newName string) error {
 	return RenameSession(ctx, oldName, newName)
 }
+
+func (t *tmuxService) GetCursorPosition(ctx context.Context, sessionName string) (x, y int, err error) {
+	return GetCursorPosition(ctx, sessionName)
+}
