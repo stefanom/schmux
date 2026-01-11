@@ -263,11 +263,11 @@ func TestAgentDetectorConfig(t *testing.T) {
 	}
 
 	tests := []struct {
-		name              string
-		detector          agentDetector
-		wantName          string
-		wantCommand       string
-		wantVersionArg    string
+		name           string
+		detector       agentDetector
+		wantName       string
+		wantCommand    string
+		wantVersionArg string
 	}{
 		{
 			name:           "claude detector",

@@ -8,7 +8,7 @@ import (
 	"os"
 	"path/filepath"
 	"strings"
-	"sync"
+	"time"
 
 	"github.com/sergek/schmux/internal/detect"
 )
@@ -39,7 +39,6 @@ type Config struct {
 	Agents        []Agent            `json:"agents"`
 	Terminal      *TerminalSize      `json:"terminal,omitempty"`
 	Internal      *InternalIntervals `json:"internal,omitempty"`
-	mu            sync.RWMutex
 }
 
 // TerminalSize represents terminal dimensions.
@@ -159,29 +158,21 @@ func Load() (*Config, error) {
 
 // GetWorkspacePath returns the workspace directory path.
 func (c *Config) GetWorkspacePath() string {
-	c.mu.RLock()
-	defer c.mu.RUnlock()
 	return c.WorkspacePath
 }
 
 // GetRepos returns the list of repositories.
 func (c *Config) GetRepos() []Repo {
-	c.mu.RLock()
-	defer c.mu.RUnlock()
 	return c.Repos
 }
 
 // GetAgents returns the list of agents.
 func (c *Config) GetAgents() []Agent {
-	c.mu.RLock()
-	defer c.mu.RUnlock()
 	return c.Agents
 }
 
 // FindRepo finds a repository by name.
 func (c *Config) FindRepo(name string) (Repo, bool) {
-	c.mu.RLock()
-	defer c.mu.RUnlock()
 	for _, repo := range c.Repos {
 		if repo.Name == name {
 			return repo, true
@@ -192,8 +183,6 @@ func (c *Config) FindRepo(name string) (Repo, bool) {
 
 // FindAgent finds an agent by name.
 func (c *Config) FindAgent(name string) (Agent, bool) {
-	c.mu.RLock()
-	defer c.mu.RUnlock()
 	for _, agent := range c.Agents {
 		if agent.Name == name {
 			return agent, true
@@ -204,8 +193,6 @@ func (c *Config) FindAgent(name string) (Agent, bool) {
 
 // GetTerminalSize returns the terminal size. Returns 0,0 if not configured.
 func (c *Config) GetTerminalSize() (width, height int) {
-	c.mu.RLock()
-	defer c.mu.RUnlock()
 	if c.Terminal != nil && c.Terminal.Width > 0 && c.Terminal.Height > 0 {
 		return c.Terminal.Width, c.Terminal.Height
 	}
@@ -214,8 +201,6 @@ func (c *Config) GetTerminalSize() (width, height int) {
 
 // GetTerminalSeedLines returns the required seed_lines value.
 func (c *Config) GetTerminalSeedLines() int {
-	c.mu.RLock()
-	defer c.mu.RUnlock()
 	if c.Terminal == nil || c.Terminal.SeedLines <= 0 {
 		return 0
 	}
@@ -258,13 +243,11 @@ func (c *Config) Reload() error {
 	}
 
 	// Update the existing config in place
-	c.mu.Lock()
 	c.WorkspacePath = newCfg.WorkspacePath
 	c.Repos = newCfg.Repos
 	c.Agents = newCfg.Agents
 	c.Terminal = newCfg.Terminal
 	c.Internal = newCfg.Internal
-	c.mu.Unlock()
 
 	return nil
 }
@@ -392,8 +375,6 @@ func EnsureExists() (bool, error) {
 
 // GetMtimePollIntervalMs returns the mtime polling interval in ms. Defaults to 5000ms.
 func (c *Config) GetMtimePollIntervalMs() int {
-	c.mu.RLock()
-	defer c.mu.RUnlock()
 	if c.Internal == nil || c.Internal.MtimePollIntervalMs <= 0 {
 		return 5000
 	}
@@ -402,8 +383,6 @@ func (c *Config) GetMtimePollIntervalMs() int {
 
 // GetSessionsPollIntervalMs returns the sessions API polling interval in ms. Defaults to 5000ms.
 func (c *Config) GetSessionsPollIntervalMs() int {
-	c.mu.RLock()
-	defer c.mu.RUnlock()
 	if c.Internal == nil || c.Internal.SessionsPollIntervalMs <= 0 {
 		return 5000
 	}
@@ -412,8 +391,6 @@ func (c *Config) GetSessionsPollIntervalMs() int {
 
 // GetViewedBufferMs returns the viewed timestamp buffer in ms. Defaults to 5000ms.
 func (c *Config) GetViewedBufferMs() int {
-	c.mu.RLock()
-	defer c.mu.RUnlock()
 	if c.Internal == nil || c.Internal.ViewedBufferMs <= 0 {
 		return 5000
 	}
@@ -422,8 +399,6 @@ func (c *Config) GetViewedBufferMs() int {
 
 // GetSessionSeenIntervalMs returns the interval for marking sessions as viewed in ms. Defaults to 2000ms.
 func (c *Config) GetSessionSeenIntervalMs() int {
-	c.mu.RLock()
-	defer c.mu.RUnlock()
 	if c.Internal == nil || c.Internal.SessionSeenIntervalMs <= 0 {
 		return 2000
 	}
@@ -432,8 +407,6 @@ func (c *Config) GetSessionSeenIntervalMs() int {
 
 // GetGitStatusPollIntervalMs returns the git status polling interval in ms. Defaults to 10000ms.
 func (c *Config) GetGitStatusPollIntervalMs() int {
-	c.mu.RLock()
-	defer c.mu.RUnlock()
 	if c.Internal == nil || c.Internal.GitStatusPollIntervalMs <= 0 {
 		return 10000
 	}
@@ -441,17 +414,13 @@ func (c *Config) GetGitStatusPollIntervalMs() int {
 }
 
 // GetTimeouts returns the Timeouts config, or defaults if not set.
-// Does not modify internal state (safe for concurrent reads).
 func (c *Config) GetTimeouts() *Timeouts {
-	c.mu.RLock()
-	defer c.mu.RUnlock()
-
-	// Return existing Timeouts if available, without modifying state
+	// Return existing Timeouts if available
 	if c.Internal != nil && c.Internal.Timeouts != nil {
 		return c.Internal.Timeouts
 	}
 
-	// Return defaults without modifying internal state
+	// Return defaults
 	return &Timeouts{
 		GitCloneSeconds:      DefaultGitCloneTimeoutSeconds,
 		GitStatusSeconds:     DefaultGitStatusTimeoutSeconds,
@@ -462,8 +431,6 @@ func (c *Config) GetTimeouts() *Timeouts {
 
 // GetGitCloneTimeoutSeconds returns the git clone timeout in seconds. Defaults to 300 (5 min).
 func (c *Config) GetGitCloneTimeoutSeconds() int {
-	c.mu.RLock()
-	defer c.mu.RUnlock()
 	if c.Internal == nil || c.Internal.Timeouts == nil || c.Internal.Timeouts.GitCloneSeconds <= 0 {
 		return DefaultGitCloneTimeoutSeconds
 	}
@@ -472,8 +439,6 @@ func (c *Config) GetGitCloneTimeoutSeconds() int {
 
 // GetGitStatusTimeoutSeconds returns the git status timeout in seconds. Defaults to 30.
 func (c *Config) GetGitStatusTimeoutSeconds() int {
-	c.mu.RLock()
-	defer c.mu.RUnlock()
 	if c.Internal == nil || c.Internal.Timeouts == nil || c.Internal.Timeouts.GitStatusSeconds <= 0 {
 		return DefaultGitStatusTimeoutSeconds
 	}
@@ -482,8 +447,6 @@ func (c *Config) GetGitStatusTimeoutSeconds() int {
 
 // GetTmuxQueryTimeoutSeconds returns the tmux query timeout in seconds. Defaults to 5.
 func (c *Config) GetTmuxQueryTimeoutSeconds() int {
-	c.mu.RLock()
-	defer c.mu.RUnlock()
 	if c.Internal == nil || c.Internal.Timeouts == nil || c.Internal.Timeouts.TmuxQuerySeconds <= 0 {
 		return DefaultTmuxQueryTimeoutSeconds
 	}
@@ -492,10 +455,28 @@ func (c *Config) GetTmuxQueryTimeoutSeconds() int {
 
 // GetTmuxOperationTimeoutSeconds returns the tmux operation timeout in seconds. Defaults to 10.
 func (c *Config) GetTmuxOperationTimeoutSeconds() int {
-	c.mu.RLock()
-	defer c.mu.RUnlock()
 	if c.Internal == nil || c.Internal.Timeouts == nil || c.Internal.Timeouts.TmuxOperationSeconds <= 0 {
 		return DefaultTmuxOperationTimeoutSeconds
 	}
 	return c.Internal.Timeouts.TmuxOperationSeconds
+}
+
+// GitCloneTimeout returns the git clone timeout as a time.Duration.
+func (c *Config) GitCloneTimeout() time.Duration {
+	return time.Duration(c.GetGitCloneTimeoutSeconds()) * time.Second
+}
+
+// GitStatusTimeout returns the git status timeout as a time.Duration.
+func (c *Config) GitStatusTimeout() time.Duration {
+	return time.Duration(c.GetGitStatusTimeoutSeconds()) * time.Second
+}
+
+// TmuxQueryTimeout returns the tmux query timeout as a time.Duration.
+func (c *Config) TmuxQueryTimeout() time.Duration {
+	return time.Duration(c.GetTmuxQueryTimeoutSeconds()) * time.Second
+}
+
+// TmuxOperationTimeout returns the tmux operation timeout as a time.Duration.
+func (c *Config) TmuxOperationTimeout() time.Duration {
+	return time.Duration(c.GetTmuxOperationTimeoutSeconds()) * time.Second
 }

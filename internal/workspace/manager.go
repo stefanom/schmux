@@ -14,6 +14,12 @@ import (
 	"github.com/sergek/schmux/internal/state"
 )
 
+const (
+	// workspaceNumberFormat is the format string for workspace numbering (e.g., "001", "002").
+	// Supports up to 999 workspaces per repository.
+	workspaceNumberFormat = "%03d"
+)
+
 // Manager manages workspace directories.
 type Manager struct {
 	config    *config.Config
@@ -142,7 +148,7 @@ func (m *Manager) create(ctx context.Context, repoURL, branch string) (*state.Wo
 	nextNum := findNextWorkspaceNumber(workspaces)
 
 	// Create workspace ID
-	workspaceID := fmt.Sprintf("%s-%03d", repoConfig.Name, nextNum)
+	workspaceID := fmt.Sprintf("%s-"+workspaceNumberFormat, repoConfig.Name, nextNum)
 
 	// Create full path
 	workspacePath := filepath.Join(m.config.GetWorkspacePath(), workspaceID)
