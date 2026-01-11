@@ -406,6 +406,9 @@ func (m *Manager) UpdateGitStatus(ctx context.Context, workspaceID string) (*sta
 // gitStatus calculates the git status for a workspace directory.
 // Returns: (dirty bool, ahead int, behind int)
 func (m *Manager) gitStatus(ctx context.Context, dir string) (dirty bool, ahead int, behind int) {
+	// Fetch to get latest remote state for accurate ahead/behind counts
+	_ = m.gitFetch(ctx, dir)
+
 	// Check for dirty state (any changes: modified, added, removed, or untracked)
 	statusCmd := exec.CommandContext(ctx, "git", "status", "--porcelain")
 	statusCmd.Dir = dir
