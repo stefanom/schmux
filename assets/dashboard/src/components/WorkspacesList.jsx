@@ -1,6 +1,6 @@
 import React, { useEffect, useState, useCallback } from 'react';
 import { useNavigate } from 'react-router-dom';
-import { getWorkspaces, getSessions, disposeSession, disposeWorkspace } from '../lib/api.js';
+import { getWorkspaces, getSessions, disposeSession, disposeWorkspace, openVSCode } from '../lib/api.js';
 import { copyToClipboard } from '../lib/utils.js';
 import { useToast } from './ToastProvider.jsx';
 import { useModal } from './ModalProvider.jsx';
@@ -9,6 +9,7 @@ import WorkspaceTableRow from './WorkspaceTableRow.jsx';
 import SessionTableRow from './SessionTableRow.jsx';
 import Tooltip from './Tooltip.jsx';
 import SpawnDropdown from './SpawnDropdown.jsx';
+import VSCodeResultModal from './VSCodeResultModal.jsx';
 import useLocalStorage from '../hooks/useLocalStorage.js';
 
 /**
@@ -39,6 +40,8 @@ export default function WorkspacesList({
   const [loading, setLoading] = useState(true);
   const [error, setError] = useState('');
   const [expanded, setExpanded] = useLocalStorage('workspace-expanded', {});
+  const [vsCodeResult, setVSCodeResult] = useState(null);
+  const [vsCodeLoading, setVSCodeLoading] = useState(null); // Track which workspace is loading
 
   // Extract commands (non-agentic agents) from config for quick spawn
   const commands = React.useMemo(() => {
@@ -151,11 +154,48 @@ export default function WorkspacesList({
     }
   };
 
+  const handleOpenVSCode = async (workspace) => {
+    setVSCodeLoading(workspace.id);
+    try {
+      const result = await openVSCode(workspace.id);
+      setVSCodeResult(result);
+    } catch (err) {
+      setVSCodeResult({ success: false, message: err.message });
+    } finally {
+      setVSCodeLoading(null);
+    }
+  };
+
   const renderWorkspaceActions = (workspace) => (
     <>
+      <Tooltip content="Open in VS Code">
+        <button
+          className="btn btn--sm btn--ghost btn--bordered"
+          disabled={vsCodeLoading === workspace.id}
+          onClick={(event) => {
+            event.stopPropagation();
+            handleOpenVSCode(workspace);
+          }}
+          aria-label={`Open ${workspace.id} in VS Code`}
+        >
+          {vsCodeLoading === workspace.id ? (
+            <>
+              <div className="spinner--small"></div>
+              Opening...
+            </>
+          ) : (
+            <>
+              <svg width="16" height="16" viewBox="0 0 24 24" fill="none" xmlns="http://www.w3.org/2000/svg">
+                <path d="M23.15 2.587L18.21.21a1.494 1.494 0 0 0-1.705.29l-9.46 8.63-4.12-3.128a.999.999 0 0 0-1.276.057L.327 7.261A1 1 0 0 0 .326 8.74L3.899 12 .326 15.26a1 1 0 0 0 .001 1.479L1.65 17.94a.999.999 0 0 0 1.276.057l4.12-3.128 9.46 8.63a1.492 1.492 0 0 0 1.704.29l4.942-2.377A1.5 1.5 0 0 0 24 20.06V3.939a1.5 1.5 0 0 0-.85-1.352zm-5.146 14.861L10.826 12l7.178-5.448v10.896z" fill="#007ACC"/>
+              </svg>
+              VS Code
+            </>
+          )}
+        </button>
+      </Tooltip>
       <Tooltip content="View git diff">
         <button
-          className="btn btn--sm btn--ghost"
+          className="btn btn--sm btn--ghost btn--bordered"
           onClick={(event) => {
             event.stopPropagation();
             navigate(`/diff/${workspace.id}`);
@@ -172,7 +212,7 @@ export default function WorkspacesList({
       <SpawnDropdown workspace={workspace} commands={commands} />
       <Tooltip content="Dispose workspace and all sessions" variant="warning">
         <button
-          className="btn btn--sm btn--ghost btn--danger"
+          className="btn btn--sm btn--ghost btn--danger btn--bordered"
           onClick={(event) => {
             event.stopPropagation();
             handleDisposeWorkspace(workspace.id);
@@ -349,6 +389,14 @@ export default function WorkspacesList({
           );
         })}
       </div>
+
+      {vsCodeResult && (
+        <VSCodeResultModal
+          success={vsCodeResult.success}
+          message={vsCodeResult.message}
+          onClose={() => setVSCodeResult(null)}
+        />
+      )}
     </>
   );
 }

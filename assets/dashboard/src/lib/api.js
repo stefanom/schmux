@@ -72,3 +72,15 @@ export async function updateConfig(request) {
   }
   return response.json();
 }
+
+export async function openVSCode(workspaceId) {
+  const response = await fetch(`/api/open-vscode/${workspaceId}`, {
+    method: 'POST',
+    headers: { 'Content-Type': 'application/json' }
+  });
+  if (!response.ok) {
+    const err = await response.json();
+    throw new Error(err.message || response.statusText || 'Failed to open VS Code');
+  }
+  return response.json();
+}

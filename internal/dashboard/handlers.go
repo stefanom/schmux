@@ -10,6 +10,7 @@ import (
 	"os/exec"
 	"path"
 	"path/filepath"
+	"runtime"
 	"sort"
 	"strings"
 	"time"
@@ -893,4 +894,89 @@ func (s *Server) getFileContent(ctx context.Context, workspacePath, filePath, tr
 		return ""
 	}
 	return string(output)
+}
+
+// handleOpenVSCode opens VS Code in a new window for the specified workspace.
+func (s *Server) handleOpenVSCode(w http.ResponseWriter, r *http.Request) {
+	if r.Method != http.MethodPost {
+		http.Error(w, "Method not allowed", http.StatusMethodNotAllowed)
+		return
+	}
+
+	// Extract workspace ID from URL: /api/open-vscode/{workspace-id}
+	workspaceID := strings.TrimPrefix(r.URL.Path, "/api/open-vscode/")
+	if workspaceID == "" {
+		http.Error(w, "workspace ID is required", http.StatusBadRequest)
+		return
+	}
+
+	type OpenVSCodeResponse struct {
+		Success bool   `json:"success"`
+		Message string `json:"message"`
+	}
+
+	// Get workspace from state
+	ws, found := s.state.GetWorkspace(workspaceID)
+	if !found {
+		w.Header().Set("Content-Type", "application/json")
+		w.WriteHeader(http.StatusNotFound)
+		json.NewEncoder(w).Encode(OpenVSCodeResponse{
+			Success: false,
+			Message: fmt.Sprintf("workspace %s not found", workspaceID),
+		})
+		return
+	}
+
+	// Check if workspace directory exists
+	if _, err := os.Stat(ws.Path); os.IsNotExist(err) {
+		w.Header().Set("Content-Type", "application/json")
+		w.WriteHeader(http.StatusNotFound)
+		json.NewEncoder(w).Encode(OpenVSCodeResponse{
+			Success: false,
+			Message: "workspace directory does not exist",
+		})
+		return
+	}
+
+	// Run `code -n <path>` to open VS Code in a new window
+	// Use LookPath to check if code command exists
+	codePath, err := exec.LookPath("code")
+	if err != nil {
+		log.Printf("[open-vscode] VS Code command not found in PATH")
+		// Determine platform-specific keyboard shortcut
+		var shortcut string
+		if runtime.GOOS == "darwin" {
+			shortcut = "Cmd+Shift+P"
+		} else {
+			shortcut = "Ctrl+Shift+P"
+		}
+		w.Header().Set("Content-Type", "application/json")
+		w.WriteHeader(http.StatusNotFound)
+		json.NewEncoder(w).Encode(OpenVSCodeResponse{
+			Success: false,
+			Message: fmt.Sprintf("VS Code command not found in PATH\n\nTo fix this:\nOpen VS Code, press %s, then run: Shell Command: Install 'code' command in PATH", shortcut),
+		})
+		return
+	}
+
+	// Execute code command
+	// Note: We don't wait for the command to complete since VS Code opens as a separate process
+	cmd := exec.Command(codePath, "-n", ws.Path)
+	if err := cmd.Start(); err != nil {
+		log.Printf("[open-vscode] failed to launch: %v", err)
+		w.Header().Set("Content-Type", "application/json")
+		w.WriteHeader(http.StatusInternalServerError)
+		json.NewEncoder(w).Encode(OpenVSCodeResponse{
+			Success: false,
+			Message: fmt.Sprintf("failed to launch VS Code: %v", err),
+		})
+		return
+	}
+
+	// Success response
+	w.Header().Set("Content-Type", "application/json")
+	json.NewEncoder(w).Encode(OpenVSCodeResponse{
+		Success: true,
+		Message: "You can now switch to VS Code.",
+	})
 }

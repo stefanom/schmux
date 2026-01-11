@@ -60,6 +60,7 @@ func (s *Server) Start() error {
 	mux.HandleFunc("/api/dispose-workspace/", s.withCORS(s.handleDisposeWorkspace))
 	mux.HandleFunc("/api/config", s.withCORS(s.handleConfig))
 	mux.HandleFunc("/api/diff/", s.withCORS(s.handleDiff))
+	mux.HandleFunc("/api/open-vscode/", s.withCORS(s.handleOpenVSCode))
 
 	// WebSocket for terminal streaming
 	mux.HandleFunc("/ws/terminal/", s.handleTerminalWebSocket)
