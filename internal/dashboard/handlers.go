@@ -16,41 +16,6 @@ import (
 	"github.com/sergek/schmux/internal/config"
 )
 
-// handleIndex serves the React app entry point.
-func (s *Server) handleIndex(w http.ResponseWriter, r *http.Request) {
-	s.handleApp(w, r)
-}
-
-// handleSessionsList serves the React app entry point.
-func (s *Server) handleSessionsList(w http.ResponseWriter, r *http.Request) {
-	s.handleApp(w, r)
-}
-
-// handleSpawn serves the React app entry point.
-func (s *Server) handleSpawn(w http.ResponseWriter, r *http.Request) {
-	s.handleApp(w, r)
-}
-
-// handleWorkspaces serves the React app entry point.
-func (s *Server) handleWorkspaces(w http.ResponseWriter, r *http.Request) {
-	s.handleApp(w, r)
-}
-
-// handleTips serves the React app entry point.
-func (s *Server) handleTips(w http.ResponseWriter, r *http.Request) {
-	s.handleApp(w, r)
-}
-
-// handleSessionDetail serves the React app entry point.
-func (s *Server) handleSessionDetail(w http.ResponseWriter, r *http.Request) {
-	s.handleApp(w, r)
-}
-
-// handleTerminalHTML serves the React app entry point.
-func (s *Server) handleTerminalHTML(w http.ResponseWriter, r *http.Request) {
-	s.handleApp(w, r)
-}
-
 // handleApp serves the React application entry point for UI routes.
 func (s *Server) handleApp(w http.ResponseWriter, r *http.Request) {
 	if strings.HasPrefix(r.URL.Path, "/api/") || strings.HasPrefix(r.URL.Path, "/ws/") {
@@ -186,19 +151,16 @@ func (s *Server) handleSessions(w http.ResponseWriter, r *http.Request) {
 		return response[i].ID < response[j].ID
 	})
 
-	// Sort sessions within each workspace by nickname (or agent if no nickname)
+	// Sort sessions within each workspace by display name
 	for i := range response {
 		sort.Slice(response[i].Sessions, func(j, k int) bool {
-			sessJ := response[i].Sessions[j]
-			sessK := response[i].Sessions[k]
-			// Use nickname if set, otherwise fall back to agent name
-			nameJ := sessJ.Nickname
+			nameJ := response[i].Sessions[j].Nickname
 			if nameJ == "" {
-				nameJ = sessJ.Agent
+				nameJ = response[i].Sessions[j].Agent
 			}
-			nameK := sessK.Nickname
+			nameK := response[i].Sessions[k].Nickname
 			if nameK == "" {
-				nameK = sessK.Agent
+				nameK = response[i].Sessions[k].Agent
 			}
 			return nameJ < nameK
 		})
@@ -910,9 +872,4 @@ func (s *Server) getFileContent(ctx context.Context, workspacePath, filePath, tr
 		return ""
 	}
 	return string(output)
-}
-
-// handleDiffPage serves the React app entry point for the diff page.
-func (s *Server) handleDiffPage(w http.ResponseWriter, r *http.Request) {
-	s.handleApp(w, r)
 }

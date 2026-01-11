@@ -45,15 +45,8 @@ func NewServer(cfg *config.Config, st state.StateStore, statePath string, sm *se
 func (s *Server) Start() error {
 	mux := http.NewServeMux()
 
-	// Static assets
-	mux.HandleFunc("/", s.handleIndex)
-	mux.HandleFunc("/sessions", s.handleSessionsList)
-	mux.HandleFunc("/sessions/", s.handleSessionDetail)
-	mux.HandleFunc("/workspaces", s.handleWorkspaces)
-	mux.HandleFunc("/spawn", s.handleSpawn)
-	mux.HandleFunc("/tips", s.handleTips)
-	mux.HandleFunc("/terminal.html", s.handleTerminalHTML)
-	mux.HandleFunc("/diff/", s.handleDiffPage)
+	// Static assets - all UI routes go through handleApp
+	mux.HandleFunc("/", s.handleApp)
 	mux.Handle("/assets/", http.StripPrefix("/assets/", http.FileServer(http.Dir(filepath.Join(s.getDashboardDistPath(), "assets")))))
 
 	// API routes
