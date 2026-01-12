@@ -347,6 +347,20 @@ func (m *Manager) gitCheckoutDot(ctx context.Context, dir string) error {
 	return nil
 }
 
+// gitCurrentBranch returns the current branch name for a directory.
+func (m *Manager) gitCurrentBranch(ctx context.Context, dir string) (string, error) {
+	args := []string{"rev-parse", "--abbrev-ref", "HEAD"}
+	cmd := exec.CommandContext(ctx, "git", args...)
+	cmd.Dir = dir
+
+	output, err := cmd.CombinedOutput()
+	if err != nil {
+		return "", fmt.Errorf("git rev-parse failed: %w: %s", err, string(output))
+	}
+
+	return strings.TrimSpace(string(output)), nil
+}
+
 // gitClean runs git clean -fd.
 func (m *Manager) gitClean(ctx context.Context, dir string) error {
 	args := []string{"clean", "-fd"}
@@ -402,10 +416,18 @@ func (m *Manager) UpdateGitStatus(ctx context.Context, workspaceID string) (*sta
 	// Calculate git status (safe to run even with active sessions)
 	dirty, ahead, behind := m.gitStatus(ctx, w.Path)
 
+	// Detect actual current branch (may differ from state if user manually switched)
+	actualBranch, err := m.gitCurrentBranch(ctx, w.Path)
+	if err != nil {
+		m.logger.Printf("failed to get current branch for %s: %v", w.ID, err)
+		actualBranch = w.Branch // fallback to existing state
+	}
+
 	// Update workspace in memory
 	w.GitDirty = dirty
 	w.GitAhead = ahead
 	w.GitBehind = behind
+	w.Branch = actualBranch
 
 	// Update the workspace in state (this updates the in-memory copy)
 	if err := m.state.UpdateWorkspace(w); err != nil {
