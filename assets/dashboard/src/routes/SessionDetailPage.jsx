@@ -2,7 +2,7 @@ import React, { useEffect, useRef, useState } from 'react';
 import { Link, useNavigate, useParams } from 'react-router-dom';
 import '@xterm/xterm/css/xterm.css';
 import TerminalStream from '../lib/terminalStream.js';
-import { disposeSession, getSessions, updateNickname } from '../lib/api.js';
+import { getSessions, updateNickname } from '../lib/api.js';
 import { copyToClipboard, formatRelativeTime, formatTimestamp, truncateStart } from '../lib/utils.js';
 import { useToast } from '../components/ToastProvider.jsx';
 import { useModal } from '../components/ModalProvider.jsx';
@@ -24,6 +24,7 @@ export default function SessionDetailPage() {
   const [sidebarCollapsed, setSidebarCollapsed] = useLocalStorage('sessionSidebarCollapsed', false);
   const terminalRef = useRef(null);
   const terminalStreamRef = useRef(null);
+  const workspacesListRef = useRef(null);
   const { success, error: toastError } = useToast();
   const { show, prompt } = useModal();
   const navigate = useNavigate();
@@ -142,25 +143,8 @@ export default function SessionDetailPage() {
     }
   };
 
-  const handleDispose = async () => {
-    const accepted = await show(
-      'Dispose Session',
-      `Dispose session ${sessionId}?`,
-      {
-        danger: true,
-        confirmText: 'Dispose',
-        detailedMessage: 'This will stop tracking the session and clean up resources. The tmux session will remain available if you need to attach manually.'
-      }
-    );
-    if (!accepted) return;
-
-    try {
-      await disposeSession(sessionId);
-      success('Session disposed');
-      navigate('/sessions');
-    } catch (err) {
-      toastError(`Failed to dispose: ${err.message}`);
-    }
+  const handleDispose = () => {
+    workspacesListRef.current?.disposeSession(sessionId);
   };
 
   const handleFollowChange = (event) => {
@@ -248,6 +232,7 @@ export default function SessionDetailPage() {
     <>
       {sessionData && (
         <WorkspacesList
+          ref={workspacesListRef}
           workspaceId={sessionData.workspaceId}
           currentSessionId={sessionId}
           showControls={false}

@@ -25,13 +25,13 @@ import useLocalStorage from '../hooks/useLocalStorage.js';
  * - onFilterChange: Optional - callback when filters change
  * - showControls: Optional - show expand/collapse controls
  */
-export default function WorkspacesList({
+const WorkspacesListInner = React.forwardRef(function WorkspacesList({
   workspaceId,
   currentSessionId,
   filters = null,
   onFilterChange = null,
   showControls = true,
-}) {
+}, ref) {
   const { config, getRepoName } = useConfig();
   const { success, error: toastError } = useToast();
   const { confirm } = useModal();
@@ -129,7 +129,17 @@ export default function WorkspacesList({
   };
 
   const handleDispose = async (sessionId) => {
-    const accepted = await confirm(`Dispose session ${sessionId}?`, { danger: true });
+    // Find session to get nickname for display
+    let sessionDisplay = sessionId;
+    for (const ws of allWorkspaces) {
+      const sess = ws.sessions?.find(s => s.id === sessionId);
+      if (sess?.nickname) {
+        sessionDisplay = `${sess.nickname} (${sessionId})`;
+        break;
+      }
+    }
+
+    const accepted = await confirm(`Dispose session ${sessionDisplay}?`, { danger: true });
     if (!accepted) return;
 
     try {
@@ -140,6 +150,11 @@ export default function WorkspacesList({
       toastError(`Failed to dispose: ${err.message}`);
     }
   };
+
+  // Expose methods to parent via ref
+  React.useImperativeHandle(ref, () => ({
+    disposeSession: handleDispose
+  }), [handleDispose]);
 
   const handleDisposeWorkspace = async (workspaceId) => {
     const accepted = await confirm(`Dispose workspace ${workspaceId}?`, { danger: true });
@@ -399,4 +414,6 @@ export default function WorkspacesList({
       )}
     </>
   );
-}
+});
+
+export default WorkspacesListInner;
