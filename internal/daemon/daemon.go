@@ -92,6 +92,23 @@ func ValidateReadyToRun() error {
 
 // Start starts the daemon in the background.
 func Start() error {
+	homeDir, err := os.UserHomeDir()
+	if err != nil {
+		return fmt.Errorf("failed to get home directory: %w", err)
+	}
+
+	schmuxDir := filepath.Join(homeDir, ".schmux")
+	if err := os.MkdirAll(schmuxDir, 0755); err != nil {
+		return fmt.Errorf("failed to create schmux directory: %w", err)
+	}
+
+	// Open log file for daemon stdout/stderr
+	logFile := filepath.Join(schmuxDir, "daemon-startup.log")
+	logF, err := os.OpenFile(logFile, os.O_CREATE|os.O_WRONLY|os.O_APPEND|os.O_TRUNC, 0644)
+	if err != nil {
+		return fmt.Errorf("failed to open log file: %w", err)
+	}
+
 	// Get the path to the current executable
 	execPath, err := os.Executable()
 	if err != nil {
@@ -99,8 +116,10 @@ func Start() error {
 	}
 
 	// Start daemon in background
-	cmd := exec.Command(execPath, "daemon-run")
+	cmd := exec.Command(execPath, "daemon-run", "--background")
 	cmd.Dir, _ = os.Getwd()
+	cmd.Stdout = logF
+	cmd.Stderr = logF
 
 	if err := cmd.Start(); err != nil {
 		return fmt.Errorf("failed to start daemon: %w", err)
@@ -207,7 +226,8 @@ func Status() (running bool, url string, startedAt string, err error) {
 }
 
 // Run runs the daemon (this is the entry point for the daemon process).
-func Run() error {
+// If background is true, SIGINT/SIGQUIT are ignored (for start command).
+func Run(background bool) error {
 	homeDir, err := os.UserHomeDir()
 	if err != nil {
 		return fmt.Errorf("failed to get home directory: %w", err)
@@ -353,7 +373,14 @@ func Run() error {
 
 	// Handle shutdown signals
 	sigChan := make(chan os.Signal, 1)
-	signal.Notify(sigChan, syscall.SIGINT, syscall.SIGTERM)
+	if background {
+		// Ignore SIGINT/SIGQUIT when running in background (started via 'start' command)
+		// This prevents Ctrl-C from killing the daemon when tailing logs
+		signal.Ignore(syscall.SIGINT, syscall.SIGQUIT)
+		signal.Notify(sigChan, syscall.SIGTERM)
+	} else {
+		signal.Notify(sigChan, syscall.SIGINT, syscall.SIGTERM)
+	}
 
 	// Start dashboard server in background
 	serverErrChan := make(chan error, 1)

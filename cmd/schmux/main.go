@@ -43,7 +43,15 @@ func main() {
 			}
 			fmt.Println("schmux daemon started")
 		} else { // daemon-run
-			if err := daemon.Run(); err != nil {
+			background := false
+			args := os.Args[2:]
+			for _, arg := range args {
+				if arg == "--background" {
+					background = true
+					break
+				}
+			}
+			if err := daemon.Run(background); err != nil {
 				fmt.Fprintf(os.Stderr, "Daemon error: %v\n", err)
 				os.Exit(1)
 			}

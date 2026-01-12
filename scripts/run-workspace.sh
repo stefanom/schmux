@@ -17,4 +17,9 @@ echo "Stopping any existing daemon..."
 ./schmux stop &&
 
 echo "Starting daemon..."
-./schmux daemon-run
+./schmux start
+
+echo ""
+echo "Daemon is running. Logs:"
+echo "--------------------"
+tail -f ~/.schmux/daemon-startup.log
