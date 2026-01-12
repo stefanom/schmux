@@ -450,8 +450,10 @@ func (m *Manager) gitStatus(ctx context.Context, dir string) (dirty bool, ahead 
 	dirty = err == nil && len(strings.TrimSpace(string(output))) > 0
 
 	// Check ahead/behind counts using rev-list
-	// @{u} is the shortcut for the upstream branch
-	revListCmd := exec.CommandContext(ctx, "git", "rev-list", "--left-right", "--count", "HEAD...@{u}")
+	// Compare against origin/main to show GitHub-style status:
+	// - ahead = commits in this branch not in main
+	// - behind = commits in main not in this branch
+	revListCmd := exec.CommandContext(ctx, "git", "rev-list", "--left-right", "--count", "HEAD...origin/main")
 	revListCmd.Dir = dir
 	output, err = revListCmd.CombinedOutput()
 	if err != nil {
