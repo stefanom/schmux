@@ -305,6 +305,11 @@ export default function SessionDetailPage() {
           </div>
 
           <div className="metadata-field">
+            <span className="metadata-field__label">Branch</span>
+            <span className="metadata-field__value metadata-field__value--mono">{sessionData.branch}</span>
+          </div>
+
+          <div className="metadata-field">
             <span className="metadata-field__label">Agent</span>
             <span className="metadata-field__value">{sessionData.agent}</span>
           </div>
