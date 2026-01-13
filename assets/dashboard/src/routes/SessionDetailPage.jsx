@@ -23,6 +23,7 @@ export default function SessionDetailPage() {
   const [sidebarCollapsed, setSidebarCollapsed] = useLocalStorage('sessionSidebarCollapsed', false);
   const [nudgenikLoading, setNudgenikLoading] = useState(false);
   const [nudgenikResult, setNudgenikResult] = useState(null);
+  const [workspaceId, setWorkspaceId] = useState(null);
   const terminalRef = useRef(null);
   const terminalStreamRef = useRef(null);
   const workspacesListRef = useRef(null);
@@ -32,6 +33,13 @@ export default function SessionDetailPage() {
 
   const sessionData = sessionId ? sessionsById[sessionId] : null;
   const sessionMissing = !sessionsLoading && !sessionsError && sessionId && !sessionData;
+
+  // Remember the workspace_id so we can filter after dispose
+  useEffect(() => {
+    if (sessionData?.workspace_id) {
+      setWorkspaceId(sessionData.workspace_id);
+    }
+  }, [sessionData?.workspace_id]);
 
   useEffect(() => {
     if (sessionData?.id) {
@@ -207,6 +215,7 @@ export default function SessionDetailPage() {
       <>
         <WorkspacesList
           ref={workspacesListRef}
+          workspaceId={workspaceId}
           showControls={false}
         />
         <div className="empty-state">
