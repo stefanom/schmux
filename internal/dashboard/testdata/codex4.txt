@@ -1,0 +1,140 @@
+    [2m556[0m
+    [2m557 [0m[38;5;1m-[39m	[38;5;1m// If no separator found, return empty[39m
+    [2m558 [0m[38;5;1m-[39m	[38;5;1mif separatorIdx == -1 {[39m
+    [2m559 [0m[38;5;1m-[39m		[38;5;1mreturn ""[39m
+    [2m560 [0m[38;5;1m-[39m	[38;5;1m}[39m
+    [2m561 [0m[38;5;1m-[39m
+    [2m562 [0m[38;5;1m-[39m	[38;5;1m// Collect lines before the separator until we hit a blank line[39m
+    [2m557 [0m 	var response []string
+    [2m564 [0m[38;5;1m-[39m	[38;5;1mseenNonEmpty := false[39m
+    [2m565 [0m[38;5;1m-[39m	[38;5;1mfor i := separatorIdx - 1; i >= 0; i-- {[39m
+    [2m566 [0m[38;5;1m-[39m		[38;5;1moriginal := lines[i][39m
+    [2m567 [0m[38;5;1m-[39m		[38;5;1mtext := strings.TrimSpace(original)[39m
+    [2m558 [0m[38;5;2m+[39m	[38;5;2mcontentCount := 0[39m
+    [2m559 [0m[38;5;2m+[39m	[38;5;2mfor i := promptIdx - 1; i >= 0; i-- {[39m
+    [2m560 [0m[38;5;2m+[39m		[38;5;2mtext := strings.TrimSpace(lines[i])[39m
+    [2m561 [0m 		if text == "" {
+    [2m569 [0m[38;5;1m-[39m			[38;5;1m// Only stop at blank lines if we've already collected some content[39m
+    [2m570 [0m[38;5;1m-[39m			[38;5;1mif seenNonEmpty {[39m
+    [2m571 [0m[38;5;1m-[39m				[38;5;1mbreak[39m
+    [2m572 [0m[38;5;1m-[39m			[38;5;1m}[39m
+    [2m562 [0m 			continue
+    [2m563 [0m 		}
+    [2m575 [0m[38;5;1m-[39m		[38;5;1mseenNonEmpty = true[39m
+    [2m564 [0m[38;5;2m+[39m		[38;5;2mif isPromptLine(text) {[39m
+    [2m565 [0m[38;5;2m+[39m			[38;5;2mcontinue[39m
+    [2m566 [0m[38;5;2m+[39m		[38;5;2m}[39m
+    [2m567 [0m[38;5;2m+[39m		[38;5;2mif isSeparatorLine(text) {[39m
+    [2m568 [0m[38;5;2m+[39m			[38;5;2mcontinue[39m
+    [2m569 [0m[38;5;2m+[39m		[38;5;2m}[39m
+    [2m570 [0m[38;5;2m+[39m
+    [2m571 [0m 		response = append([]string{text}, response...)
+    [2m572 [0m[38;5;2m+[39m		[38;5;2mcontentCount++[39m
+    [2m573 [0m[38;5;2m+[39m		[38;5;2mif contentCount >= maxContentLines {[39m
+    [2m574 [0m[38;5;2m+[39m			[38;5;2mbreak[39m
+    [2m575 [0m[38;5;2m+[39m		[38;5;2m}[39m
+    [2m576 [0m 	}
+    [2m    ⋮[0m
+    [2m597[0m
+    [2m598 [0m[38;5;2m+// isPromptLine returns true if the line looks like a shell prompt.[39m
+    [2m599 [0m[38;5;2m+func isPromptLine(text string) bool {[39m
+    [2m600 [0m[38;5;2m+[39m	[38;5;2mtrimmed := strings.TrimSpace(text)[39m
+    [2m601 [0m[38;5;2m+[39m	[38;5;2mreturn strings.HasPrefix(trimmed, "❯") || strings.HasPrefix(trimmed, "›")[39m
+    [2m602 [0m[38;5;2m+}[39m
+    [2m603 [0m[38;5;2m+[39m
+    [2m604 [0m // getAlnumRatio returns the ratio of alphanumeric characters to total characters.
+
+[2m•[0m [1mExplored[0m
+[2m  └ [0m[38;5;6mRead[39m handlers_test.go
+
+[1m[38;5;2m•[0m [1mRan[0m cat [2m>[0m /Users/sergek/dev/schmux-workspaces/schmux-003/internal/dashboard/handlers_test.go <<[2m'EOF'[0m
+[2m  │ package dashboard[0m
+[2m  │[0m
+[2m  │ … +69 lines[0m
+[2m  └ (no output)[0m
+
+[1m[38;5;2m•[0m [1mRan[0m python - <<[2m'PY'[0m
+[2m  │ import re, pathlib[0m
+[2m  │[0m
+[2m  │ … +49 lines[0m
+[2m  └ wrote internal/dashboard/testdata/claude1.txt.want.txt[0m
+    [2mwrote internal/dashboard/testdata/claude2.txt.want.txt[0m
+    [2m… +3 lines[0m
+    [2mwrote internal/dashboard/testdata/codex2.txt.want.txt[0m
+    [2mwrote internal/dashboard/testdata/codex3.txt.want.txt[0m
+
+[1m[38;5;2m•[0m [1mRan[0m python - <<[2m'PY'[0m
+[2m  │ import pathlib[0m
+[2m  │ root = pathlib.Path('internal/dashboard/testdata')[0m
+[2m  │ … +5 lines[0m
+[2m  └ codex2.txt.want.txt -> codex2.txt.want.txt[0m
+    [2mcodex3.txt.want.txt -> codex3.txt.want.txt[0m
+    [2m… +3 lines[0m
+    [2mclaude1.txt.want.txt -> claude1.txt.want.txt[0m
+    [2mcodex1.txt.want.txt -> codex1.txt.want.txt[0m
+
+[1m[38;5;2m•[0m [1mRan[0m python - <<[2m'PY'[0m
+[2m  │ import pathlib[0m
+[2m  │ root = pathlib.Path('internal/dashboard/testdata')[0m
+[2m  │ … +6 lines[0m
+[2m  └ codex2.txt.want.txt -> codex2.want.txt[0m
+    [2mcodex3.txt.want.txt -> codex3.want.txt[0m
+    [2m… +3 lines[0m
+    [2mclaude1.txt.want.txt -> claude1.want.txt[0m
+    [2mcodex1.txt.want.txt -> codex1.want.txt[0m
+
+[2m•[0m [1mExplored[0m
+[2m  └ [0m[38;5;6mList[39m testdata
+
+[1m[38;5;2m•[0m [1mRan[0m gofmt -w internal/dashboard/handlers.go internal/dashboard/handlers_test.go
+[2m  └ (no output)[0m
+
+[1m[38;5;1m•[0m [1mRan[0m go test ./internal/dashboard -run TestExtractLatestResponse
+[2m  └ open /Users/sergek/Library/Caches/go-build/80/80dc4b3c4b3938fbcd9616da4c42eee9f3e7bf642add1e1a7906a5e0702bf60d-d:[0m
+    [2moperation not permitted[0m
+
+[38;5;2m✔ [39mYou [1mapproved[0m codex to run [2mgo test ./internal/dashboard -run TestExtractLatestResponse[0;1m and applied the execpolicy[0m
+  [1mamendment[0m
+
+[1m[38;5;2m•[0m [1mRan[0m go test ./internal/dashboard -run TestExtractLatestResponse
+[2m  └ ok      github.com/sergek/schmux/internal/dashboard    0.329s[0m
+
+[1m[38;5;2m•[0m [1mRan[0m git status --short
+[2m  └  M assets/dashboard/src/routes/SessionDetailPage.jsx[0m
+    [2m M internal/dashboard/handlers.go[0m
+    [2m… +4 lines[0m
+    [2m?? internal/dashboard/handlers_test.go[0m
+    [2m?? internal/dashboard/testdata/[0m
+
+[2m• [3mI'll explain the key changes like revising extractLatestResponse to scan up to 80 non-noise lines, skipping prompts[0m
+  [2;3mand separators, and adding the isPromptLine helper. I'll detail updated files including testdata with non-ASCII golden
+[0m  [2;3mfiles, mention running targeted tests requiring escalated permissions due to Go build cache, and note unrelated[0m
+  [2;3mchanges remain untouched. I'll also remind about running full tests or updating samples as natural next steps, and[0m
+  [2;3mthat tests strip ANSI sequences with tmux.StripAnsi.[0m
+
+[2m─ Worked for 3m 09s ────────────────────────────────────────────────────────────────────────────────────────────────────
+
+• [0mUpdated [38;5;6mextractLatestResponse[39m to walk upward from the last prompt and collect up to 80 non‑noise lines, skipping only
+  blanks/separator lines and prompts (no hard boundary stops), matching the “grab a good amount” requirement. Added
+  fixture-based tests that use your [38;5;6minternal/dashboard/testdata/*.txt[39m captures plus generated [38;5;6m*.want.txt[39m goldens, and a
+  cap test to ensure the 80‑line limit holds.
+
+  Details:
+
+  - [38;5;6minternal/dashboard/handlers.go[39m: new prompt‑anchored scan, max 80 content lines, and [38;5;6misPromptLine[39m helper.
+  - [38;5;6minternal/dashboard/handlers_test.go[39m: fixture + golden comparisons using [38;5;6mtmux.StripAnsi[39m, plus cap test.
+  - [38;5;6minternal/dashboard/testdata/*.want.txt[39m: expected outputs for the 7 samples.
+
+  Tests:
+
+  - [38;5;6mgo test ./internal/dashboard -run TestExtractLatestResponse[39m (required Go build cache access outside workspace)
+
+  Next steps (optional):
+
+  [38;5;12m1. [39mAdd more samples in [38;5;6minternal/dashboard/testdata/[39m and regenerate/adjust the [38;5;6m*.want.txt[39m expectations.
+  [38;5;12m2. [39mRun [38;5;6mgo test ./...[39m if you want broader coverage.
+
+[48;2;52;52;52m
+[1m›[0m[48;2;52;52;52m [2mSummarize recent commits[0m[48;2;52;52;52m
+
+[49m  [2m77% context left · ? for shortcuts[0m

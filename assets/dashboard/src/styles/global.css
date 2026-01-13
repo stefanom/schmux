@@ -1991,3 +1991,30 @@ a:hover {
     text-align: center;
 }
 
+
+/* NudgeNik Modal */
+.nudgenik-modal__description {
+  margin-bottom: 0.75rem;
+  color: var(--color-text-muted);
+}
+
+.nudgenik-modal__response {
+  background: var(--color-surface-alt);
+  padding: 1rem;
+  border-radius: var(--radius-md);
+  overflow: auto;
+  max-height: 500px;
+  font-size: 0.875rem;
+  font-family: var(--font-mono);
+  margin: 0;
+}
+
+.modal--large {
+  max-width: 800px;
+}
+
+.btn--disabled {
+  opacity: 0.5;
+  cursor: not-allowed;
+}
+

@@ -390,6 +390,7 @@ func TestEnsurePipePane(t *testing.T) {
 	})
 }
 
+
 func TestPruneLogFiles(t *testing.T) {
 	t.Run("prune with no active sessions", func(t *testing.T) {
 		// Use temp directory for logs, not ~/.schmux/logs

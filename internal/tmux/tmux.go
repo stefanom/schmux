@@ -5,9 +5,14 @@ import (
 	"context"
 	"fmt"
 	"os/exec"
+	"regexp"
 	"strconv"
 	"strings"
 )
+
+// ANSI escape sequence regex for stripping terminal codes.
+// Compiled once at package initialization for efficiency.
+var ansiRegex = regexp.MustCompile(`\x1b\[[0-9;]*[a-zA-Z]|\x1b\][^\x07\x1b]*\x07|\x1b\][^\x07\x1b]*\x1b\\`)
 
 // CreateSession creates a new tmux session with the given name, directory, and command.
 func CreateSession(ctx context.Context, name, dir, command string) error {
@@ -155,8 +160,21 @@ func SendKeys(ctx context.Context, name, keys string) error {
 	args := []string{"send-keys", "-t", name, keys}
 
 	cmd := exec.CommandContext(ctx, "tmux", args...)
-	if err := cmd.Run(); err != nil {
-		return fmt.Errorf("failed to send keys to tmux session: %w", err)
+	if output, err := cmd.CombinedOutput(); err != nil {
+		return fmt.Errorf("failed to send keys to tmux session: %w: %s", err, strings.TrimSpace(string(output)))
+	}
+
+	return nil
+}
+
+// SendLiteral sends literal text to a tmux session (spaces/newlines are treated as text).
+func SendLiteral(ctx context.Context, name, text string) error {
+	// tmux send-keys -l -t <name> <text>
+	args := []string{"send-keys", "-l", "-t", name, text}
+
+	cmd := exec.CommandContext(ctx, "tmux", args...)
+	if output, err := cmd.CombinedOutput(); err != nil {
+		return fmt.Errorf("failed to send literal text to tmux session: %w: %s", err, strings.TrimSpace(string(output)))
 	}
 
 	return nil
@@ -165,6 +183,11 @@ func SendKeys(ctx context.Context, name, keys string) error {
 // GetAttachCommand returns the command to attach to a tmux session.
 func GetAttachCommand(name string) string {
 	return fmt.Sprintf("tmux attach -t \"%s\"", name)
+}
+
+// StripAnsi removes ANSI escape sequences from text.
+func StripAnsi(text string) string {
+	return ansiRegex.ReplaceAllString(text, "")
 }
 
 // SetWindowSizeManual forces tmux to ignore client resize requests.

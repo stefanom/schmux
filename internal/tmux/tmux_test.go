@@ -6,6 +6,69 @@ import (
 	"testing"
 )
 
+func TestStripAnsi(t *testing.T) {
+	tests := []struct {
+		name  string
+		input string
+		want  string
+	}{
+		{
+			name:  "no escape sequences",
+			input: "plain text",
+			want:  "plain text",
+		},
+		{
+			name:  "color codes",
+			input: "\x1b[31mred text\x1b[0m",
+			want:  "red text",
+		},
+		{
+			name:  "bold",
+			input: "\x1b[1mbold\x1b[0m",
+			want:  "bold",
+		},
+		{
+			name:  "multiple codes",
+			input: "\x1b[31;1mred bold\x1b[0m",
+			want:  "red bold",
+		},
+		{
+			name:  "cursor movement",
+			input: "text\x1b[2K\x1b[1Gmore",
+			want:  "textmore",
+		},
+		{
+			name:  "mixed content",
+			input: "\x1b[90mConnecting\x1b[0m...\x1b[32mOK\x1b[0m",
+			want:  "Connecting...OK",
+		},
+		{
+			name:  "OSC sequences (window title)",
+			input: "\x1b]0;window title\x07text",
+			want:  "text",
+		},
+		{
+			name:  "OSC with ST terminator",
+			input: "\x1b]0;title\x1b\\text",
+			want:  "text",
+		},
+		{
+			name:  "multiline with codes",
+			input: "line1\x1b[0m\nline2\x1b[31mred\x1b[0m\nline3",
+			want:  "line1\nline2red\nline3",
+		},
+	}
+
+	for _, tt := range tests {
+		t.Run(tt.name, func(t *testing.T) {
+			got := StripAnsi(tt.input)
+			if got != tt.want {
+				t.Errorf("StripAnsi() = %q, want %q", got, tt.want)
+			}
+		})
+	}
+}
+
 func TestGetAttachCommand(t *testing.T) {
 	tests := []struct {
 		name  string

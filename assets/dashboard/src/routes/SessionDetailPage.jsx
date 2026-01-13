@@ -18,10 +18,13 @@ export default function SessionDetailPage() {
   const [loading, setLoading] = useState(true);
   const [error, setError] = useState('');
   const [sessionData, setSessionData] = useState(null);
+  const [workspaces, setWorkspaces] = useState([]);
   const [wsStatus, setWsStatus] = useState('connecting');
   const [showResume, setShowResume] = useState(false);
   const [followTail, setFollowTail] = useState(true);
   const [sidebarCollapsed, setSidebarCollapsed] = useLocalStorage('sessionSidebarCollapsed', false);
+  const [nudgenikLoading, setNudgenikLoading] = useState(false);
+  const [nudgenikResult, setNudgenikResult] = useState(null);
   const terminalRef = useRef(null);
   const terminalStreamRef = useRef(null);
   const workspacesListRef = useRef(null);
@@ -63,6 +66,7 @@ export default function SessionDetailPage() {
         }
 
         setSessionData({ ...session, workspaceId });
+        setWorkspaces(workspaces);
         setLoading(false);
 
         // Mark session as viewed
@@ -198,6 +202,22 @@ export default function SessionDetailPage() {
     }
   };
 
+  const handleAskNudgenik = async () => {
+    setNudgenikLoading(true);
+    try {
+      const resp = await fetch(`/api/askNudgenik/${sessionId}`);
+      if (!resp.ok) {
+        throw new Error(`Failed to ask NudgeNik: ${resp.status}`);
+      }
+      const data = await resp.json();
+      setNudgenikResult(data.response || '');
+    } catch (err) {
+      toastError(`Failed to ask NudgeNik: ${err.message}`);
+    } finally {
+      setNudgenikLoading(false);
+    }
+  };
+
   if (loading) {
     return (
       <div className="loading-state">
@@ -266,6 +286,21 @@ export default function SessionDetailPage() {
                   <span className="status-pill__dot"></span>
                   <span>{wsStatus === 'connected' ? statusText : ''}</span>
                 </div>
+                <Tooltip content="Ask nudgenik what this agent needs">
+                  <button
+                    className="btn btn--sm btn--primary"
+                    onClick={handleAskNudgenik}
+                    disabled={nudgenikLoading}
+                    style={{ display: 'flex', alignItems: 'center', gap: 'var(--spacing-sm)' }}
+                  >
+                    {nudgenikLoading ? (
+                      <>
+                        <span className="spinner spinner--small"></span>
+                        Asking...
+                      </>
+                    ) : 'Ask Nudgenik'}
+                  </button>
+                </Tooltip>
               </div>
               <div className="log-viewer__actions">
                 <label className="toggle-switch">
@@ -400,6 +435,26 @@ export default function SessionDetailPage() {
           </div>
         </aside>
       </div>
+
+      {nudgenikResult !== null && (
+        <div className="modal-overlay" role="dialog" aria-modal="true" aria-labelledby="nudgenik-result-title">
+          <div className="modal modal--large">
+            <div className="modal__header">
+              <h2 className="modal__title" id="nudgenik-result-title">NudgeNik Response</h2>
+            </div>
+            <div className="modal__body">
+              <pre className="nudgenik-modal__response">
+                {nudgenikResult}
+              </pre>
+            </div>
+            <div className="modal__footer">
+              <button className="btn btn--primary" onClick={() => setNudgenikResult(null)}>
+                OK
+              </button>
+            </div>
+          </div>
+        </div>
+      )}
     </>
   );
 }

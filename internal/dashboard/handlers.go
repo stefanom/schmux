@@ -17,6 +17,16 @@ import (
 
 	"github.com/sergek/schmux/internal/config"
 	"github.com/sergek/schmux/internal/detect"
+	"github.com/sergek/schmux/internal/oneshot"
+	"github.com/sergek/schmux/internal/tmux"
+)
+
+const (
+	// NudgeNik prompt prefix
+	nudgenikPrompt = "What do you think this coding agent needs to move forward (direct answer only, no meta commentary):\n\n"
+
+	// Maximum lines to extract from terminal output
+	maxExtractedLines = 80
 )
 
 // handleApp serves the React application entry point for UI routes.
@@ -461,6 +471,75 @@ func (s *Server) handleUpdateNickname(w http.ResponseWriter, r *http.Request) {
 
 	w.Header().Set("Content-Type", "application/json")
 	json.NewEncoder(w).Encode(map[string]string{"status": "ok"})
+}
+
+
+// extractLatestResponse extracts the latest meaningful response from captured lines.
+func extractLatestResponse(lines []string) string {
+
+	promptIdx := len(lines)
+	for i := len(lines) - 1; i >= 0; i-- {
+		if isPromptLine(lines[i]) {
+			promptIdx = i
+			break
+		}
+	}
+
+	var response []string
+	contentCount := 0
+	for i := promptIdx - 1; i >= 0; i-- {
+		text := strings.TrimSpace(lines[i])
+		if text == "" {
+			continue
+		}
+		if isPromptLine(text) {
+			continue
+		}
+		if isSeparatorLine(text) {
+			continue
+		}
+		if isAgentStatusLine(text) {
+			continue
+		}
+
+		response = append([]string{text}, response...)
+		contentCount++
+		if contentCount >= maxExtractedLines {
+			break
+		}
+	}
+
+	return strings.Join(response, "\n")
+}
+
+// isSeparatorLine returns true if the line is mostly repeated separator characters.
+func isSeparatorLine(text string) bool {
+	if len(text) < 10 {
+		return false
+	}
+	runes := []rune(text)
+	// Check if 80%+ of the line is the same character (dashes, equals, etc.)
+	firstChar := runes[0]
+	count := 0
+	for _, c := range runes {
+		if c == firstChar {
+			count++
+		}
+	}
+	return float64(count)/float64(len(runes)) > 0.8
+}
+
+// isPromptLine returns true if the line looks like a shell prompt.
+func isPromptLine(text string) bool {
+	trimmed := strings.TrimSpace(text)
+	return strings.HasPrefix(trimmed, "❯") || strings.HasPrefix(trimmed, "›")
+}
+
+// isAgentStatusLine returns true if the line looks like agent UI noise.
+func isAgentStatusLine(text string) bool {
+	// Filter out Claude Code's vertical bar status lines (⎿)
+	trimmed := strings.TrimSpace(text)
+	return strings.HasPrefix(trimmed, "⎿")
 }
 
 // handleConfig returns the config (repos and agents) for the spawn form,
@@ -1028,4 +1107,91 @@ func (s *Server) handleOpenVSCode(w http.ResponseWriter, r *http.Request) {
 		Success: true,
 		Message: "You can now switch to VS Code.",
 	})
+}
+
+// handleAskNudgenik handles GET requests to ask NudgeNik about a session's output.
+// GET /api/askNudgenik/{sessionId}
+//
+// Combines extraction of the latest session response with the Claude CLI call.
+// The response extraction happens internally on the server side.
+func (s *Server) handleAskNudgenik(w http.ResponseWriter, r *http.Request) {
+	if r.Method != http.MethodGet {
+		http.Error(w, "Method not allowed", http.StatusMethodNotAllowed)
+		return
+	}
+
+	// Extract session ID from URL: /api/askNudgenik/{session-id}
+	sessionID := strings.TrimPrefix(r.URL.Path, "/api/askNudgenik/")
+	if sessionID == "" {
+		http.Error(w, "session ID is required", http.StatusBadRequest)
+		return
+	}
+
+	// Get session from state
+	sess, found := s.state.GetSession(sessionID)
+	if !found {
+		http.Error(w, "session not found", http.StatusNotFound)
+		return
+	}
+
+	// Capture recent output from tmux
+	ctx, cancel := context.WithTimeout(context.Background(), time.Duration(s.config.GetTmuxOperationTimeoutSeconds())*time.Second)
+	content, err := tmux.CaptureLastLines(ctx, sess.TmuxSession, 100)
+	cancel()
+	if err != nil {
+		log.Printf("[ask-nudgenik] failed to capture session %s: %v", sessionID, err)
+		http.Error(w, fmt.Sprintf("Failed to capture session: %v", err), http.StatusInternalServerError)
+		return
+	}
+
+	// Strip ANSI escape sequences
+	content = tmux.StripAnsi(content)
+
+	// Extract latest response (skip UI/noise lines)
+	lines := strings.Split(content, "\n")
+	extractedResponse := extractLatestResponse(lines)
+
+	if extractedResponse == "" {
+		log.Printf("[ask-nudgenik] no response extracted from session %s", sessionID)
+		http.Error(w, "No response found in session output", http.StatusBadRequest)
+		return
+	}
+
+	// Build the prompt with NudgeNik-specific prefix
+	input := nudgenikPrompt + extractedResponse
+
+	// Get the claude agent from detected tools
+	agent, found := s.config.GetAgentDetect("claude")
+	if !found {
+		log.Printf("[ask-nudgenik] claude agent not found in config")
+		http.Error(w, "Claude agent not found. Please run agent detection first.", http.StatusServiceUnavailable)
+		return
+	}
+
+	// Execute the agent using oneshot mechanism
+	ctx, cancel = context.WithTimeout(context.Background(), 30*time.Second)
+	defer cancel()
+
+	response, err := oneshot.Execute(ctx, agent.Name, agent.Command, input)
+	if err != nil {
+		log.Printf("[ask-nudgenik] oneshot execution failed: %v", err)
+		http.Error(w, fmt.Sprintf("Agent execution failed: %v", err), http.StatusInternalServerError)
+		return
+	}
+
+	w.Header().Set("Content-Type", "application/json")
+	json.NewEncoder(w).Encode(map[string]string{"response": response})
+}
+
+// handleHasNudgenik handles GET requests to check if nudgenik is available globally.
+// SPIKE: Always returns true - we use CLI tools directly, no session needed.
+func (s *Server) handleHasNudgenik(w http.ResponseWriter, r *http.Request) {
+	if r.Method != http.MethodGet {
+		http.Error(w, "Method not allowed", http.StatusMethodNotAllowed)
+		return
+	}
+
+	// SPIKE: Always available - we call CLI tools directly, no session needed
+	w.Header().Set("Content-Type", "application/json")
+	json.NewEncoder(w).Encode(map[string]bool{"available": true})
 }
