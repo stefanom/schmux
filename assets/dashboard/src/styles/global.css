@@ -1331,6 +1331,11 @@ body {
     content: "🌙";
 }
 
+.icon-github {
+    width: 20px;
+    height: 20px;
+}
+
 /* ============================================================================
  * TOOLTIP COMPONENT STYLES
  * Refined, accessible tooltips with intelligent positioning
