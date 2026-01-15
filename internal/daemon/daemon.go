@@ -278,6 +278,12 @@ func Run(background bool) error {
 		return fmt.Errorf("failed to load state: %w", err)
 	}
 
+	// Clear needs_restart flag on daemon start (config changes now taking effect)
+	if st.GetNeedsRestart() {
+		st.SetNeedsRestart(false)
+		st.Save()
+	}
+
 	// Create managers
 	wm := workspace.New(cfg, st, statePath)
 	sm := session.New(cfg, st, statePath, wm)

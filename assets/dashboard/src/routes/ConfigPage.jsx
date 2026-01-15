@@ -45,6 +45,9 @@ export default function ConfigPage() {
   const [gitStatusPollInterval, setGitStatusPollInterval] = useState(10000);
   const [gitCloneTimeout, setGitCloneTimeout] = useState(300);
   const [gitStatusTimeout, setGitStatusTimeout] = useState(30);
+  const [networkAccess, setNetworkAccess] = useState(false);
+  const [originalNetworkAccess, setOriginalNetworkAccess] = useState(false);
+  const [apiNeedsRestart, setApiNeedsRestart] = useState(false);
 
   // Input states for new items
   const [newRepoName, setNewRepoName] = useState('');
@@ -87,6 +90,10 @@ export default function ConfigPage() {
         setGitStatusPollInterval(data.internal?.git_status_poll_interval_ms || 10000);
         setGitCloneTimeout(data.internal?.git_clone_timeout_seconds || 300);
         setGitStatusTimeout(data.internal?.git_status_timeout_seconds || 30);
+        const netAccess = data.internal?.network_access || false;
+        setNetworkAccess(netAccess);
+        setOriginalNetworkAccess(netAccess);
+        setApiNeedsRestart(data.needs_restart || false);
       } catch (err) {
         if (!active) return;
         setError(err.message || 'Failed to load config');
@@ -165,11 +172,17 @@ export default function ConfigPage() {
           git_status_poll_interval_ms: gitStatusPollInterval,
           git_clone_timeout_seconds: gitCloneTimeout,
           git_status_timeout_seconds: gitStatusTimeout,
+          network_access: networkAccess,
         }
       };
 
       const result = await updateConfig(updateRequest);
       reloadConfig();
+
+      // Reload config to get updated needs_restart flag from server
+      const reloaded = await getConfig();
+      setApiNeedsRestart(reloaded.needs_restart || false);
+      setOriginalNetworkAccess(networkAccess);
 
       if (result.warning) {
         setWarning(result.warning);
@@ -357,6 +370,14 @@ export default function ConfigPage() {
         <div className="banner banner--warning" style={{ marginBottom: 'var(--spacing-lg)' }}>
           <p style={{ margin: 0 }}>
             <strong>Warning:</strong> {warning}
+          </p>
+        </div>
+      )}
+
+      {apiNeedsRestart && (
+        <div className="banner banner--warning" style={{ marginBottom: 'var(--spacing-lg)' }}>
+          <p style={{ margin: 0 }}>
+            <strong>Restart required:</strong> Network access setting has changed. Restart the daemon for this setting to take effect: <code>./schmux stop && ./schmux start</code>
           </p>
         </div>
       )}
@@ -688,6 +709,42 @@ export default function ConfigPage() {
                       />
                       <p className="form-group__hint">Lines to send on initial WebSocket connection (default: 20000)</p>
                     </div>
+                  </div>
+                </div>
+              </div>
+
+              <div className="settings-section">
+                <div className="settings-section__header">
+                  <h3 className="settings-section__title">Network Access</h3>
+                </div>
+                <div className="settings-section__body">
+                  <div className="form-group">
+                    <label className="form-group__label">Dashboard Access</label>
+                    <div style={{ display: 'flex', gap: 'var(--spacing-md)', alignItems: 'center', fontSize: '0.9rem' }}>
+                      <label style={{ display: 'flex', alignItems: 'center', gap: 'var(--spacing-xs)', cursor: 'pointer', fontSize: 'inherit' }}>
+                        <input
+                          type="radio"
+                          name="networkAccess"
+                          checked={!networkAccess}
+                          onChange={() => setNetworkAccess(false)}
+                        />
+                        <span>Local access only</span>
+                      </label>
+                      <label style={{ display: 'flex', alignItems: 'center', gap: 'var(--spacing-xs)', cursor: 'pointer', fontSize: 'inherit' }}>
+                        <input
+                          type="radio"
+                          name="networkAccess"
+                          checked={networkAccess}
+                          onChange={() => setNetworkAccess(true)}
+                        />
+                        <span>Local network access</span>
+                      </label>
+                    </div>
+                    <p className="form-group__hint">
+                      {!networkAccess
+                        ? 'Dashboard accessible only from this computer (localhost).'
+                        : 'Dashboard accessible from other devices on your local network.'}
+                    </p>
                   </div>
                 </div>
               </div>

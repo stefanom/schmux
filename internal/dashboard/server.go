@@ -67,14 +67,24 @@ func (s *Server) Start() error {
 	// WebSocket for terminal streaming
 	mux.HandleFunc("/ws/terminal/", s.handleTerminalWebSocket)
 
+	// Bind address based on network_access config
+	bindAddr := "127.0.0.1"
+	if s.config.GetNetworkAccess() {
+		bindAddr = "0.0.0.0"
+	}
+
 	s.httpServer = &http.Server{
-		Addr:         fmt.Sprintf("127.0.0.1:%d", port), // Bind to localhost only
+		Addr:         fmt.Sprintf("%s:%d", bindAddr, port),
 		Handler:      mux,
 		ReadTimeout:  readTimeout,
 		WriteTimeout: writeTimeout,
 	}
 
-	fmt.Printf("Dashboard server listening on http://localhost:%d\n", port)
+	if s.config.GetNetworkAccess() {
+		fmt.Printf("Dashboard server listening on http://0.0.0.0:%d (accessible from local network)\n", port)
+	} else {
+		fmt.Printf("Dashboard server listening on http://localhost:%d (localhost only)\n", port)
+	}
 
 	if err := s.httpServer.ListenAndServe(); err != nil && err != http.ErrServerClosed {
 		return fmt.Errorf("server error: %w", err)
@@ -98,14 +108,26 @@ func (s *Server) Stop() error {
 // withCORS wraps a handler with CORS headers.
 func (s *Server) withCORS(h http.HandlerFunc) http.HandlerFunc {
 	return func(w http.ResponseWriter, r *http.Request) {
-		// Only allow requests from the dashboard itself (localhost)
 		origin := r.Header.Get("Origin")
-		if origin != "http://localhost:7337" && origin != "" {
+
+		// When network access is enabled, allow requests from LAN IPs
+		// Otherwise only allow localhost
+		allowedOrigin := ""
+		if origin == "http://localhost:7337" || origin == "http://127.0.0.1:7337" {
+			allowedOrigin = origin
+		} else if s.config.GetNetworkAccess() && origin != "" {
+			// Allow any origin when network access is enabled
+			// (could be more restrictive by checking for private IP ranges)
+			allowedOrigin = origin
+		}
+
+		if origin != "" && allowedOrigin == "" {
 			http.Error(w, "Forbidden", http.StatusForbidden)
 			return
 		}
-		if origin == "http://localhost:7337" {
-			w.Header().Set("Access-Control-Allow-Origin", origin)
+
+		if allowedOrigin != "" {
+			w.Header().Set("Access-Control-Allow-Origin", allowedOrigin)
 		}
 		w.Header().Set("Access-Control-Allow-Methods", "GET, POST, OPTIONS")
 		w.Header().Set("Access-Control-Allow-Headers", "Content-Type")

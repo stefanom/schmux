@@ -40,6 +40,7 @@ type Config struct {
 	Tools         []Tool             `json:"tools"` // detected CLI tools (populated by auto-detection)
 	Terminal      *TerminalSize      `json:"terminal,omitempty"`
 	Internal      *InternalIntervals `json:"internal,omitempty"`
+	NetworkAccess bool               `json:"network_access,omitempty"` // true = bind to 0.0.0.0 (LAN), false = 127.0.0.1 (localhost only)
 }
 
 // TerminalSize represents terminal dimensions.
@@ -526,4 +527,10 @@ func (c *Config) TmuxQueryTimeout() time.Duration {
 // TmuxOperationTimeout returns the tmux operation timeout as a time.Duration.
 func (c *Config) TmuxOperationTimeout() time.Duration {
 	return time.Duration(c.GetTmuxOperationTimeoutSeconds()) * time.Second
+}
+
+// GetNetworkAccess returns whether the dashboard should be accessible from the local network.
+// Defaults to false (localhost only).
+func (c *Config) GetNetworkAccess() bool {
+	return c.NetworkAccess
 }

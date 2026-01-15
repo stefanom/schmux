@@ -558,13 +558,14 @@ func (s *Server) handleConfigGet(w http.ResponseWriter, r *http.Request) {
 	}
 
 	type InternalResponse struct {
-		MtimePollIntervalMs     int `json:"mtime_poll_interval_ms"`
-		SessionsPollIntervalMs  int `json:"sessions_poll_interval_ms"`
-		ViewedBufferMs          int `json:"viewed_buffer_ms"`
-		SessionSeenIntervalMs   int `json:"session_seen_interval_ms"`
-		GitStatusPollIntervalMs int `json:"git_status_poll_interval_ms"`
-		GitCloneTimeoutSeconds  int `json:"git_clone_timeout_seconds"`
-		GitStatusTimeoutSeconds int `json:"git_status_timeout_seconds"`
+		MtimePollIntervalMs     int  `json:"mtime_poll_interval_ms"`
+		SessionsPollIntervalMs  int  `json:"sessions_poll_interval_ms"`
+		ViewedBufferMs          int  `json:"viewed_buffer_ms"`
+		SessionSeenIntervalMs   int  `json:"session_seen_interval_ms"`
+		GitStatusPollIntervalMs int  `json:"git_status_poll_interval_ms"`
+		GitCloneTimeoutSeconds  int  `json:"git_clone_timeout_seconds"`
+		GitStatusTimeoutSeconds int  `json:"git_status_timeout_seconds"`
+		NetworkAccess           bool `json:"network_access"`
 	}
 
 	type ConfigResponse struct {
@@ -573,6 +574,7 @@ func (s *Server) handleConfigGet(w http.ResponseWriter, r *http.Request) {
 		Agents        []AgentResponse  `json:"agents"`
 		Terminal      TerminalResponse `json:"terminal"`
 		Internal      InternalResponse `json:"internal"`
+		NeedsRestart  bool             `json:"needs_restart"`
 	}
 
 	repos := s.config.GetRepos()
@@ -604,7 +606,9 @@ func (s *Server) handleConfigGet(w http.ResponseWriter, r *http.Request) {
 			GitStatusPollIntervalMs: s.config.GetGitStatusPollIntervalMs(),
 			GitCloneTimeoutSeconds:  s.config.GetGitCloneTimeoutSeconds(),
 			GitStatusTimeoutSeconds: s.config.GetGitStatusTimeoutSeconds(),
+			NetworkAccess:           s.config.GetNetworkAccess(),
 		},
+		NeedsRestart: s.state.GetNeedsRestart(),
 	}
 
 	w.Header().Set("Content-Type", "application/json")
@@ -630,13 +634,14 @@ type ConfigUpdateRequest struct {
 		BootstrapLines *int `json:"bootstrap_lines,omitempty"`
 	} `json:"terminal,omitempty"`
 	Internal *struct {
-		MtimePollIntervalMs     *int `json:"mtime_poll_interval_ms,omitempty"`
-		SessionsPollIntervalMs  *int `json:"sessions_poll_interval_ms,omitempty"`
-		ViewedBufferMs          *int `json:"viewed_buffer_ms,omitempty"`
-		SessionSeenIntervalMs   *int `json:"session_seen_interval_ms,omitempty"`
-		GitStatusPollIntervalMs *int `json:"git_status_poll_interval_ms,omitempty"`
-		GitCloneTimeoutSeconds  *int `json:"git_clone_timeout_seconds,omitempty"`
-		GitStatusTimeoutSeconds *int `json:"git_status_timeout_seconds,omitempty"`
+		MtimePollIntervalMs     *int  `json:"mtime_poll_interval_ms,omitempty"`
+		SessionsPollIntervalMs  *int  `json:"sessions_poll_interval_ms,omitempty"`
+		ViewedBufferMs          *int  `json:"viewed_buffer_ms,omitempty"`
+		SessionSeenIntervalMs   *int  `json:"session_seen_interval_ms,omitempty"`
+		GitStatusPollIntervalMs *int  `json:"git_status_poll_interval_ms,omitempty"`
+		GitCloneTimeoutSeconds  *int  `json:"git_clone_timeout_seconds,omitempty"`
+		GitStatusTimeoutSeconds *int  `json:"git_status_timeout_seconds,omitempty"`
+		NetworkAccess           *bool `json:"network_access,omitempty"`
 	} `json:"internal,omitempty"`
 }
 
@@ -755,6 +760,14 @@ func (s *Server) handleConfigUpdate(w http.ResponseWriter, r *http.Request) {
 		}
 		if req.Internal.GitStatusTimeoutSeconds != nil && *req.Internal.GitStatusTimeoutSeconds > 0 {
 			cfg.Internal.Timeouts.GitStatusSeconds = *req.Internal.GitStatusTimeoutSeconds
+		}
+		if req.Internal.NetworkAccess != nil {
+			// Check if network access is changing
+			if *req.Internal.NetworkAccess != cfg.NetworkAccess {
+				s.state.SetNeedsRestart(true)
+				s.state.Save()
+			}
+			cfg.NetworkAccess = *req.Internal.NetworkAccess
 		}
 	}
 

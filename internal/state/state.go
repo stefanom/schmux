@@ -11,10 +11,11 @@ import (
 
 // State represents the application state.
 type State struct {
-	Workspaces []Workspace `json:"workspaces"`
-	Sessions   []Session   `json:"sessions"`
-	path       string      // path to the state file
-	mu         sync.RWMutex
+	Workspaces  []Workspace `json:"workspaces"`
+	Sessions    []Session   `json:"sessions"`
+	NeedsRestart bool       `json:"needs_restart,omitempty"` // true if daemon needs restart for config changes to take effect
+	path        string      // path to the state file
+	mu          sync.RWMutex
 }
 
 // Workspace represents a workspace directory state.
@@ -221,4 +222,19 @@ func (s *State) RemoveWorkspace(id string) error {
 		}
 	}
 	return nil
+}
+
+// SetNeedsRestart sets the needs_restart flag.
+func (s *State) SetNeedsRestart(needsRestart bool) error {
+	s.mu.Lock()
+	defer s.mu.Unlock()
+	s.NeedsRestart = needsRestart
+	return nil
+}
+
+// GetNeedsRestart returns the needs_restart flag.
+func (s *State) GetNeedsRestart() bool {
+	s.mu.RLock()
+	defer s.mu.RUnlock()
+	return s.NeedsRestart
 }

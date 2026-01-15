@@ -19,6 +19,10 @@ type StateStore interface {
 	UpdateWorkspace(ws Workspace) error
 	RemoveWorkspace(id string) error
 
+	// Daemon state
+	GetNeedsRestart() bool
+	SetNeedsRestart(needsRestart bool) error
+
 	// Persistence
 	Save() error
 }
