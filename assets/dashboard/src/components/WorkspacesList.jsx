@@ -305,6 +305,20 @@ const WorkspacesListInner = React.forwardRef(function WorkspacesList({
           </div>
         )}
 
+        {filteredWorkspaces.length > 0 && !loading && !error && (
+          <table className="session-table session-table--header">
+            <thead>
+              <tr>
+                <th>Session</th>
+                <th>Status</th>
+                <th>Created</th>
+                <th>Last Activity</th>
+                <th className="text-right">Actions</th>
+              </tr>
+            </thead>
+          </table>
+        )}
+
         {filteredWorkspaces.map((ws) => {
           let sessions = ws.sessions || [];
           if (filters?.status) {
@@ -324,16 +338,7 @@ const WorkspacesListInner = React.forwardRef(function WorkspacesList({
               actions={renderWorkspaceActions(ws)}
               sessions={
                 sessionCount > 0 ? (
-                  <table className="session-table">
-                    <thead>
-                      <tr>
-                        <th>Session</th>
-                        <th>Status</th>
-                        <th>Created</th>
-                        <th>Last Activity</th>
-                        <th className="text-right">Actions</th>
-                      </tr>
-                    </thead>
+                  <table className="session-table session-table--no-header">
                     {sessions.map((sess) => (
                       <SessionTableRow
                         key={sess.id}
