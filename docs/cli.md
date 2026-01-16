@@ -15,6 +15,9 @@ schmux list [--json]                     # List all sessions
 schmux attach <session-id>                # Attach to a session
 schmux dispose <session-id>               # Dispose a session
 
+# Workspace Management
+schmux refresh-overlay <workspace-id>     # Refresh overlay files for a workspace
+
 # Help
 schmux help                               # Show help message
 ```
@@ -250,6 +253,41 @@ schmux dispose schmux-001-abc12345
 Dispose session schmux-001-abc12345? [y/N] y
 Session schmux-001-abc12345 disposed.
 ```
+
+---
+
+## Workspace Commands
+
+### `schmux refresh-overlay`
+
+Refresh (reapply) overlay files to a workspace.
+
+**Syntax:**
+```bash
+schmux refresh-overlay <workspace-id>
+```
+
+Overlays allow you to copy local-only files (like `.env` files) to workspaces automatically. Files are stored in `~/.schmux/overlays/<repo-name>/` and are only copied if covered by `.gitignore`.
+
+**Example:**
+```bash
+schmux refresh-overlay myproject-001
+```
+
+**Output:**
+```
+Refreshing overlay for workspace myproject-001 (myproject)
+Overlay refreshed successfully for workspace myproject-001
+```
+
+**Errors:**
+- `workspace has active sessions: <id>` - Cannot refresh while sessions are running
+- `workspace not found: <id>` - Workspace ID doesn't exist
+
+**When to use:**
+- After updating files in an overlay directory
+- After adding new files to an overlay directory
+- After a workspace was created before overlays were set up
 
 ---
 

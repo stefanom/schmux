@@ -1,6 +1,6 @@
 import React, { useEffect, useState } from 'react';
 import { useNavigate } from 'react-router-dom';
-import { getConfig, updateConfig, getVariants, configureVariantSecrets, removeVariantSecrets } from '../lib/api.js';
+import { getConfig, updateConfig, getVariants, configureVariantSecrets, removeVariantSecrets, getOverlays } from '../lib/api.js';
 import { useToast } from '../components/ToastProvider.jsx';
 import { useModal } from '../components/ModalProvider.jsx';
 import { useConfig } from '../contexts/ConfigContext.jsx';
@@ -50,6 +50,10 @@ export default function ConfigPage() {
   const [networkAccess, setNetworkAccess] = useState(false);
   const [originalNetworkAccess, setOriginalNetworkAccess] = useState(false);
   const [apiNeedsRestart, setApiNeedsRestart] = useState(false);
+
+  // Overlays state
+  const [overlays, setOverlays] = useState([]);
+  const [loadingOverlays, setLoadingOverlays] = useState(true);
 
   // Input states for new items
   const [newRepoName, setNewRepoName] = useState('');
@@ -114,6 +118,29 @@ export default function ConfigPage() {
     };
 
     load();
+    return () => { active = false };
+  }, []);
+
+  // Load overlays data
+  useEffect(() => {
+    let active = true;
+
+    const loadOverlays = async () => {
+      setLoadingOverlays(true);
+      try {
+        const data = await getOverlays();
+        if (!active) return;
+        setOverlays(data.overlays || []);
+      } catch (err) {
+        if (!active) return;
+        console.error('Failed to load overlays:', err);
+        // Don't show error for overlays - it's a non-critical feature
+      } finally {
+        if (active) setLoadingOverlays(false);
+      }
+    };
+
+    loadOverlays();
     return () => { active = false };
   }, []);
 
@@ -630,20 +657,34 @@ export default function ConfigPage() {
                 </div>
               ) : (
                 <div className="item-list">
-                  {repos.map((repo) => (
-                    <div className="item-list__item" key={repo.name}>
-                      <div className="item-list__item-primary">
-                        <span className="item-list__item-name">{repo.name}</span>
-                        <span className="item-list__item-detail">{repo.url}</span>
+                  {repos.map((repo) => {
+                    // Find overlay info for this repo
+                    const overlay = overlays.find(o => o.repo_name === repo.name);
+                    const overlayPath = overlay?.path || `~/.schmux/overlays/${repo.name}`;
+                    const fileCount = overlay?.exists ? overlay.file_count : 0;
+
+                    return (
+                      <div className="item-list__item" key={repo.name}>
+                        <div className="item-list__item-primary">
+                          <span className="item-list__item-name">{repo.name}</span>
+                          <span className="item-list__item-detail">{repo.url}</span>
+                          <span className="item-list__item-detail" style={{ fontSize: '0.85em', opacity: 0.8 }}>
+                            Overlay: {overlayPath} {overlay?.exists ? (
+                              <span style={{ color: 'var(--color-success)' }}>({fileCount} files)</span>
+                            ) : (
+                              <span style={{ color: 'var(--color-text-muted)' }}>(empty)</span>
+                            )}
+                          </span>
+                        </div>
+                        <button
+                          className="btn btn--sm btn--danger"
+                          onClick={() => removeRepo(repo.name)}
+                        >
+                          Remove
+                        </button>
                       </div>
-                      <button
-                        className="btn btn--sm btn--danger"
-                        onClick={() => removeRepo(repo.name)}
-                      >
-                        Remove
-                      </button>
-                    </div>
-                  ))}
+                    );
+                  })}
                 </div>
               )}
 
@@ -1181,6 +1222,54 @@ export default function ConfigPage() {
                     />
                     <p className="form-group__hint">Maximum time to wait for git status/diff operations (default: 30s)</p>
                   </div>
+                </div>
+              </div>
+
+              <div className="settings-section">
+                <div className="settings-section__header">
+                  <h3 className="settings-section__title">Workspace Overlays</h3>
+                </div>
+                <div className="settings-section__body">
+                  <p style={{ marginBottom: 'var(--spacing-md)', color: 'var(--color-text-secondary)' }}>
+                    Overlays allow you to copy local-only files (like .env files) to new workspaces automatically.
+                    Files are stored in <code style={{ fontSize: '0.9em' }}>~/.schmux/overlays/&lt;repo-name&gt;/</code> and are only copied if covered by .gitignore.
+                  </p>
+
+                  {loadingOverlays ? (
+                    <div className="loading-state" style={{ padding: 'var(--spacing-md)' }}>
+                      <div className="spinner spinner--sm"></div>
+                      <span style={{ fontSize: '0.9em' }}>Loading overlay info...</span>
+                    </div>
+                  ) : overlays.length === 0 ? (
+                    <div className="empty-state-hint">
+                      No repositories configured yet. Add repositories in the Repositories tab to set up overlays.
+                    </div>
+                  ) : (
+                    <div className="item-list">
+                      {overlays.map((overlay) => (
+                        <div className="item-list__item" key={overlay.repo_name}>
+                          <div className="item-list__item-primary">
+                            <span className="item-list__item-name">{overlay.repo_name}</span>
+                            <span className="item-list__item-detail">{overlay.path}</span>
+                          </div>
+                          <div style={{ display: 'flex', alignItems: 'center', gap: 'var(--spacing-md)' }}>
+                            {overlay.exists ? (
+                              <span className="badge badge--success" style={{ fontSize: '0.85em' }}>
+                                {overlay.file_count} {overlay.file_count === 1 ? 'file' : 'files'}
+                              </span>
+                            ) : (
+                              <span className="badge badge--secondary" style={{ fontSize: '0.85em' }}>
+                                Missing
+                              </span>
+                            )}
+                          </div>
+                        </div>
+                      ))}
+                    </div>
+                  )}
+                  <p className="form-group__hint" style={{ marginTop: 'var(--spacing-md)' }}>
+                    Create overlay directories manually. Only files covered by .gitignore will be copied.
+                  </p>
                 </div>
               </div>
               {stepErrors[6] && (

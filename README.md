@@ -133,11 +133,15 @@ Then start the daemon:
 **Problem**: Dashboard shows "Disconnected"
 - **Solution**: Check if daemon is running with `./schmux status`
 
+**Problem**: I want local config files in each workspace
+- **Solution**: Use workspace overlays - see `docs/workspace-overlays-spec.md` for details
+
 ## Features
 
 - **Multi-target orchestration** - Run Claude, Codex, and friends simultaneously
 - **Multi-target per directory** - Spawn reviewers or subtargets on existing workspaces
 - **Workspace management** - Auto git clone/checkout/pull for clean working directories
+- **Workspace overlays** - Auto-copy local-only files (`.env`, config) to new workspaces
 - **tmux integration** - Each target in its own session, attach anytime
 - **Web dashboard** - Watch your targets work (or panic) in real-time
 - **Session persistence** - Survives target completion for review and resume

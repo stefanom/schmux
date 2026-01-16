@@ -19,6 +19,7 @@ import (
 	"github.com/sergek/schmux/internal/config"
 	"github.com/sergek/schmux/internal/detect"
 	"github.com/sergek/schmux/internal/nudgenik"
+	"github.com/sergek/schmux/internal/workspace"
 )
 
 // handleApp serves the React application entry point for UI routes.
@@ -676,6 +677,9 @@ func (s *Server) handleConfigUpdate(w http.ResponseWriter, r *http.Request) {
 
 	cfg := s.config
 
+	// Track if repos were updated for overlay dir creation
+	reposUpdated := req.Repos != nil
+
 	// Check for workspace path change (for warning after save)
 	sessionCount := len(s.state.GetSessions())
 	workspaceCount := len(s.state.GetWorkspaces())
@@ -836,6 +840,14 @@ func (s *Server) handleConfigUpdate(w http.ResponseWriter, r *http.Request) {
 		log.Printf("[config] failed to save config: %v", err)
 		http.Error(w, fmt.Sprintf("Failed to save config: %v", err), http.StatusInternalServerError)
 		return
+	}
+
+	// Ensure overlay directories exist for all repos if repos were updated
+	if reposUpdated {
+		if err := s.workspace.EnsureOverlayDirs(cfg.GetRepos()); err != nil {
+			log.Printf("[config] warning: failed to ensure overlay directories: %v", err)
+			// Don't fail the request for this - overlay dirs can be created manually
+		}
 	}
 
 	// Return warning if path changed with existing sessions/workspaces
@@ -1349,4 +1361,94 @@ func (s *Server) handleHasNudgenik(w http.ResponseWriter, r *http.Request) {
 	// SPIKE: Always available - we call CLI tools directly, no session needed
 	w.Header().Set("Content-Type", "application/json")
 	json.NewEncoder(w).Encode(map[string]bool{"available": true})
+}
+
+// handleOverlays returns overlay information for all repos.
+func (s *Server) handleOverlays(w http.ResponseWriter, r *http.Request) {
+	if r.Method != http.MethodGet {
+		http.Error(w, "Method not allowed", http.StatusMethodNotAllowed)
+		return
+	}
+
+	type OverlayInfo struct {
+		RepoName  string `json:"repo_name"`
+		Path      string `json:"path"`
+		Exists    bool   `json:"exists"`
+		FileCount int    `json:"file_count"`
+	}
+
+	type Response struct {
+		Overlays []OverlayInfo `json:"overlays"`
+	}
+
+	repos := s.config.GetRepos()
+	overlays := make([]OverlayInfo, 0, len(repos))
+
+	for _, repo := range repos {
+		overlayDir, err := workspace.OverlayDir(repo.Name)
+		if err != nil {
+			log.Printf("[overlays] failed to get overlay directory for %s: %v", repo.Name, err)
+			continue
+		}
+
+		// Check if overlay directory exists
+		exists := true
+		if _, err := os.Stat(overlayDir); os.IsNotExist(err) {
+			exists = false
+		}
+
+		// Count files if directory exists
+		fileCount := 0
+		if exists {
+			files, err := workspace.ListOverlayFiles(repo.Name)
+			if err != nil {
+				log.Printf("[overlays] failed to list overlay files for %s: %v", repo.Name, err)
+			} else {
+				fileCount = len(files)
+			}
+		}
+
+		overlays = append(overlays, OverlayInfo{
+			RepoName:  repo.Name,
+			Path:      overlayDir,
+			Exists:    exists,
+			FileCount: fileCount,
+		})
+	}
+
+	w.Header().Set("Content-Type", "application/json")
+	json.NewEncoder(w).Encode(Response{Overlays: overlays})
+}
+
+// handleRefreshOverlay handles POST requests to refresh overlay files for a workspace.
+func (s *Server) handleRefreshOverlay(w http.ResponseWriter, r *http.Request) {
+	if r.Method != http.MethodPost {
+		http.Error(w, "Method not allowed", http.StatusMethodNotAllowed)
+		return
+	}
+
+	// Extract workspace ID from URL: /api/workspaces/:id/refresh-overlay
+	workspaceID := strings.TrimPrefix(r.URL.Path, "/api/workspaces/")
+	workspaceID = strings.TrimSuffix(workspaceID, "/refresh-overlay")
+	if workspaceID == "" {
+		http.Error(w, "workspace ID is required", http.StatusBadRequest)
+		return
+	}
+
+	ctx, cancel := context.WithTimeout(context.Background(), time.Duration(s.config.GetTmuxOperationTimeoutSeconds())*time.Second)
+	defer cancel()
+
+	if err := s.workspace.RefreshOverlay(ctx, workspaceID); err != nil {
+		log.Printf("[refresh-overlay] error: workspace_id=%s error=%v", workspaceID, err)
+		w.Header().Set("Content-Type", "application/json")
+		// Return 400 for client errors (active sessions, not found)
+		w.WriteHeader(http.StatusBadRequest)
+		json.NewEncoder(w).Encode(map[string]string{"error": err.Error()})
+		return
+	}
+
+	log.Printf("[refresh-overlay] success: workspace_id=%s", workspaceID)
+
+	w.Header().Set("Content-Type", "application/json")
+	json.NewEncoder(w).Encode(map[string]string{"status": "ok"})
 }

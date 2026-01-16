@@ -26,4 +26,7 @@ type DaemonClient interface {
 
 	// ScanWorkspaces triggers a workspace scan.
 	ScanWorkspaces(ctx context.Context) (*ScanResult, error)
+
+	// RefreshOverlay reapplies overlay files to a workspace.
+	RefreshOverlay(ctx context.Context, workspaceID string) error
 }

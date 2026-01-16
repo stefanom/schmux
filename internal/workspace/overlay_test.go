@@ -1,0 +1,248 @@
+package workspace
+
+import (
+	"context"
+	"os"
+	"os/exec"
+	"path/filepath"
+	"testing"
+)
+
+func TestOverlayDir(t *testing.T) {
+	homeDir, err := os.UserHomeDir()
+	if err != nil {
+		t.Fatalf("failed to get home dir: %v", err)
+	}
+
+	tests := []struct {
+		name     string
+		repoName string
+		want     string
+	}{
+		{
+			name:     "simple repo name",
+			repoName: "myproject",
+			want:     filepath.Join(homeDir, ".schmux", "overlays", "myproject"),
+		},
+		{
+			name:     "repo with hyphens",
+			repoName: "my-project",
+			want:     filepath.Join(homeDir, ".schmux", "overlays", "my-project"),
+		},
+	}
+
+	for _, tt := range tests {
+		t.Run(tt.name, func(t *testing.T) {
+			got, err := OverlayDir(tt.repoName)
+			if err != nil {
+				t.Fatalf("OverlayDir() error = %v", err)
+			}
+			if got != tt.want {
+				t.Errorf("OverlayDir() = %v, want %v", got, tt.want)
+			}
+		})
+	}
+}
+
+func TestListOverlayFiles(t *testing.T) {
+	// Create a temporary directory for testing
+	tempDir := t.TempDir()
+	homeDir, err := os.UserHomeDir()
+	if err != nil {
+		t.Fatalf("failed to get home dir: %v", err)
+	}
+
+	// Create a mock overlay directory structure
+	repoName := "test-repo"
+	overlayDir := filepath.Join(homeDir, ".schmux", "overlays", repoName)
+
+	// Save the original overlay directory if it exists and restore after test
+	origExists := false
+	var origBackup string
+	if _, err := os.Stat(overlayDir); err == nil {
+		origExists = true
+		origBackup = tempDir + "/orig-overlay"
+		if err := os.Rename(overlayDir, origBackup); err != nil {
+			t.Fatalf("failed to backup original overlay dir: %v", err)
+		}
+		defer func() {
+			if err := os.Rename(origBackup, overlayDir); err != nil {
+				t.Errorf("failed to restore original overlay dir: %v", err)
+			}
+		}()
+	}
+	defer func() {
+		if !origExists {
+			os.RemoveAll(overlayDir)
+		}
+	}()
+
+	// Clean up any existing overlay directory
+	os.RemoveAll(overlayDir)
+
+	// Create test overlay directory
+	if err := os.MkdirAll(overlayDir, 0755); err != nil {
+		t.Fatalf("failed to create overlay dir: %v", err)
+	}
+
+	// Create test files
+	testFiles := []string{
+		".env",
+		"config/local.json",
+		"credentials/service.json",
+	}
+	for _, file := range testFiles {
+		fullPath := filepath.Join(overlayDir, file)
+		if err := os.MkdirAll(filepath.Dir(fullPath), 0755); err != nil {
+			t.Fatalf("failed to create parent dir: %v", err)
+		}
+		if err := os.WriteFile(fullPath, []byte("test content"), 0644); err != nil {
+			t.Fatalf("failed to create test file: %v", err)
+		}
+	}
+
+	tests := []struct {
+		name     string
+		repoName string
+		want     []string
+		wantErr  bool
+	}{
+		{
+			name:     "existing overlay with files",
+			repoName: repoName,
+			want:     testFiles,
+			wantErr:  false,
+		},
+		{
+			name:     "non-existent overlay",
+			repoName: "nonexistent",
+			want:     []string{},
+			wantErr:  false,
+		},
+	}
+
+	for _, tt := range tests {
+		t.Run(tt.name, func(t *testing.T) {
+			got, err := ListOverlayFiles(tt.repoName)
+			if (err != nil) != tt.wantErr {
+				t.Errorf("ListOverlayFiles() error = %v, wantErr %v", err, tt.wantErr)
+				return
+			}
+			if len(got) != len(tt.want) {
+				t.Errorf("ListOverlayFiles() returned %d files, want %d", len(got), len(tt.want))
+				return
+			}
+			// Check that all expected files are present
+			gotMap := make(map[string]bool)
+			for _, f := range got {
+				gotMap[f] = true
+			}
+			for _, wantFile := range tt.want {
+				if !gotMap[wantFile] {
+					t.Errorf("ListOverlayFiles() missing file: %s", wantFile)
+				}
+			}
+		})
+	}
+}
+
+func TestCopyFile(t *testing.T) {
+	tempDir := t.TempDir()
+
+	// Create a source file with some content
+	srcFile := filepath.Join(tempDir, "source.txt")
+	content := "hello world\nthis is a test file\nwith multiple lines\n"
+	if err := os.WriteFile(srcFile, []byte(content), 0644); err != nil {
+		t.Fatalf("failed to create source file: %v", err)
+	}
+
+	// Test copying to destination
+	dstFile := filepath.Join(tempDir, "dest.txt")
+	if err := copyFile(srcFile, dstFile, 0644); err != nil {
+		t.Fatalf("copyFile() error = %v", err)
+	}
+
+	// Verify content was copied correctly
+	gotContent, err := os.ReadFile(dstFile)
+	if err != nil {
+		t.Fatalf("failed to read destination file: %v", err)
+	}
+	if string(gotContent) != content {
+		t.Errorf("copyFile() content mismatch\ngot:  %q\nwant: %q", string(gotContent), content)
+	}
+
+	// Verify file permissions
+	info, err := os.Stat(dstFile)
+	if err != nil {
+		t.Fatalf("failed to stat destination file: %v", err)
+	}
+	if info.Mode().Perm() != 0644 {
+		t.Errorf("copyFile() permissions = %v, want %v", info.Mode().Perm(), 0644)
+	}
+}
+
+func TestIsIgnoredByGit(t *testing.T) {
+	// This test requires a git repository, so we'll create a temporary one
+	tempDir := t.TempDir()
+
+	// Initialize git repo
+	ctx := context.Background()
+	if err := runGitCommand(ctx, tempDir, "init"); err != nil {
+		t.Skipf("git not available: %v", err)
+		return
+	}
+
+	// Create a .gitignore file
+	gitignoreContent := "*.env\nconfig/secrets/\n"
+	if err := os.WriteFile(filepath.Join(tempDir, ".gitignore"), []byte(gitignoreContent), 0644); err != nil {
+		t.Fatalf("failed to create .gitignore: %v", err)
+	}
+
+	// Create some test files (but don't actually create them - we just test the gitignore check)
+	tests := []struct {
+		name     string
+		filePath string
+		want     bool
+	}{
+		{
+			name:     "file matching .gitignore pattern",
+			filePath: ".env",
+			want:     true,
+		},
+		{
+			name:     "file in ignored directory",
+			filePath: "config/secrets/key.txt",
+			want:     true,
+		},
+		{
+			name:     "file not matching any pattern",
+			filePath: "README.md",
+			want:     false,
+		},
+		{
+			name:     "Go file (typically not ignored)",
+			filePath: "main.go",
+			want:     false,
+		},
+	}
+
+	for _, tt := range tests {
+		t.Run(tt.name, func(t *testing.T) {
+			got, err := isIgnoredByGit(ctx, tempDir, tt.filePath)
+			if err != nil {
+				t.Errorf("isIgnoredByGit() unexpected error = %v", err)
+				return
+			}
+			if got != tt.want {
+				t.Errorf("isIgnoredByGit() = %v, want %v", got, tt.want)
+			}
+		})
+	}
+}
+
+// Helper function to run git commands in tests
+func runGitCommand(ctx context.Context, dir string, args ...string) error {
+	cmd := exec.CommandContext(ctx, "git", args...)
+	cmd.Dir = dir
+	return cmd.Run()
+}

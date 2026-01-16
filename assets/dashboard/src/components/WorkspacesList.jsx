@@ -1,6 +1,6 @@
 import React, { useState } from 'react';
 import { useNavigate } from 'react-router-dom';
-import { disposeSession, disposeWorkspace, openVSCode } from '../lib/api.js';
+import { disposeSession, disposeWorkspace, openVSCode, refreshOverlay } from '../lib/api.js';
 import { copyToClipboard } from '../lib/utils.js';
 import { useToast } from './ToastProvider.jsx';
 import { useModal } from './ModalProvider.jsx';
@@ -41,6 +41,7 @@ const WorkspacesListInner = React.forwardRef(function WorkspacesList({
   const [expanded, setExpanded] = useLocalStorage('workspace-expanded', {});
   const [vsCodeResult, setVSCodeResult] = useState(null);
   const [vsCodeLoading, setVSCodeLoading] = useState(null); // Track which workspace is loading
+  const [refreshOverlayLoading, setRefreshOverlayLoading] = useState(null); // Track which workspace is refreshing overlay
 
   const quickLaunch = React.useMemo(() => {
     return config?.quick_launch || [];
@@ -131,6 +132,19 @@ const WorkspacesListInner = React.forwardRef(function WorkspacesList({
     }
   };
 
+  const handleRefreshOverlay = async (workspace) => {
+    setRefreshOverlayLoading(workspace.id);
+    try {
+      await refreshOverlay(workspace.id);
+      success('Overlay refreshed successfully');
+      refresh();
+    } catch (err) {
+      toastError(err.message || 'Failed to refresh overlay');
+    } finally {
+      setRefreshOverlayLoading(null);
+    }
+  };
+
   const renderWorkspaceActions = (workspace) => (
     <>
       <Tooltip content="Open in VS Code">
@@ -154,6 +168,31 @@ const WorkspacesListInner = React.forwardRef(function WorkspacesList({
                 <path d="M23.15 2.587L18.21.21a1.494 1.494 0 0 0-1.705.29l-9.46 8.63-4.12-3.128a.999.999 0 0 0-1.276.057L.327 7.261A1 1 0 0 0 .326 8.74L3.899 12 .326 15.26a1 1 0 0 0 .001 1.479L1.65 17.94a.999.999 0 0 0 1.276.057l4.12-3.128 9.46 8.63a1.492 1.492 0 0 0 1.704.29l4.942-2.377A1.5 1.5 0 0 0 24 20.06V3.939a1.5 1.5 0 0 0-.85-1.352zm-5.146 14.861L10.826 12l7.178-5.448v10.896z" fill="#007ACC"/>
               </svg>
               VS Code
+            </>
+          )}
+        </button>
+      </Tooltip>
+      <Tooltip content="Refresh overlay files">
+        <button
+          className="btn btn--sm btn--ghost btn--bordered"
+          disabled={refreshOverlayLoading === workspace.id || workspace.session_count > 0}
+          onClick={(event) => {
+            event.stopPropagation();
+            handleRefreshOverlay(workspace);
+          }}
+          aria-label={`Refresh overlay for ${workspace.id}`}
+        >
+          {refreshOverlayLoading === workspace.id ? (
+            <>
+              <div className="spinner--small"></div>
+              Refreshing...
+            </>
+          ) : (
+            <>
+              <svg width="14" height="14" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2">
+                <path d="M21.5 2v6h-6M21.34 5.5A10 10 0 1 1 11.26 2.25"/>
+              </svg>
+              Refresh Overlay
             </>
           )}
         </button>

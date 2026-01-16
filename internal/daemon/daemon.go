@@ -289,6 +289,12 @@ func Run(background bool) error {
 	wm := workspace.New(cfg, st, statePath)
 	sm := session.New(cfg, st, statePath, wm)
 
+	// Ensure overlay directories exist for all repos
+	if err := wm.EnsureOverlayDirs(cfg.GetRepos()); err != nil {
+		fmt.Printf("warning: failed to ensure overlay directories: %v\n", err)
+		// Don't fail daemon startup for this
+	}
+
 	// Detect run targets once on daemon start and persist to config
 	detectCtx, cancel := context.WithTimeout(context.Background(), 10*time.Second)
 	detectedTargets, err := detect.DetectAvailableAgentsContext(detectCtx, false)

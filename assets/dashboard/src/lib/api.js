@@ -142,3 +142,21 @@ export async function removeVariantSecrets(variantName) {
   }
   return response.json();
 }
+
+export async function getOverlays() {
+  const response = await fetch('/api/overlays');
+  if (!response.ok) throw new Error('Failed to fetch overlays');
+  return response.json();
+}
+
+export async function refreshOverlay(workspaceId) {
+  const response = await fetch(`/api/workspaces/${workspaceId}/refresh-overlay`, {
+    method: 'POST',
+    headers: { 'Content-Type': 'application/json' }
+  });
+  if (!response.ok) {
+    const err = await response.json();
+    throw new Error(err.error || 'Failed to refresh overlay');
+  }
+  return response.json();
+}

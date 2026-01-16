@@ -242,6 +242,36 @@ func (c *Client) ScanWorkspaces(ctx context.Context) (*ScanResult, error) {
 	return &result, nil
 }
 
+// RefreshOverlay reapplies overlay files to a workspace.
+func (c *Client) RefreshOverlay(ctx context.Context, workspaceID string) error {
+	if ctx == nil {
+		var cancel context.CancelFunc
+		ctx, cancel = context.WithTimeout(context.Background(), 30*time.Second)
+		defer cancel()
+	}
+
+	req, err := http.NewRequestWithContext(ctx, http.MethodPost, c.baseURL+"/api/workspaces/"+workspaceID+"/refresh-overlay", nil)
+	if err != nil {
+		return fmt.Errorf("failed to create request: %w", err)
+	}
+
+	resp, err := c.httpClient.Do(req)
+	if err != nil {
+		return fmt.Errorf("failed to connect to daemon: %w", err)
+	}
+	defer resp.Body.Close()
+
+	if resp.StatusCode != http.StatusOK {
+		errorBody, readErr := io.ReadAll(resp.Body)
+		if readErr != nil {
+			return fmt.Errorf("daemon returned status %d (failed to read error body: %v)", resp.StatusCode, readErr)
+		}
+		return fmt.Errorf("daemon returned status %d: %s", resp.StatusCode, string(errorBody))
+	}
+
+	return nil
+}
+
 // Types
 
 // Config represents the daemon configuration.

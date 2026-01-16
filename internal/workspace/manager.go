@@ -163,6 +163,12 @@ func (m *Manager) create(ctx context.Context, repoURL, branch string) (*state.Wo
 		return nil, fmt.Errorf("failed to clone repo: %w", err)
 	}
 
+	// Copy overlay files if they exist
+	if err := m.copyOverlayFiles(ctx, repoConfig.Name, workspacePath); err != nil {
+		m.logger.Printf("warning: failed to copy overlay files: %v", err)
+		// Don't fail workspace creation if overlay copy fails
+	}
+
 	// Create workspace state with branch
 	w := state.Workspace{
 		ID:     workspaceID,
@@ -598,6 +604,69 @@ func (m *Manager) EnsureWorkspaceDir() error {
 	if err := os.MkdirAll(path, 0755); err != nil {
 		return fmt.Errorf("failed to create workspace directory: %w", err)
 	}
+	return nil
+}
+
+// copyOverlayFiles copies overlay files from the overlay directory to the workspace.
+// If the overlay directory doesn't exist, this is a no-op.
+func (m *Manager) copyOverlayFiles(ctx context.Context, repoName, workspacePath string) error {
+	overlayDir, err := OverlayDir(repoName)
+	if err != nil {
+		return fmt.Errorf("failed to get overlay directory: %w", err)
+	}
+
+	// Check if overlay directory exists
+	if _, err := os.Stat(overlayDir); os.IsNotExist(err) {
+		m.logger.Printf("no overlay directory for repo %s, skipping", repoName)
+		return nil
+	}
+
+	m.logger.Printf("copying overlay files for repo %s to %s", repoName, workspacePath)
+	if err := CopyOverlay(ctx, m.logger, overlayDir, workspacePath); err != nil {
+		return fmt.Errorf("failed to copy overlay files: %w", err)
+	}
+
+	m.logger.Printf("overlay files copied successfully")
+	return nil
+}
+
+// RefreshOverlay reapplies overlay files to an existing workspace.
+// Returns an error if the workspace has active sessions.
+func (m *Manager) RefreshOverlay(ctx context.Context, workspaceID string) error {
+	w, found := m.state.GetWorkspace(workspaceID)
+	if !found {
+		return fmt.Errorf("workspace not found: %s", workspaceID)
+	}
+
+	// Check if workspace has active sessions
+	if m.hasActiveSessions(workspaceID) {
+		return fmt.Errorf("workspace has active sessions: %s", workspaceID)
+	}
+
+	// Find repo config by URL to get repo name
+	repoConfig, found := m.findRepoByURL(w.Repo)
+	if !found {
+		return fmt.Errorf("repo URL not found in config: %s", w.Repo)
+	}
+
+	m.logger.Printf("refreshing overlay for workspace: id=%s repo=%s", workspaceID, repoConfig.Name)
+
+	if err := m.copyOverlayFiles(ctx, repoConfig.Name, w.Path); err != nil {
+		return fmt.Errorf("failed to copy overlay files: %w", err)
+	}
+
+	m.logger.Printf("overlay refreshed successfully for workspace: %s", workspaceID)
+	return nil
+}
+
+// EnsureOverlayDirs ensures overlay directories exist for all configured repos.
+func (m *Manager) EnsureOverlayDirs(repos []config.Repo) error {
+	for _, repo := range repos {
+		if err := EnsureOverlayDir(repo.Name); err != nil {
+			return fmt.Errorf("failed to ensure overlay directory for %s: %w", repo.Name, err)
+		}
+	}
+	m.logger.Printf("ensured overlay directories for %d repos", len(repos))
 	return nil
 }
 

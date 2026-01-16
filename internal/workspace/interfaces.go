@@ -3,6 +3,7 @@ package workspace
 import (
 	"context"
 
+	"github.com/sergek/schmux/internal/config"
 	"github.com/sergek/schmux/internal/state"
 )
 
@@ -46,6 +47,12 @@ type WorkspaceManager interface {
 	// Scan scans the workspace directory and reconciles state with filesystem.
 	// Returns what was added, updated, and removed.
 	Scan() (ScanResult, error)
+
+	// RefreshOverlay reapplies overlay files to an existing workspace.
+	RefreshOverlay(ctx context.Context, workspaceID string) error
+
+	// EnsureOverlayDirs ensures overlay directories exist for all configured repos.
+	EnsureOverlayDirs(repos []config.Repo) error
 }
 
 // Ensure *Manager implements WorkspaceManager at compile time.

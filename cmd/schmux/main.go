@@ -114,6 +114,14 @@ func main() {
 			os.Exit(1)
 		}
 
+	case "refresh-overlay":
+		client := cli.NewDaemonClient(cli.GetDefaultURL())
+		cmd := NewRefreshOverlayCommand(client)
+		if err := cmd.Run(os.Args[2:]); err != nil {
+			fmt.Fprintf(os.Stderr, "Error: %v\n", err)
+			os.Exit(1)
+		}
+
 	default:
 		fmt.Fprintf(os.Stderr, "Unknown command: %s\n\n", command)
 		printUsage()
@@ -134,10 +142,13 @@ func printUsage() {
 	fmt.Println("  daemon-run  Run the daemon in foreground (for debugging)")
 	fmt.Println()
 	fmt.Println("Session Commands:")
-	fmt.Println("  spawn       Spawn a new session")
-	fmt.Println("  list        List sessions")
-	fmt.Println("  attach      Attach to a session")
-	fmt.Println("  dispose     Dispose a session")
+	fmt.Println("  spawn           Spawn a new session")
+	fmt.Println("  list            List sessions")
+	fmt.Println("  attach          Attach to a session")
+	fmt.Println("  dispose         Dispose a session")
+	fmt.Println()
+	fmt.Println("Workspace Commands:")
+	fmt.Println("  refresh-overlay Refresh overlay files for a workspace")
 	fmt.Println()
 	fmt.Println("Help:")
 	fmt.Println("  help        Show this help message")
@@ -147,4 +158,5 @@ func printUsage() {
 	fmt.Println("  schmux spawn -a claude -p \"fix bug\"  # Spawn in current workspace")
 	fmt.Println("  schmux list                         # List all sessions")
 	fmt.Println("  schmux attach <session-id>           # Attach to a session")
+	fmt.Println("  schmux refresh-overlay <workspace>   # Refresh overlay files")
 }

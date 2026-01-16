@@ -54,6 +54,7 @@ func (s *Server) Start() error {
 	mux.HandleFunc("/api/hasNudgenik", s.withCORS(s.handleHasNudgenik))
 	mux.HandleFunc("/api/askNudgenik/", s.withCORS(s.handleAskNudgenik))
 	mux.HandleFunc("/api/workspaces/scan", s.withCORS(s.handleWorkspacesScan))
+	mux.HandleFunc("/api/workspaces/", s.withCORS(s.handleRefreshOverlay))
 	mux.HandleFunc("/api/sessions", s.withCORS(s.handleSessions))
 	mux.HandleFunc("/api/sessions-nickname/", s.withCORS(s.handleUpdateNickname))
 	mux.HandleFunc("/api/spawn", s.withCORS(s.handleSpawnPost))
@@ -66,6 +67,7 @@ func (s *Server) Start() error {
 	mux.HandleFunc("/api/variants/", s.withCORS(s.handleVariant))
 	mux.HandleFunc("/api/diff/", s.withCORS(s.handleDiff))
 	mux.HandleFunc("/api/open-vscode/", s.withCORS(s.handleOpenVSCode))
+	mux.HandleFunc("/api/overlays", s.withCORS(s.handleOverlays))
 
 	// WebSocket for terminal streaming
 	mux.HandleFunc("/ws/terminal/", s.handleTerminalWebSocket)
