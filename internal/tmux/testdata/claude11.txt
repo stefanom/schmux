@@ -1,0 +1,140 @@
+
+[38;2;78;186;101m⏺[39m [1mRead[0m(cmd/schmux/spawn.go)
+  ⎿  Read [1m22[0m lines
+  ⎿  [38;2;153;153;153mRunning [1mPostToolUse[0m[38;2;153;153;153m hooks… (1/2 done)[39m
+
+[38;2;78;186;101m⏺[39m [1mUpdate[0m(cmd/schmux/spawn.go)
+  ⎿  Added [1m2[0m lines, removed [1m12[0m lines
+     [38;2;153;153;153m 202 [38;2;255;255;255m    return "", "", fmt.Errorf("not in a workspace directory")                                          [39m
+     [38;2;153;153;153m 203 [38;2;255;255;255m  }                                                                                                    [39m
+     [38;2;153;153;153m 204 [38;2;255;255;255m                                                                                                       [39m
+     [38;2;255;255;255m[48;2;122;41;54m 205 - // findAgent finds an agent by name in config.                                                       [39m[49m
+     [38;2;255;255;255m[48;2;122;41;54m 206 - func (cmd *SpawnCommand) findAgent(name string, cfg *cli.Config) (*cli.Agent, bool) {                [39m[49m
+     [38;2;255;255;255m[48;2;122;41;54m 207 -   for _, agent := range cfg.Agents {                                                                 [39m[49m
+     [38;2;255;255;255m[48;2;122;41;54m 208 -     if agent.Name == name {                                                                          [39m[49m
+     [38;2;255;255;255m[48;2;122;41;54m 209 -       return &agent, true                                                                            [39m[49m
+     [38;2;255;255;255m[48;2;122;41;54m 210 -     }                                                                                                [39m[49m
+     [38;2;255;255;255m[48;2;122;41;54m 211 -   }                                                                                                  [39m[49m
+     [38;2;255;255;255m[48;2;122;41;54m 212 -   return nil, false                                                                                  [39m[49m
+     [38;2;255;255;255m[48;2;122;41;54m 213 - }                                                                                                    [39m[49m
+     [38;2;255;255;255m[48;2;122;41;54m 214 -                                                                                                      [39m[49m
+     [38;2;153;153;153m 205 [38;2;255;255;255m  // findRepo finds a repo by name in config.                                                          [39m
+     [38;2;153;153;153m 206 [38;2;255;255;255m  func (cmd *SpawnCommand) findRepo(name string, cfg *cli.Config) (*cli.Repo, bool) {                  [39m
+     [38;2;153;153;153m 207 [38;2;255;255;255m    for _, repo := range cfg.Repos {                                                                   [39m
+     [38;2;153;153;153m...[39m
+     [38;2;153;153;153m 227 [38;2;255;255;255m    fmt.Println("Spawn results:")                                                                      [39m
+     [38;2;153;153;153m 228 [38;2;255;255;255m    for _, result := range results {                                                                   [39m
+     [38;2;153;153;153m 229 [38;2;255;255;255m      if result.Error != "" {                                                                          [39m
+     [38;2;255;255;255m[48;2;122;41;54m 230 -      fmt.Printf("  [%s] Error: %s\n", result.[48;2;179;89;107mAgent[48;2;122;41;54m, result.Error)                                    [39m[49m
+     [38;2;255;255;255m[48;2;34;92;43m 230 +      fmt.Printf("  [%s] Error: %s\n", result.[48;2;56;166;96mRunTarget[48;2;34;92;43m, result.Error)                                [39m[49m
+     [38;2;153;153;153m 231 [38;2;255;255;255m      } else {                                                                                         [39m
+     [38;2;255;255;255m[48;2;122;41;54m 232 -      fmt.Printf("  [%s] Session: %s\n", result.[48;2;179;89;107mAgent[48;2;122;41;54m, result.SessionID)                              [39m[49m
+     [38;2;255;255;255m[48;2;34;92;43m 232 +      fmt.Printf("  [%s] Session: %s\n", result.[48;2;56;166;96mRunTarget[48;2;34;92;43m, result.SessionID)                          [39m[49m
+     [38;2;153;153;153m 233 [38;2;255;255;255m        fmt.Printf("        Workspace: %s\n", result.WorkspaceID)                                      [39m
+     [38;2;153;153;153m 234 [38;2;255;255;255m        fmt.Printf("        Attach: schmux attach %s\n", result.SessionID)                             [39m
+     [38;2;153;153;153m 235 [38;2;255;255;255m      }                                                                                                [39m
+  ⎿  [38;2;153;153;153mRunning [1mPostToolUse[0m[38;2;153;153;153m hooks… (1/2 done)[39m
+
+[38;2;78;186;101m⏺[39m [1mSearch[0m(pattern: "cfg.Agents", path: "cmd/schmux/spawn.go", output_mode: "content")
+  ⎿  Found [1m0 [0mlines
+  ⎿  [38;2;153;153;153mRunning [1mPostToolUse[0m[38;2;153;153;153m hooks… (1/2 done)[39m
+
+[38;2;78;186;101m⏺[39m [1mBash[0m(go test ./... 2>&1 | head -50) [38;2;153;153;153mtimeout: 1m 0s[39m
+  ⎿  ?          github.com/sergek/schmux/cmd/build-dashboard    [no test files]
+     ?          github.com/sergek/schmux/cmd/scan-ansi  [no test files]
+     # github.com/sergek/schmux/internal/detect [github.com/sergek/schmux/internal/detect.test]
+     [2m… +57 lines (ctrl+o to expand)[0m
+  ⎿  [38;2;153;153;153mRunning [1mPostToolUse[0m[38;2;153;153;153m hooks… (1/2 done)[39m
+
+[38;2;255;255;255m⏺[39m Still have a few more files to fix. Let me continue:
+
+[38;2;78;186;101m⏺[39m [1mRead[0m(internal/detect/agents_test.go)
+  ⎿  Read [1m20[0m lines
+  ⎿  [38;2;153;153;153mRunning [1mPostToolUse[0m[38;2;153;153;153m hooks… (1/2 done)[39m
+
+[38;2;78;186;101m⏺[39m [1mUpdate[0m(internal/detect/agents_test.go)
+  ⎿  Added [1m2[0m lines, removed [1m2[0m lines
+     [38;2;153;153;153m 55 [38;2;255;255;255m      if agent.Name == "" {                                                                             [39m
+     [38;2;153;153;153m 56 [38;2;255;255;255m        t.Errorf("Agent name should not be empty")                                                      [39m
+     [38;2;153;153;153m 57 [38;2;255;255;255m      }                                                                                                 [39m
+     [38;2;255;255;255m[48;2;122;41;54m 58 -    if agent.[48;2;179;89;107mCommand[48;2;122;41;54m == "" {                                                                           [39m[49m
+     [38;2;255;255;255m[48;2;122;41;54m 59 -      t.Errorf("Agent [48;2;179;89;107mcommand[48;2;122;41;54m should not be empty")                                                    [39m[49m
+     [38;2;255;255;255m[48;2;34;92;43m 58 +    if agent.[48;2;56;166;96mInteractiveCmd[48;2;34;92;43m == "" {                                                                    [39m[49m
+     [38;2;255;255;255m[48;2;34;92;43m 59 +      t.Errorf("Agent [48;2;56;166;96mInteractiveCmd[48;2;34;92;43m should not be empty")                                             [39m[49m
+     [38;2;153;153;153m 60 [38;2;255;255;255m      }                                                                                                 [39m
+     [38;2;153;153;153m 61 [38;2;255;255;255m      if !agent.Agentic {                                                                               [39m
+     [38;2;153;153;153m 62 [38;2;255;255;255m        t.Errorf("Agent Agentic should be true, got false for %s", agent.Name)                          [39m
+  ⎿  [38;2;153;153;153mRunning [1mPostToolUse[0m[38;2;153;153;153m hooks… (1/2 done)[39m
+
+[38;2;78;186;101m⏺[39m [1mRead[0m(cmd/schmux/list.go)
+  ⎿  Read [1m17[0m lines
+  ⎿  [38;2;153;153;153mRunning [1mPostToolUse[0m[38;2;153;153;153m hooks… (1/2 done)[39m
+
+[38;2;78;186;101m⏺[39m [1mUpdate[0m(cmd/schmux/list.go)
+  ⎿  Added [1m1[0m line, removed [1m1[0m line
+     [38;2;153;153;153m 87 [38;2;255;255;255m        if sess.Running {                                                                               [39m
+     [38;2;153;153;153m 88 [38;2;255;255;255m          status = "running"                                                                            [39m
+     [38;2;153;153;153m 89 [38;2;255;255;255m        }                                                                                               [39m
+     [38;2;255;255;255m[48;2;122;41;54m 90 -      name := sess.[48;2;179;89;107mAgent[48;2;122;41;54m                                                                               [39m[49m
+     [38;2;255;255;255m[48;2;34;92;43m 90 +      name := sess.[48;2;56;166;96mRunTarget[48;2;34;92;43m                                                                           [39m[49m
+     [38;2;153;153;153m 91 [38;2;255;255;255m        if sess.Nickname != "" {                                                                        [39m
+     [38;2;153;153;153m 92 [38;2;255;255;255m          name = sess.Nickname                                                                          [39m
+     [38;2;153;153;153m 93 [38;2;255;255;255m        }                                                                                               [39m
+  ⎿  [38;2;153;153;153mRunning [1mPostToolUse[0m[38;2;153;153;153m hooks… (1/2 done)[39m
+
+[38;2;78;186;101m⏺[39m [1mRead[0m(cmd/schmux/spawn.go)
+  ⎿  Read [1m40[0m lines
+  ⎿  [38;2;153;153;153mRunning [1mPostToolUse[0m[38;2;153;153;153m hooks… (1/2 done)[39m
+
+[38;2;78;186;101m⏺[39m [1mUpdate[0m(cmd/schmux/spawn.go)
+  ⎿  Added [1m2[0m lines, removed [1m21[0m lines
+     [38;2;153;153;153m  94 [38;2;255;255;255m      }                                                                                                [39m
+     [38;2;153;153;153m  95 [38;2;255;255;255m    }                                                                                                  [39m
+     [38;2;153;153;153m  96 [38;2;255;255;255m                                                                                                       [39m
+     [38;2;255;255;255m[48;2;122;41;54m  97 -   // Check if agent is agentic                                                                       [39m[49m
+     [38;2;255;255;255m[48;2;122;41;54m  98 -   isAgentic := false                                                                                 [39m[49m
+     [38;2;255;255;255m[48;2;122;41;54m  99 -   agent, found := cmd.findAgent(agentFlag, cfg)                                                      [39m[49m
+     [38;2;255;255;255m[48;2;122;41;54m 100 -   if found {                                                                                         [39m[49m
+     [38;2;255;255;255m[48;2;122;41;54m 101 -     if agent.Agentic != nil {                                                                        [39m[49m
+     [38;2;255;255;255m[48;2;122;41;54m 102 -       isAgentic = *agent.Agentic                                                                     [39m[49m
+     [38;2;255;255;255m[48;2;122;41;54m 103 -     } else {                                                                                         [39m[49m
+     [38;2;255;255;255m[48;2;122;41;54m 104 -       isAgentic = true // default to agentic for configured agents                                   [39m[49m
+     [38;2;255;255;255m[48;2;122;41;54m 105 -     }                                                                                                [39m[49m
+     [38;2;255;255;255m[48;2;122;41;54m 106 -   } else {                                                                                           [39m[49m
+     [38;2;255;255;255m[48;2;122;41;54m 107 -     // Not a configured agent - treat as command (non-agentic)                                       [39m[49m
+     [38;2;255;255;255m[48;2;122;41;54m 108 -     isAgentic = false                                                                                [39m[49m
+     [38;2;255;255;255m[48;2;122;41;54m 109 -   }                                                                                                  [39m[49m
+     [38;2;255;255;255m[48;2;122;41;54m 110 -                                                                                                      [39m[49m
+     [38;2;255;255;255m[48;2;122;41;54m 111 -   // Validate prompt for agentic agents                                                              [39m[49m
+     [38;2;255;255;255m[48;2;122;41;54m 112 -   if isAgentic && promptFlag == "" {                                                                 [39m[49m
+     [38;2;255;255;255m[48;2;122;41;54m 113 -     return fmt.Errorf("prompt (-p/--prompt) is required for agentic agents")                         [39m[49m
+     [38;2;255;255;255m[48;2;122;41;54m 114 -   }                                                                                                  [39m[49m
+     [38;2;255;255;255m[48;2;122;41;54m 115 -                                                                                                      [39m[49m
+     [38;2;255;255;255m[48;2;122;41;54m 116 -   // Build spawn request                                                                             [39m[49m
+     [38;2;255;255;255m[48;2;34;92;43m  97 +   // Build spawn request (single target model)                                                       [39m[49m
+     [38;2;153;153;153m  98 [38;2;255;255;255m    req := cli.SpawnRequest{                                                                           [39m
+     [38;2;153;153;153m  99 [38;2;255;255;255m      Repo:        repoURL,                                                                            [39m
+     [38;2;153;153;153m 100 [38;2;255;255;255m      Branch:      branchFlag,                                                                         [39m
+     [38;2;255;255;255m[48;2;34;92;43m 101 +     Target:      agentFlag,                                                                          [39m[49m
+     [38;2;153;153;153m 102 [38;2;255;255;255m      Prompt:      promptFlag,                                                                         [39m
+     [38;2;153;153;153m 103 [38;2;255;255;255m      Nickname:    nicknameFlag,                                                                       [39m
+     [38;2;153;153;153m 104 [38;2;255;255;255m      WorkspaceID: workspaceID,                                                                        [39m
+     [38;2;255;255;255m[48;2;122;41;54m 105 -     Agents:      map[string]int{agentFlag: 1},                                                       [39m[49m
+     [38;2;153;153;153m 105 [38;2;255;255;255m    }                                                                                                  [39m
+     [38;2;153;153;153m 106 [38;2;255;255;255m                                                                                                       [39m
+     [38;2;153;153;153m 107 [38;2;255;255;255m    results, err := cmd.client.Spawn(context.Background(), req)                                        [39m
+  ⎿  [38;2;153;153;153mRunning [1mPostToolUse[0m[38;2;153;153;153m hooks… (1/2 done)[39m
+  ⎿  [38;2;255;107;128mContext limit reached · /compact or /clear to continue[39m
+
+[38;2;153;153;153m✻[39m [38;2;153;153;153mBaked for 14m 36s[39m
+
+[2m[38;2;136;136;136m────────────────────────────────────────────────────────────────────────────────────────────────────────────────────────
+[0m❯ 
+[2m[38;2;136;136;136m────────────────────────────────────────────────────────────────────────────────────────────────────────────────────────
+[0m  [38;2;153;153;153m[GLM-4.7] 📁 schmux-004 | 🌿 run-targets (82%)[39m               [38;2;255;107;128mContext low (1% remaining) · Run /compact to compact & [39m
+  [38;2;175;135;255m⏵⏵ accept edits on[38;2;153;153;153m (shift+tab to [39m   [38;2;153;153;153m · 23 files [38;2;56;166;96m+1199[38;2;153;153;153m [38;2;179;89;107m-818[39m   [38;2;255;107;128mcontinue[39m
+  [38;2;153;153;153mcycle)[39m
+
+
+
+

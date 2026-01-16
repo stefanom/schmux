@@ -1,0 +1,40 @@
+Usage dashboard at: https://z.ai/manage-apikey/subscription
+
+[38;2;255;193;7m────────────────────────────────────────────────────────────────────────────────────────────────────────────────────────
+[39m [1m[38;2;255;193;7mDo you trust the files in this folder?[0m
+
+ [1m/Users/sergek/dev/schmux-workspaces/steam-friends-001[0m
+
+ Claude Code may read, write, or execute files contained in this directory. This can pose security risks, so only use
+ files from trusted sources.
+
+ [38;2;153;153;153mLearn more[39m
+
+ [38;2;177;185;249m❯[39m [38;2;153;153;153m1. [38;2;177;185;249mYes, proceed[39m
+   [38;2;153;153;153m2. [39mNo, exit
+
+ [38;2;153;153;153mEnter to confirm · Esc to cancel[39m
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+

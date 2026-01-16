@@ -1,0 +1,140 @@
+[1;2m› [0mI really don't want the manual detection ability
+
+
+[2m• [0mGot it. Should I remove the manual detection endpoint ([38;5;6mPOST /api/detect-tools[39m) only, or also hide/disable any UI
+  affordance that triggers it (and keep [38;5;6mGET[39m for read-only display)?
+
+
+[1;2m› [0myeah please do
+
+
+[2m• [3mI'm preparing to remove the POST handler and any client refresh function related to tool detection since only GET is[0m
+  [2;3mneeded; I'll confirm this approach before proceeding.[0m
+
+[2m─ Worked for 5s ────────────────────────────────────────────────────────────────────────────────────────────────────────
+
+• [0mAbout to change:
+
+  - Files: [38;5;6minternal/dashboard/handlers.go[39m, [38;5;6massets/dashboard/src/lib/api.js[39m (and any UI bits if they reference a
+    refresh).
+  - Behavior: disable manual detection ([38;5;6mPOST /api/detect-tools[39m), keep [38;5;6mGET[39m read-only; remove/disable any client-side
+    “refresh detect” calls.
+  - Verification: run [38;5;6mgo test ./...[39m.
+
+  Proceed?
+
+
+[1;2m› [0mengage
+
+
+[2m• [0;1mEdited[0m internal/dashboard/handlers.go ([38;5;2m+1[39m [38;5;1m-24[39m)
+    [2m472[0m
+    [2m473 [0m[38;5;1m-// handleDetectTools returns cached detected targets (GET) or refreshes detection (POST).[39m
+    [2m473 [0m[38;5;2m+// handleDetectTools returns detected targets from config (GET only).[39m
+    [2m474 [0m func (s *Server) handleDetectTools(w http.ResponseWriter, r *http.Request) {
+    [2m    ⋮[0m
+    [2m494 [0m 			})
+    [2m495 [0m[38;5;1m-[39m		[38;5;1m}[39m
+    [2m496 [0m[38;5;1m-[39m	[38;5;1mcase http.MethodPost:[39m
+    [2m497 [0m[38;5;1m-[39m		[38;5;1mctx, cancel := context.WithTimeout(r.Context(), 10*time.Second)[39m
+    [2m498 [0m[38;5;1m-[39m		[38;5;1mdefer cancel()[39m
+    [2m499 [0m[38;5;1m-[39m
+    [2m500 [0m[38;5;1m-[39m		[38;5;1mvar err error[39m
+    [2m501 [0m[38;5;1m-[39m		[38;5;1mdetectedTools, err = detect.DetectAvailableAgentsContext(ctx, false)[39m
+    [2m502 [0m[38;5;1m-[39m		[38;5;1mif err != nil {[39m
+    [2m503 [0m[38;5;1m-[39m			[38;5;1mif ctx.Err() == context.DeadlineExceeded {[39m
+    [2m504 [0m[38;5;1m-[39m				[38;5;1mhttp.Error(w, "Detection timed out. Some tools may not be available or took too
+long to respond.", http.Sta[39m
+    [2m     [0m[38;5;1mtusGatewayTimeout)[39m
+    [2m505 [0m[38;5;1m-[39m				[38;5;1mreturn[39m
+    [2m506 [0m[38;5;1m-[39m			[38;5;1m}[39m
+    [2m507 [0m[38;5;1m-[39m			[38;5;1mhttp.Error(w, fmt.Sprintf("Detection failed: %v", err), http.StatusInternalServerError)[39m
+    [2m508 [0m[38;5;1m-[39m			[38;5;1mreturn[39m
+    [2m509 [0m[38;5;1m-[39m		[38;5;1m}[39m
+    [2m510 [0m[38;5;1m-[39m		[38;5;1ms.config.RunTargets = config.MergeDetectedRunTargets(s.config.RunTargets, detectedTools)[39m
+    [2m511 [0m[38;5;1m-[39m		[38;5;1mif err := s.config.Validate(); err != nil {[39m
+    [2m512 [0m[38;5;1m-[39m			[38;5;1mhttp.Error(w, fmt.Sprintf("Invalid config after detection: %v", err), http.StatusBadRequ
+est)[39m
+    [2m513 [0m[38;5;1m-[39m			[38;5;1mreturn[39m
+    [2m514 [0m[38;5;1m-[39m		[38;5;1m}[39m
+    [2m515 [0m[38;5;1m-[39m		[38;5;1mif err := s.config.Save(); err != nil {[39m
+    [2m516 [0m[38;5;1m-[39m			[38;5;1mhttp.Error(w, fmt.Sprintf("Failed to save config: %v", err), http.StatusInternalServerEr
+ror)[39m
+    [2m517 [0m[38;5;1m-[39m			[38;5;1mreturn[39m
+    [2m495 [0m 		}
+
+[2m•[0m [1mExplored[0m
+[2m  └ [0m[38;5;6mRead[39m api.js
+
+[2m• [0;1mEdited[0m assets/dashboard/src/lib/api.js ([38;5;2m+0[39m [38;5;1m-11[39m)
+    [2m105[0m
+    [2m106 [0m[38;5;1m-export async function refreshDetectedTools() {[39m
+    [2m107 [0m[38;5;1m-  const response = await fetch('/api/detect-tools', {[39m
+    [2m108 [0m[38;5;1m-    method: 'POST',[39m
+    [2m109 [0m[38;5;1m-    headers: { 'Content-Type': 'application/json' }[39m
+    [2m110 [0m[38;5;1m-  });[39m
+    [2m111 [0m[38;5;1m-  if (!response.ok) {
+[39m    [2m112 [0m[38;5;1m-    throw new Error('Failed to refresh detected tools');[39m
+    [2m113 [0m[38;5;1m-  }[39m
+    [2m114 [0m[38;5;1m-  return response.json();[39m
+    [2m115 [0m[38;5;1m-}[39m
+    [2m116 [0m[38;5;1m-[39m
+    [2m106 [0m export async function getVariants() {
+
+[2m•[0m [1mExplored[0m
+[2m  └ [0m[38;5;6mSearch[39m refreshDetectedTools|POST /api/detect-tools|detect-tools[2m in [0mdashboard
+
+[1m[38;5;2m•[0m [1mRan[0m gofmt -w internal/dashboard/handlers.go
+[2m  └ (no output)[0m
+
+[1m[38;5;2m•[0m [1mRan[0m go test ./...
+[2m  └ ?       github.com/sergek/schmux/cmd/build-dashboard    [no test files][0m
+    [2m?       github.com/sergek/schmux/cmd/scan-ansi    [no test files][0m
+    [2m… +10 lines[0m
+    [2mok      github.com/sergek/schmux/internal/workspace    (cached)[0m
+    [2mok      github.com/sergek/schmux/pkg/cli    (cached)[0m
+
+[2m─ Worked for 32s ───────────────────────────────────────────────────────────────────────────────────────────────────────
+
+• [0mManual detection is removed. [38;5;6m/api/detect-tools[39m is now GET-only and served from config, and the client no longer has a
+  refresh call.
+
+  Changes:
+
+  - [38;5;6minternal/dashboard/handlers.go[39m: drop POST handling for detect.
+  - [38;5;6massets/dashboard/src/lib/api.js[39m: remove [38;5;6mrefreshDetectedTools[39m.
+
+  Tests:
+
+  - [38;5;6mgo test ./...[39m
+
+  If you want me to also remove or rename the detect route entirely (and fold it into [38;5;6m/api/config[39m), say the word.
+
+
+[1;2m› [0mno I mean, I thought we talked about putting detect as the third run target into the run_targets of config.  but I'm
+  less particular about the API endpoints for now.
+
+
+[2m• [3mI'm explaining the misunderstanding by confirming the feature is already done, noting configuration is detected in[0m
+  [2;3mrun_targets and UI read-only, and asking if any issues remain since no code changes are needed.[0m
+
+[2m─ Worked for 3s ────────────────────────────────────────────────────────────────────────────────────────────────────────
+
+• [0mYep — detected run targets are now stored as the third type inside [38;5;6mrun_targets[39m in [38;5;6mconfig.json[39m (with [38;5;6msource:[39m
+  [38;5;6m"detected"[39m), and they’re treated as read‑only in config updates/UI. Detection runs on daemon start and merges into
+  config; [38;5;6m/api/detect-tools[39m is just a read‑only view of those entries.
+
+  If you’re seeing otherwise, tell me where (file/path or UI screen) and I’ll trace it.
+
+
+[1;2m› [0mok cool.  sounds like it's ready for me to test
+
+
+[2m• [0mGreat. If anything feels off during your run, point me at the screen or log line and I’ll dig in.
+
+
+[1m›[0m [2;3mImprove documentation in @filename[0m
+
+  [2m89% context left · ? for shortcuts[0m
+
+
