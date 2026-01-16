@@ -30,28 +30,8 @@ func (cmd *RefreshOverlayCommand) Run(args []string) error {
 		return fmt.Errorf("daemon is not running. Start it with: schmux start")
 	}
 
-	// Verify workspace exists
-	workspaces, err := cmd.client.GetWorkspaces()
-	if err != nil {
-		return fmt.Errorf("failed to get workspaces: %w", err)
-	}
-
-	var found bool
-	var wsPath string
-	for _, ws := range workspaces {
-		if ws.ID == workspaceID {
-			found = true
-			wsPath = ws.Path
-			break
-		}
-	}
-
-	if !found {
-		return fmt.Errorf("workspace not found: %s", workspaceID)
-	}
-
-	// Refresh the overlay
-	fmt.Printf("Refreshing overlay for workspace %s (%s)...\n", workspaceID, wsPath)
+	// Refresh the overlay (server will validate workspace exists)
+	fmt.Printf("Refreshing overlay for workspace %s...\n", workspaceID)
 	if err := cmd.client.RefreshOverlay(context.Background(), workspaceID); err != nil {
 		return fmt.Errorf("failed to refresh overlay: %w", err)
 	}

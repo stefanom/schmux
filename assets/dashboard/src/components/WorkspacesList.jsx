@@ -192,7 +192,7 @@ const WorkspacesListInner = React.forwardRef(function WorkspacesList({
               <svg width="14" height="14" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2">
                 <path d="M21.5 2v6h-6M21.34 5.5A10 10 0 1 1 11.26 2.25"/>
               </svg>
-              Refresh Overlay
+              Overlay
             </>
           )}
         </button>

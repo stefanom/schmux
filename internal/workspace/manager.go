@@ -631,16 +631,10 @@ func (m *Manager) copyOverlayFiles(ctx context.Context, repoName, workspacePath 
 }
 
 // RefreshOverlay reapplies overlay files to an existing workspace.
-// Returns an error if the workspace has active sessions.
 func (m *Manager) RefreshOverlay(ctx context.Context, workspaceID string) error {
 	w, found := m.state.GetWorkspace(workspaceID)
 	if !found {
 		return fmt.Errorf("workspace not found: %s", workspaceID)
-	}
-
-	// Check if workspace has active sessions
-	if m.hasActiveSessions(workspaceID) {
-		return fmt.Errorf("workspace has active sessions: %s", workspaceID)
 	}
 
 	// Find repo config by URL to get repo name
