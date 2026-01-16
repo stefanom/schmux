@@ -170,6 +170,8 @@ body {
 
 .app-shell__content {
     padding: var(--spacing-xl);
+    min-width: 0;
+    overflow: hidden;
 }
 
 /* Logo */
@@ -1936,6 +1938,7 @@ a:hover {
     display: flex;
     flex-direction: column;
     gap: var(--spacing-xs);
+    flex: 1;
     min-width: 0;
 }
 
