@@ -1,5 +1,5 @@
 import React, { useEffect, useRef, useState } from 'react';
-import { Link, useParams } from 'react-router-dom';
+import { Link, useParams, useNavigate } from 'react-router-dom';
 import '@xterm/xterm/css/xterm.css';
 import TerminalStream from '../lib/terminalStream.js';
 import { updateNickname } from '../lib/api.js';
@@ -16,7 +16,8 @@ import WorkspacesList from '../components/WorkspacesList.jsx';
 export default function SessionDetailPage() {
   const { sessionId } = useParams();
   const { config, loading: configLoading } = useConfig();
-  const { sessionsById, loading: sessionsLoading, error: sessionsError, refresh } = useSessions();
+  const { sessionsById, workspaces, loading: sessionsLoading, error: sessionsError, refresh } = useSessions();
+  const navigate = useNavigate();
   const [wsStatus, setWsStatus] = useState('connecting');
   const [showResume, setShowResume] = useState(false);
   const [followTail, setFollowTail] = useState(true);
@@ -33,6 +34,7 @@ export default function SessionDetailPage() {
 
   const sessionData = sessionId ? sessionsById[sessionId] : null;
   const sessionMissing = !sessionsLoading && !sessionsError && sessionId && !sessionData;
+  const workspaceExists = workspaceId && workspaces?.some(ws => ws.id === workspaceId);
 
   // Remember the workspace_id so we can filter after dispose
   useEffect(() => {
@@ -40,6 +42,13 @@ export default function SessionDetailPage() {
       setWorkspaceId(sessionData.workspace_id);
     }
   }, [sessionData?.workspace_id]);
+
+  // If session is missing and we don't have a stored workspaceId, navigate to sessions
+  useEffect(() => {
+    if (sessionMissing && !workspaceId) {
+      navigate('/sessions');
+    }
+  }, [sessionMissing, workspaceId, navigate]);
 
   useEffect(() => {
     if (sessionData?.id) {
@@ -211,6 +220,11 @@ export default function SessionDetailPage() {
   }
 
   if (sessionMissing) {
+    // No workspaceId means we lost state (e.g., page refresh) - navigate away
+    if (!workspaceId) {
+      return null;
+    }
+
     return (
       <>
         <WorkspacesList
@@ -218,11 +232,13 @@ export default function SessionDetailPage() {
           workspaceId={workspaceId}
           showControls={false}
         />
-        <div className="empty-state">
-          <div className="empty-state__icon">⚠️</div>
-          <h3 className="empty-state__title">Session unavailable</h3>
-          <p className="empty-state__description">This session was disposed or no longer exists. Select another session from the list.</p>
-        </div>
+        {workspaceExists && (
+          <div className="empty-state">
+            <div className="empty-state__icon">⚠️</div>
+            <h3 className="empty-state__title">Session unavailable</h3>
+            <p className="empty-state__description">This session was disposed or no longer exists. Select another session from the list.</p>
+          </div>
+        )}
       </>
     );
   }
