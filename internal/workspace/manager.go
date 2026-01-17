@@ -242,6 +242,15 @@ func (m *Manager) CreateLocalRepo(ctx context.Context, repoName, branch string) 
 		return nil, fmt.Errorf("failed to save state: %w", err)
 	}
 
+	// Add the new local repository to config so it appears in the spawn wizard dropdown
+	m.config.Repos = append(m.config.Repos, config.Repo{
+		Name: repoName,
+		URL:  repoURL,
+	})
+	if err := m.config.Save(); err != nil {
+		return nil, fmt.Errorf("failed to save config: %w", err)
+	}
+
 	return &w, nil
 }
 
