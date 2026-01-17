@@ -21,6 +21,7 @@ export default function SpawnPage() {
   const [spawnMode, setSpawnMode] = useState(null); // 'promptable' | 'command' | null
   const [repo, setRepo] = useState('');
   const [branch, setBranch] = useState('main');
+  const [newRepoName, setNewRepoName] = useState('');
   const [prompt, setPrompt] = useState('');
   const [nickname, setNickname] = useState('');
   const [prefillWorkspaceId, setPrefillWorkspaceId] = useState('');
@@ -190,7 +191,11 @@ export default function SpawnPage() {
         toastError('Please select a repository');
         return false;
       }
-      if (!branch) {
+      if (repo === '__new__' && !newRepoName.trim()) {
+        toastError('Please enter a repository name');
+        return false;
+      }
+      if (repo !== '__new__' && !branch) {
         toastError('Please enter a branch');
         return false;
       }
@@ -237,12 +242,17 @@ export default function SpawnPage() {
       });
     }
 
+    // Determine the actual repo URL and branch to send
+    // For "__new__", we'll send "local:{name}" and always use "main" branch
+    const actualRepo = repo === '__new__' ? `local:${newRepoName.trim()}` : repo;
+    const actualBranch = repo === '__new__' ? 'main' : branch;
+
     setSpawning(true);
 
     try {
       const response = await spawnSessions({
-        repo,
-        branch,
+        repo: actualRepo,
+        branch: actualBranch,
         prompt: spawnMode === 'promptable' ? prompt : '',
         nickname: nickname.trim(),
         targets: selectedTargets,
@@ -328,8 +338,8 @@ export default function SpawnPage() {
                   <div><strong>{r.target}:</strong> {r.error}</div>
                   {(r.prompt || repo || branch || r.workspace_id) && (
                     <div style={{ marginTop: 'var(--spacing-sm)', fontSize: 'var(--font-size-sm)', color: 'var(--color-text-muted)' }}>
-                      {repo && <div>Repo: {repo}</div>}
-                      {branch && <div>Branch: {branch}</div>}
+                      {repo && <div>Repo: {repo === '__new__' ? `New repository: ${newRepoName}` : repo}</div>}
+                      {branch && <div>Branch: {repo === '__new__' ? 'main' : branch}</div>}
                       {r.workspace_id && <div>Workspace: {r.workspace_id}</div>}
                       {r.prompt && (
                         <div style={{ marginTop: 'var(--spacing-sm)' }}>
@@ -384,28 +394,54 @@ export default function SpawnPage() {
                   className="select"
                   required
                   value={repo}
-                  onChange={(event) => setRepo(event.target.value)}
+                  onChange={(event) => {
+                    setRepo(event.target.value);
+                    // Clear new repo name when switching away from __new__
+                    if (event.target.value !== '__new__') {
+                      setNewRepoName('');
+                    }
+                  }}
                   disabled={!!prefillWorkspaceId}
                 >
                   <option value="">Select repository...</option>
                   {repos.map((item) => (
                     <option key={item.url} value={item.url}>{item.name}</option>
                   ))}
+                  <option value="__new__">+ Create New Repository</option>
                 </select>
               </div>
-              <div className="form-group">
-                <label htmlFor="branch" className="form-group__label">Branch</label>
-                <input
-                  type="text"
-                  id="branch"
-                  className="input"
-                  value={branch}
-                  onChange={(event) => setBranch(event.target.value)}
-                  required
-                  disabled={!!prefillWorkspaceId}
-                />
-                <p className="form-group__hint">The branch to checkout for this workspace</p>
-              </div>
+
+              {repo === '__new__' ? (
+                <div className="form-group">
+                  <label htmlFor="newRepoName" className="form-group__label">Repository Name</label>
+                  <input
+                    type="text"
+                    id="newRepoName"
+                    className="input"
+                    value={newRepoName}
+                    onChange={(event) => setNewRepoName(event.target.value)}
+                    placeholder="e.g., myproject"
+                    required
+                    disabled={!!prefillWorkspaceId}
+                  />
+                  <p className="form-group__hint">A local repository will be created with an initial "main" branch. You can add a remote later.</p>
+                </div>
+              ) : (
+                <div className="form-group">
+                  <label htmlFor="branch" className="form-group__label">Branch</label>
+                  <input
+                    type="text"
+                    id="branch"
+                    className="input"
+                    value={branch}
+                    onChange={(event) => setBranch(event.target.value)}
+                    required
+                    disabled={!!prefillWorkspaceId}
+                  />
+                  <p className="form-group__hint">The branch to checkout for this workspace</p>
+                </div>
+              )}
+
               {prefillWorkspaceId ? (
                 <div className="banner banner--info" style={{ display: 'flex' }}>
                   Spawning into existing workspace: {prefillWorkspaceId}
@@ -553,11 +589,13 @@ export default function SpawnPage() {
                 <div className="card__body">
                   <div className="metadata-field">
                     <span className="metadata-field__label">Repository</span>
-                    <span className="metadata-field__value">{repo}</span>
+                    <span className="metadata-field__value">
+                      {repo === '__new__' ? `New repository: ${newRepoName}` : repo}
+                    </span>
                   </div>
                   <div className="metadata-field">
                     <span className="metadata-field__label">Branch</span>
-                    <span className="metadata-field__value">{branch}</span>
+                    <span className="metadata-field__value">{repo === '__new__' ? 'main' : branch}</span>
                   </div>
                   <div className="metadata-field">
                     <span className="metadata-field__label">Workspace</span>

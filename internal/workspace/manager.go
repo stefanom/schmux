@@ -84,7 +84,14 @@ func (m *Manager) isQuietSince(workspaceID string, cutoff time.Time) bool {
 
 // GetOrCreate finds an existing workspace for the repoURL/branch or creates a new one.
 // Returns a workspace ready for use (fetch/pull/clean already done).
+// For local repositories (URL format "local:{name}"), always creates a fresh workspace.
 func (m *Manager) GetOrCreate(ctx context.Context, repoURL, branch string) (*state.Workspace, error) {
+	// Handle local repositories (format: "local:{name}")
+	if strings.HasPrefix(repoURL, "local:") {
+		repoName := strings.TrimPrefix(repoURL, "local:")
+		return m.CreateLocalRepo(ctx, repoName, branch)
+	}
+
 	// Try to find an existing workspace with matching repoURL and branch
 	for _, w := range m.state.GetWorkspaces() {
 		// Check if workspace directory still exists
@@ -170,6 +177,57 @@ func (m *Manager) create(ctx context.Context, repoURL, branch string) (*state.Wo
 	}
 
 	// Create workspace state with branch
+	w := state.Workspace{
+		ID:     workspaceID,
+		Repo:   repoURL,
+		Branch: branch,
+		Path:   workspacePath,
+	}
+
+	if err := m.state.AddWorkspace(w); err != nil {
+		return nil, fmt.Errorf("failed to add workspace to state: %w", err)
+	}
+	if err := m.state.Save(); err != nil {
+		return nil, fmt.Errorf("failed to save state: %w", err)
+	}
+
+	return &w, nil
+}
+
+// CreateLocalRepo creates a new workspace with a fresh local git repository.
+// The repoName parameter is used to create the workspace ID (e.g., "myproject-001").
+// A new git repository is initialized with the specified branch and an initial empty commit.
+func (m *Manager) CreateLocalRepo(ctx context.Context, repoName, branch string) (*state.Workspace, error) {
+	// Validate repo name (should be a valid directory name)
+	if repoName == "" {
+		return nil, fmt.Errorf("repo name is required")
+	}
+	// Basic sanitization - prevent directory traversal
+	if strings.Contains(repoName, "..") || strings.Contains(repoName, "/") || strings.Contains(repoName, "\\") {
+		return nil, fmt.Errorf("invalid repo name: %s", repoName)
+	}
+
+	// Construct the repo URL for state (local:{name})
+	repoURL := fmt.Sprintf("local:%s", repoName)
+
+	// Find the next available workspace number for this "local repo"
+	workspaces := m.getWorkspacesForRepo(repoURL)
+	nextNum := findNextWorkspaceNumber(workspaces)
+
+	// Create workspace ID
+	workspaceID := fmt.Sprintf("%s-"+workspaceNumberFormat, repoName, nextNum)
+
+	// Create full path
+	workspacePath := filepath.Join(m.config.GetWorkspacePath(), workspaceID)
+
+	// Create the directory and initialize a local git repository
+	if err := m.initLocalRepo(ctx, workspacePath, branch); err != nil {
+		return nil, fmt.Errorf("failed to initialize local repo: %w", err)
+	}
+
+	m.logger.Printf("created new local repository: id=%s path=%s branch=%s", workspaceID, workspacePath, branch)
+
+	// Create workspace state
 	w := state.Workspace{
 		ID:     workspaceID,
 		Repo:   repoURL,
@@ -285,6 +343,54 @@ func (m *Manager) cloneRepo(ctx context.Context, url, path string) error {
 	}
 
 	m.logger.Printf("repository cloned: path=%s", path)
+	return nil
+}
+
+// initLocalRepo initializes a new local git repository at the given path.
+// It creates the directory, runs git init, creates the initial branch, and makes an empty commit.
+func (m *Manager) initLocalRepo(ctx context.Context, path, branch string) error {
+	m.logger.Printf("initializing local repository: path=%s branch=%s", path, branch)
+
+	// Create the directory
+	if err := os.MkdirAll(path, 0755); err != nil {
+		return fmt.Errorf("failed to create directory: %w", err)
+	}
+
+	// Run git init
+	initCmd := exec.CommandContext(ctx, "git", "init")
+	initCmd.Dir = path
+	if output, err := initCmd.CombinedOutput(); err != nil {
+		return fmt.Errorf("git init failed: %w: %s", err, string(output))
+	}
+
+	// Configure user for initial commit (required for git commit)
+	configUserCmd := exec.CommandContext(ctx, "git", "config", "user.email", "schmux@localhost")
+	configUserCmd.Dir = path
+	if output, err := configUserCmd.CombinedOutput(); err != nil {
+		return fmt.Errorf("git config user.email failed: %w: %s", err, string(output))
+	}
+
+	configNameCmd := exec.CommandContext(ctx, "git", "config", "user.name", "schmux")
+	configNameCmd.Dir = path
+	if output, err := configNameCmd.CombinedOutput(); err != nil {
+		return fmt.Errorf("git config user.name failed: %w: %s", err, string(output))
+	}
+
+	// Create and checkout the branch
+	branchCmd := exec.CommandContext(ctx, "git", "checkout", "-b", branch)
+	branchCmd.Dir = path
+	if output, err := branchCmd.CombinedOutput(); err != nil {
+		return fmt.Errorf("git checkout -b %s failed: %w: %s", branch, err, string(output))
+	}
+
+	// Create an empty commit for a valid git state
+	commitCmd := exec.CommandContext(ctx, "git", "commit", "--allow-empty", "-m", "Initial commit")
+	commitCmd.Dir = path
+	if output, err := commitCmd.CombinedOutput(); err != nil {
+		return fmt.Errorf("git commit failed: %w: %s", err, string(output))
+	}
+
+	m.logger.Printf("local repository initialized: path=%s", path)
 	return nil
 }
 

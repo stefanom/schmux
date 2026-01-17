@@ -5,6 +5,7 @@ import (
 	"os"
 	"os/exec"
 	"path/filepath"
+	"strings"
 	"testing"
 	"time"
 
@@ -506,4 +507,175 @@ func parseTime(t *testing.T, s string) time.Time {
 		t.Fatalf("failed to parse time %q: %v", s, err)
 	}
 	return ts
+}
+
+func TestCreateLocalRepo(t *testing.T) {
+	if _, err := exec.LookPath("git"); err != nil {
+		t.Skip("git not available")
+	}
+
+	tmpDir := t.TempDir()
+	statePath := filepath.Join(tmpDir, "state.json")
+	cfg := &config.Config{WorkspacePath: tmpDir}
+	st := state.New(statePath)
+	m := New(cfg, st, statePath)
+
+	ctx := context.Background()
+
+	tests := []struct {
+		name        string
+		repoName    string
+		branch      string
+		wantID      string
+		wantErr     bool
+		errContains string
+	}{
+		{
+			name:    "creates first workspace",
+			repoName: "myproject",
+			branch:  "main",
+			wantID:  "myproject-001",
+			wantErr: false,
+		},
+		{
+			name:    "creates second workspace",
+			repoName: "myproject",
+			branch:  "main",
+			wantID:  "myproject-002",
+			wantErr: false,
+		},
+		{
+			name:    "creates workspace with different name",
+			repoName: "otherproject",
+			branch:  "main",
+			wantID:  "otherproject-001",
+			wantErr: false,
+		},
+		{
+			name:        "empty repo name errors",
+			repoName:    "",
+			branch:      "main",
+			wantErr:     true,
+			errContains: "repo name is required",
+		},
+		{
+			name:        "path traversal rejected",
+			repoName:    "../etc",
+			branch:      "main",
+			wantErr:     true,
+			errContains: "invalid repo name",
+		},
+		{
+			name:        "slash in name rejected",
+			repoName:    "foo/bar",
+			branch:      "main",
+			wantErr:     true,
+			errContains: "invalid repo name",
+		},
+	}
+
+	for _, tt := range tests {
+		t.Run(tt.name, func(t *testing.T) {
+			w, err := m.CreateLocalRepo(ctx, tt.repoName, tt.branch)
+
+			if tt.wantErr {
+				if err == nil {
+					t.Errorf("CreateLocalRepo() expected error containing %q, got nil", tt.errContains)
+					return
+				}
+				if tt.errContains != "" && !strings.Contains(err.Error(), tt.errContains) {
+					t.Errorf("CreateLocalRepo() error = %v, want error containing %q", err, tt.errContains)
+				}
+				return
+			}
+
+			if err != nil {
+				t.Fatalf("CreateLocalRepo() unexpected error: %v", err)
+			}
+
+			// Verify workspace ID
+			if w.ID != tt.wantID {
+				t.Errorf("CreateLocalRepo() ID = %v, want %v", w.ID, tt.wantID)
+			}
+
+			// Verify workspace state
+			ws, found := st.GetWorkspace(w.ID)
+			if !found {
+				t.Fatal("CreateLocalRepo() workspace not found in state")
+			}
+
+			if ws.Repo != "local:"+tt.repoName {
+				t.Errorf("CreateLocalRepo() Repo = %v, want %v", ws.Repo, "local:"+tt.repoName)
+			}
+
+			if ws.Branch != tt.branch {
+				t.Errorf("CreateLocalRepo() Branch = %v, want %v", ws.Branch, tt.branch)
+			}
+
+			// Verify directory exists
+			if _, err := os.Stat(w.Path); os.IsNotExist(err) {
+				t.Errorf("CreateLocalRepo() directory does not exist: %s", w.Path)
+			}
+
+			// Verify it's a valid git repository
+			// Check for .git directory
+			gitDir := filepath.Join(w.Path, ".git")
+			if _, err := os.Stat(gitDir); os.IsNotExist(err) {
+				t.Error("CreateLocalRepo() .git directory does not exist")
+			}
+
+			// Verify current branch
+			cmd := exec.Command("git", "-C", w.Path, "rev-parse", "--abbrev-ref", "HEAD")
+			output, err := cmd.Output()
+			if err != nil {
+				t.Fatalf("failed to get current branch: %v", err)
+			}
+			actualBranch := strings.TrimSpace(string(output))
+			if actualBranch != tt.branch {
+				t.Errorf("CreateLocalRepo() branch = %v, want %v", actualBranch, tt.branch)
+			}
+
+			// Verify there's an initial commit
+			cmd = exec.Command("git", "-C", w.Path, "rev-parse", "HEAD")
+			if output, err := cmd.CombinedOutput(); err != nil {
+				t.Errorf("CreateLocalRepo() no initial commit: %v: %s", err, string(output))
+			}
+		})
+	}
+}
+
+func TestGetOrCreate_LocalRepo(t *testing.T) {
+	if _, err := exec.LookPath("git"); err != nil {
+		t.Skip("git not available")
+	}
+
+	tmpDir := t.TempDir()
+	statePath := filepath.Join(tmpDir, "state.json")
+	cfg := &config.Config{WorkspacePath: tmpDir}
+	st := state.New(statePath)
+	m := New(cfg, st, statePath)
+
+	ctx := context.Background()
+
+	// Create a local repo via GetOrCreate
+	w, err := m.GetOrCreate(ctx, "local:testproject", "main")
+	if err != nil {
+		t.Fatalf("GetOrCreate() unexpected error: %v", err)
+	}
+
+	// Verify workspace ID
+	if w.ID != "testproject-001" {
+		t.Errorf("GetOrCreate() ID = %v, want %v", w.ID, "testproject-001")
+	}
+
+	// Verify directory exists
+	if _, err := os.Stat(w.Path); os.IsNotExist(err) {
+		t.Errorf("GetOrCreate() directory does not exist: %s", w.Path)
+	}
+
+	// Verify it's a valid git repository
+	gitDir := filepath.Join(w.Path, ".git")
+	if _, err := os.Stat(gitDir); os.IsNotExist(err) {
+		t.Error("GetOrCreate() .git directory does not exist")
+	}
 }
