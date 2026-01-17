@@ -1,0 +1,40 @@
+}
+}
+// 2. Scan backward, collecting non-empty non-prompt non-separator lines
+var response []string
+contentCount := 0
+for i := promptIdx - 1; i >= 0; i-- {
+text := strings.TrimSpace(lines[i])
+if text == "" || isPromptLine(text) || isSeparatorLine(text) {
+continue
+}
+response = append([]string{text}, response...)
+contentCount++
+if contentCount >= 80 {  // caps at 80 lines
+break
+}
+}
+return strings.Join(response, "\n")
+}
+Key differences from my earlier approach:
+┌─────────────┬────────────────────────┬─────────────────────────┐
+│   Aspect    │      My approach       │    Codex's approach     │
+├─────────────┼────────────────────────┼─────────────────────────┤
+│ Boundary    │ Finds separator line   │ Finds prompt line (❯/›) │
+├─────────────┼────────────────────────┼─────────────────────────┤
+│ Blank lines │ Stopped at blank lines │ Skips ALL blank lines   │
+├─────────────┼────────────────────────┼─────────────────────────┤
+│ Max lines   │ None                   │ Caps at 80              │
+├─────────────┼────────────────────────┼─────────────────────────┤
+│ Trimming    │ Preserved original     │ Trims each line         │
+└─────────────┴────────────────────────┴─────────────────────────┘
+Tradeoffs:
+- Pro: Simpler, handles the "blank line before separator" edge cases that were failing
+- Pro: The 80-line cap prevents runaway extraction
+- Pro: Finds the user's prompt which is a more reliable boundary than separators
+- Con: Loses blank lines within code blocks (e.g., multi-paragraph responses lose internal spacing)
+- Con: Trims whitespace (could matter for code indentation)
+Verdict: This is a pragmatic solution. The test fixtures show real terminal output, and all tests pass. For nudgenik's
+purpose (analyzing what an agent needs), the extracted content is still readable and useful. The blank line loss is
+acceptable given the robustness gains.
+✻ Crunched for 1m 40s

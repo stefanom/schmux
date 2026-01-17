@@ -1,0 +1,40 @@
+92           name = sess.Nickname
+93         }
+⏺ Read(cmd/schmux/spawn.go)
+⏺ Update(cmd/schmux/spawn.go)
+94       }
+95     }
+96
+97 -   // Check if agent is agentic
+98 -   isAgentic := false
+99 -   agent, found := cmd.findAgent(agentFlag, cfg)
+100 -   if found {
+101 -     if agent.Agentic != nil {
+102 -       isAgentic = *agent.Agentic
+103 -     } else {
+104 -       isAgentic = true // default to agentic for configured agents
+105 -     }
+106 -   } else {
+107 -     // Not a configured agent - treat as command (non-agentic)
+108 -     isAgentic = false
+109 -   }
+110 -
+111 -   // Validate prompt for agentic agents
+112 -   if isAgentic && promptFlag == "" {
+113 -     return fmt.Errorf("prompt (-p/--prompt) is required for agentic agents")
+114 -   }
+115 -
+116 -   // Build spawn request
+97 +   // Build spawn request (single target model)
+98     req := cli.SpawnRequest{
+99       Repo:        repoURL,
+100       Branch:      branchFlag,
+101 +     Target:      agentFlag,
+102       Prompt:      promptFlag,
+103       Nickname:    nicknameFlag,
+104       WorkspaceID: workspaceID,
+105 -     Agents:      map[string]int{agentFlag: 1},
+105     }
+106
+107     results, err := cmd.client.Spawn(context.Background(), req)
+✻ Baked for 14m 36s

@@ -1,0 +1,43 @@
+674 -                     onKeyDown={(e) => e.key === 'Enter' && addCommand()}
+675 -                   />
+668                   </div>
+669 -                <button type="button" className="btn btn--sm" onClick={addCommand}>Add</button>
+669 +                <button type="button" className="btn btn--sm" onClick={addQuickLaunch}>Add</button>
+670                 </div>
+671 +               <p className="form-group__hint" style={{ marginTop: 'var(--spacing-sm)' }}>
+672 +                 Quick launch presets appear in the workspace dropdown for one-click spawning.
+673 +               </p>
+674               </div>
+675             )}
+676
+...
+855                   onClick={prevStep}
+856                   disabled={saving}
+857                 >
+858 -                ← Back
+858 +                Back
+859                 </button>
+860               )}
+861               {!isFirstRun && currentStep === 1 && (
+...
+879                 disabled={saving}
+880               >
+881                 {saving ? 'Saving...' : isFirstRun ?
+882 -                (currentStep === TOTAL_STEPS ? 'Finish Setup' : 'Next →') :
+882 +                (currentStep === TOTAL_STEPS ? 'Finish Setup' : 'Next') :
+883                   'Save Changes'
+884                 }
+885               </button>
+⏺ Now let me run the Go tests and build the dashboard to verify everything works.
+⏺ Bash(go test ./... 2>&1 | tail -20)
+?          github.com/sergek/schmux/cmd/scan-ansi  [no test files]
+ok         github.com/sergek/schmux/cmd/schmux     (cached)
+… +14 lines (ctrl+o to expand)
+⏺ Bash(go run ./cmd/build-dashboard 2>&1)
+Bash command
+go run ./cmd/build-dashboard 2>&1
+Build the dashboard
+Do you want to proceed?
+❯ 1. Yes
+2. Yes, and don't ask again for go run commands in /Users/sergek/dev/schmux-workspaces/schmux-007
+3. No

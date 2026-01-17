@@ -354,23 +354,45 @@ func extractChoiceLines(lines []string, promptIdx int) []string {
 		return nil
 	}
 
-	var choices []string
+	// First, find the index of the first choice line
+	firstChoiceIdx := -1
+	var contextLines []string
 	for i := promptIdx; i < len(lines); i++ {
 		text := strings.TrimSpace(lines[i])
 		if text == "" {
-			if len(choices) > 0 {
-				break
-			}
 			continue
 		}
 
+		// If this is a choice line, we found our start
+		if IsChoiceLine(text) {
+			firstChoiceIdx = i
+			break
+		}
+
+		// Collect short non-separator context lines before choices
+		if len(text) < 100 && !IsSeparatorLine(text) {
+			contextLines = append(contextLines, text)
+		} else {
+			// Reset if we hit a long line or separator
+			contextLines = nil
+		}
+	}
+
+	if firstChoiceIdx == -1 {
+		return nil
+	}
+
+	// Now collect all consecutive choice lines
+	var choices []string
+	choices = append(choices, contextLines...)
+	for i := firstChoiceIdx; i < len(lines); i++ {
+		text := strings.TrimSpace(lines[i])
+		if text == "" {
+			break
+		}
 		if !IsChoiceLine(text) {
-			if len(choices) > 0 {
-				break
-			}
-			continue
+			break
 		}
-
 		choices = append(choices, text)
 	}
 

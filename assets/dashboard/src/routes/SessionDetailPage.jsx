@@ -188,7 +188,7 @@ export default function SessionDetailPage() {
         throw new Error(`Failed to ask NudgeNik: ${resp.status}`);
       }
       const data = await resp.json();
-      setNudgenikResult(data.response || '');
+      setNudgenikResult(data || null);
     } catch (err) {
       toastError(`Failed to ask NudgeNik: ${err.message}`);
     } finally {
@@ -451,9 +451,32 @@ export default function SessionDetailPage() {
               <h2 className="modal__title" id="nudgenik-result-title">NudgeNik Response</h2>
             </div>
             <div className="modal__body">
-              <pre className="nudgenik-modal__response">
-                {nudgenikResult}
-              </pre>
+              <div className="metadata-field">
+                <span className="metadata-field__label">State</span>
+                <span className="metadata-field__value">{nudgenikResult.state || 'Unknown'}</span>
+              </div>
+              <div className="metadata-field">
+                <span className="metadata-field__label">Confidence</span>
+                <span className="metadata-field__value">{nudgenikResult.confidence || 'Unknown'}</span>
+              </div>
+              <div className="metadata-field">
+                <span className="metadata-field__label">Summary</span>
+                <span className="metadata-field__value">{nudgenikResult.summary || 'No summary provided'}</span>
+              </div>
+              <div className="metadata-field">
+                <span className="metadata-field__label">Evidence</span>
+                <div className="metadata-field__value">
+                  {nudgenikResult.evidence?.length ? (
+                    <ul className="nudgenik-modal__evidence">
+                      {nudgenikResult.evidence.map((item, idx) => (
+                        <li key={idx}>{item}</li>
+                      ))}
+                    </ul>
+                  ) : (
+                    <span style={{ color: 'var(--color-text-muted)', fontStyle: 'italic' }}>None</span>
+                  )}
+                </div>
+              </div>
             </div>
             <div className="modal__footer">
               <button className="btn btn--primary" onClick={() => setNudgenikResult(null)}>

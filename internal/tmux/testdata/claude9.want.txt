@@ -1,0 +1,42 @@
+424 +      name: "missing run target name",
+425         cfg: Config{
+426           WorkspacePath: "/tmp/workspaces",
+427 -         Agents:        []Agent{{Name: "", Command: "test"}},
+427 +         RunTargets:    []runtarget.UserTarget{{Name: "", Type: "promptable", Command: "test"}},
+428         },
+429         wantErr: true,
+430       },
+431       {
+432 -      name: "missing agent command",
+432 +      name: "missing run target command",
+433         cfg: Config{
+434           WorkspacePath: "/tmp/workspaces",
+435 -         Agents:        []Agent{{Name: "test", Command: ""}},
+435 +         RunTargets:    []runtarget.UserTarget{{Name: "test", Type: "promptable", Command: ""}},
+436         },
+437         wantErr: true,
+438       },
+...
+457           }
+458         }
+459
+460 -      // Check agents
+461 -      for _, agent := range cfg.Agents {
+462 -        if agent.Name == "" && !tt.wantErr {
+463 -          t.Error("expected no error for missing agent name")
+460 +      // Check run targets
+461 +      for _, target := range cfg.RunTargets {
+462 +        if target.Name == "" && !tt.wantErr {
+463 +          t.Error("expected no error for missing run target name")
+464           }
+465 -        if agent.Command == "" && !tt.wantErr {
+466 -          t.Error("expected no error for missing agent command")
+465 +        if target.Command == "" && !tt.wantErr {
+466 +          t.Error("expected no error for missing run target command")
+467           }
+468         }
+469       })
+✻ Worked for 15m 59s
+What do you want to do?
+❯ 1. Stop and wait for limit to reset
+2. Upgrade your plan

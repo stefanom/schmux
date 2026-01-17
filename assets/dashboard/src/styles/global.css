@@ -2290,6 +2290,13 @@ a:hover {
   margin: 0;
 }
 
+.nudgenik-modal__evidence {
+  margin: 0.25rem 0 0;
+  padding-left: 1.25rem;
+  font-size: 0.875rem;
+  color: var(--color-text);
+}
+
 .modal--large {
   max-width: 800px;
 }

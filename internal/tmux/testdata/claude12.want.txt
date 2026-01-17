@@ -1,0 +1,8 @@
+Usage dashboard at: https://z.ai/manage-apikey/subscription
+Do you trust the files in this folder?
+/Users/sergek/dev/schmux-workspaces/steam-friends-001
+Claude Code may read, write, or execute files contained in this directory. This can pose security risks, so only use
+files from trusted sources.
+Learn more
+❯ 1. Yes, proceed
+2. No, exit

@@ -2,6 +2,7 @@ package daemon
 
 import (
 	"context"
+	"encoding/json"
 	"errors"
 	"fmt"
 	"os"
@@ -607,7 +608,7 @@ func checkInactiveSessionsForNudge(ctx context.Context, cfg *config.Config, st *
 
 // askNudgeNikForSession captures the session output and asks NudgeNik for consultation.
 func askNudgeNikForSession(ctx context.Context, cfg *config.Config, sess state.Session) string {
-	response, err := nudgenik.AskForSession(ctx, cfg, sess)
+	result, err := nudgenik.AskForSession(ctx, cfg, sess)
 	if err != nil {
 		switch {
 		case errors.Is(err, nudgenik.ErrNoResponse):
@@ -621,5 +622,12 @@ func askNudgeNikForSession(ctx context.Context, cfg *config.Config, sess state.S
 		}
 		return ""
 	}
-	return response
+
+	payload, err := json.Marshal(result)
+	if err != nil {
+		fmt.Printf("[nudgenik] failed to serialize result for session %s: %v\n", sess.ID, err)
+		return ""
+	}
+
+	return string(payload)
 }

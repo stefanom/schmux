@@ -296,12 +296,20 @@ func TestExtractLatestResponse(t *testing.T) {
 		{name: "claude2", in: "claude2.txt", want: "claude2.want.txt"},
 		{name: "claude3", in: "claude3.txt", want: "claude3.want.txt"},
 		{name: "claude4", in: "claude4.txt", want: "claude4.want.txt"},
+		{name: "claude5", in: "claude5.txt", want: "claude5.want.txt"},
 		{name: "claude6", in: "claude6.txt", want: "claude6.want.txt"},
 		{name: "claude7", in: "claude7.txt", want: "claude7.want.txt"},
 		{name: "claude8", in: "claude8.txt", want: "claude8.want.txt"},
+		{name: "claude9", in: "claude9.txt", want: "claude9.want.txt"},
+		{name: "claude10", in: "claude10.txt", want: "claude10.want.txt"},
+		{name: "claude11", in: "claude11.txt", want: "claude11.want.txt"},
+		{name: "claude12", in: "claude12.txt", want: "claude12.want.txt"},
 		{name: "codex1", in: "codex1.txt", want: "codex1.want.txt"},
 		{name: "codex2", in: "codex2.txt", want: "codex2.want.txt"},
 		{name: "codex3", in: "codex3.txt", want: "codex3.want.txt"},
+		{name: "codex4", in: "codex4.txt", want: "codex4.want.txt"},
+		{name: "codex5", in: "codex5.txt", want: "codex5.want.txt"},
+		{name: "codex13", in: "codex13.txt", want: "codex13.want.txt"},
 	}
 
 	for _, tt := range fixtures {
@@ -327,6 +335,42 @@ func TestExtractLatestResponse(t *testing.T) {
 				t.Errorf("extractLatestResponse() mismatch\n--- got ---\n%s\n--- want ---\n%s", got, want)
 			}
 		})
+	}
+}
+
+// TestUpdateGoldenFiles regenerates .want.txt files from actual extractor output.
+// Run with: UPDATE_GOLDEN=1 go test -v -run TestUpdateGoldenFiles ./internal/tmux/...
+func TestUpdateGoldenFiles(t *testing.T) {
+	if os.Getenv("UPDATE_GOLDEN") == "" {
+		t.Skip("set UPDATE_GOLDEN=1 to regenerate golden files")
+	}
+
+	files := []string{
+		"claude1.txt", "claude2.txt", "claude3.txt", "claude4.txt", "claude5.txt",
+		"claude6.txt", "claude7.txt", "claude8.txt", "claude9.txt", "claude10.txt",
+		"claude11.txt", "claude12.txt",
+		"codex1.txt", "codex2.txt", "codex3.txt", "codex4.txt", "codex5.txt", "codex13.txt",
+	}
+
+	for _, f := range files {
+		inputPath := filepath.Join("testdata", f)
+		inputRaw, err := os.ReadFile(inputPath)
+		if err != nil {
+			t.Logf("skip %s: %v", f, err)
+			continue
+		}
+
+		input := StripAnsi(string(inputRaw))
+		lines := strings.Split(input, "\n")
+		got := ExtractLatestResponse(lines)
+
+		wantFile := strings.TrimSuffix(f, ".txt") + ".want.txt"
+		wantPath := filepath.Join("testdata", wantFile)
+		if err := os.WriteFile(wantPath, []byte(got+"\n"), 0644); err != nil {
+			t.Errorf("write %s: %v", wantFile, err)
+		} else {
+			t.Logf("updated %s", wantFile)
+		}
 	}
 }
 

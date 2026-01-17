@@ -1,0 +1,40 @@
+• Edited assets/dashboard/src/lib/api.js (+0 -11)
+105
+106 -export async function refreshDetectedTools() {
+107 -  const response = await fetch('/api/detect-tools', {
+108 -    method: 'POST',
+109 -    headers: { 'Content-Type': 'application/json' }
+110 -  });
+111 -  if (!response.ok) {
+112 -    throw new Error('Failed to refresh detected tools');
+113 -  }
+114 -  return response.json();
+115 -}
+116 -
+106  export async function getVariants() {
+• Explored
+└ Search refreshDetectedTools|POST /api/detect-tools|detect-tools in dashboard
+• Ran gofmt -w internal/dashboard/handlers.go
+└ (no output)
+• Ran go test ./...
+└ ?       github.com/sergek/schmux/cmd/build-dashboard    [no test files]
+?       github.com/sergek/schmux/cmd/scan-ansi    [no test files]
+… +10 lines
+ok      github.com/sergek/schmux/internal/workspace    (cached)
+ok      github.com/sergek/schmux/pkg/cli    (cached)
+• Manual detection is removed. /api/detect-tools is now GET-only and served from config, and the client no longer has a
+refresh call.
+Changes:
+- internal/dashboard/handlers.go: drop POST handling for detect.
+- assets/dashboard/src/lib/api.js: remove refreshDetectedTools.
+Tests:
+- go test ./...
+If you want me to also remove or rename the detect route entirely (and fold it into /api/config), say the word.
+less particular about the API endpoints for now.
+• I'm explaining the misunderstanding by confirming the feature is already done, noting configuration is detected in
+run_targets and UI read-only, and asking if any issues remain since no code changes are needed.
+• Yep — detected run targets are now stored as the third type inside run_targets in config.json (with source:
+"detected"), and they’re treated as read‑only in config updates/UI. Detection runs on daemon start and merges into
+config; /api/detect-tools is just a read‑only view of those entries.
+If you’re seeing otherwise, tell me where (file/path or UI screen) and I’ll trace it.
+• Great. If anything feels off during your run, point me at the screen or log line and I’ll dig in.

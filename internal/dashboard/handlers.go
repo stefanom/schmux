@@ -183,29 +183,18 @@ func (s *Server) handleSessions(w http.ResponseWriter, r *http.Request) {
 	json.NewEncoder(w).Encode(response)
 }
 
-type nudgenikPayload struct {
-	State   string `json:"state"`
-	Summary string `json:"summary"`
-}
-
 func parseNudgeSummary(nudge string) (string, string) {
 	trimmed := strings.TrimSpace(nudge)
 	if trimmed == "" {
 		return "", ""
 	}
 
-	if strings.HasPrefix(trimmed, "```") {
-		trimmed = strings.TrimSpace(strings.TrimPrefix(trimmed, "```json"))
-		trimmed = strings.TrimSpace(strings.TrimPrefix(trimmed, "```"))
-		trimmed = strings.TrimSpace(strings.TrimSuffix(trimmed, "```"))
-	}
-
-	var payload nudgenikPayload
-	if err := json.Unmarshal([]byte(trimmed), &payload); err != nil {
+	result, err := nudgenik.ParseResult(trimmed)
+	if err != nil {
 		return "", ""
 	}
 
-	return strings.TrimSpace(payload.State), strings.TrimSpace(payload.Summary)
+	return strings.TrimSpace(result.State), strings.TrimSpace(result.Summary)
 }
 
 // handleWorkspacesScan scans the workspace directory and reconciles with state.
@@ -1332,7 +1321,7 @@ func (s *Server) handleAskNudgenik(w http.ResponseWriter, r *http.Request) {
 	}
 
 	ctx := context.Background()
-	response, err := nudgenik.AskForSession(ctx, s.config, sess)
+	result, err := nudgenik.AskForSession(ctx, s.config, sess)
 	if err != nil {
 		switch {
 		case errors.Is(err, nudgenik.ErrNoResponse):
@@ -1351,7 +1340,7 @@ func (s *Server) handleAskNudgenik(w http.ResponseWriter, r *http.Request) {
 	}
 
 	w.Header().Set("Content-Type", "application/json")
-	json.NewEncoder(w).Encode(map[string]string{"response": response})
+	json.NewEncoder(w).Encode(result)
 }
 
 // handleHasNudgenik handles GET requests to check if nudgenik is available globally.
