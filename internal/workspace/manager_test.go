@@ -644,6 +644,111 @@ func TestCreateLocalRepo(t *testing.T) {
 	}
 }
 
+// TestGitPullRebase_MultipleBranchesConfig reproduces "Cannot rebase onto multiple branches"
+// by manually crafting a broken .git/config with multiple merge refs, then verifies
+// that schmux's gitPullRebase with explicit origin/<branch> works around it.
+func TestGitPullRebase_MultipleBranchesConfig(t *testing.T) {
+	if _, err := exec.LookPath("git"); err != nil {
+		t.Skip("git not available")
+	}
+
+	// Create a remote repo
+	remoteDir := gitTestWorkTree(t)
+	runGit(t, remoteDir, "checkout", "-b", "feature")
+	writeFile(t, remoteDir, "feature.txt", "feature")
+	runGit(t, remoteDir, "add", ".")
+	runGit(t, remoteDir, "commit", "-m", "feature")
+	runGit(t, remoteDir, "checkout", "main")
+
+	// Clone it
+	tmpDir := t.TempDir()
+	cloneDir := filepath.Join(tmpDir, "clone")
+	runGit(t, tmpDir, "clone", remoteDir, "clone")
+
+	// Manually break .git/config by adding duplicate merge ref
+	gitConfigPath := filepath.Join(cloneDir, ".git", "config")
+	configContent, _ := os.ReadFile(gitConfigPath)
+
+	brokenConfig := string(configContent)
+	if !strings.Contains(brokenConfig, "[branch \"main\"]") {
+		brokenConfig += "\n[branch \"main\"]\n\tremote = origin\n\tmerge = refs/heads/main\n"
+	}
+	brokenConfig += "\tmerge = refs/heads/feature\n"
+
+	if err := os.WriteFile(gitConfigPath, []byte(brokenConfig), 0644); err != nil {
+		t.Fatalf("failed to write broken config: %v", err)
+	}
+
+	// Verify raw "git pull --rebase" fails with the error
+	cmd := exec.Command("git", "-C", cloneDir, "pull", "--rebase")
+	output, err := cmd.CombinedOutput()
+	if err == nil {
+		t.Fatal("git pull --rebase should have failed with multiple merge refs")
+	}
+	if !strings.Contains(string(output), "Cannot rebase onto multiple branches") {
+		t.Logf("Raw git pull error: %v: %s", err, output)
+	} else {
+		t.Log("Confirmed: raw 'git pull --rebase' fails with broken config")
+	}
+
+	// Now test that schmux's gitPullRebase with explicit branch works
+	statePath := filepath.Join(tmpDir, "state.json")
+	cfg := &config.Config{WorkspacePath: tmpDir}
+	st := state.New(statePath)
+	m := New(cfg, st, statePath)
+	ctx := context.Background()
+
+	// This should work because we explicitly specify origin/main
+	err = m.gitPullRebase(ctx, cloneDir, "main")
+	if err != nil {
+		t.Errorf("gitPullRebase with explicit branch should work: %v", err)
+	} else {
+		t.Log("SUCCESS: gitPullRebase(origin main) works despite broken upstream config")
+	}
+}
+
+// TestGitPullRebase_WithBranchParameter tests that gitPullRebase takes
+// a branch parameter and explicitly pulls from origin/<branch>.
+func TestGitPullRebase_WithBranchParameter(t *testing.T) {
+	if _, err := exec.LookPath("git"); err != nil {
+		t.Skip("git not available")
+	}
+
+	// Create a remote repo
+	remoteDir := gitTestWorkTree(t)
+	runGit(t, remoteDir, "checkout", "-b", "feature")
+	writeFile(t, remoteDir, "feature.txt", "feature")
+	runGit(t, remoteDir, "add", ".")
+	runGit(t, remoteDir, "commit", "-m", "feature")
+	runGit(t, remoteDir, "checkout", "main")
+
+	// Clone it
+	tmpDir := t.TempDir()
+	cloneDir := filepath.Join(tmpDir, "clone")
+	runGit(t, tmpDir, "clone", remoteDir, "clone")
+
+	statePath := filepath.Join(tmpDir, "state.json")
+	cfg := &config.Config{WorkspacePath: tmpDir}
+	st := state.New(statePath)
+	m := New(cfg, st, statePath)
+	ctx := context.Background()
+
+	// gitPullRebase with explicit origin/<branch> should work
+	err := m.gitPullRebase(ctx, cloneDir, "main")
+	if err != nil {
+		t.Errorf("gitPullRebase(main) failed: %v", err)
+	}
+
+	// Switch to feature branch and pull
+	runGit(t, cloneDir, "checkout", "feature")
+	err = m.gitPullRebase(ctx, cloneDir, "feature")
+	if err != nil {
+		t.Errorf("gitPullRebase(feature) failed: %v", err)
+	}
+
+	t.Log("gitPullRebase() takes branch parameter - explicitly pulls from origin/<branch>")
+}
+
 func TestGetOrCreate_LocalRepo(t *testing.T) {
 	if _, err := exec.LookPath("git"); err != nil {
 		t.Skip("git not available")

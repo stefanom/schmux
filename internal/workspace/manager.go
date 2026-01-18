@@ -289,7 +289,7 @@ func (m *Manager) prepare(ctx context.Context, workspaceID, branch string) error
 	}
 
 	// Pull with rebase (working dir is now clean)
-	if err := m.gitPullRebase(ctx, w.Path); err != nil {
+	if err := m.gitPullRebase(ctx, w.Path, branch); err != nil {
 		return fmt.Errorf("git pull --rebase failed (conflicts?): %w", err)
 	}
 
@@ -437,18 +437,25 @@ func (m *Manager) gitCheckout(ctx context.Context, dir, branch string) error {
 	return nil
 }
 
-// gitPullRebase runs git pull --rebase.
-func (m *Manager) gitPullRebase(ctx context.Context, dir string) error {
-	args := []string{"pull", "--rebase"}
+// gitPullRebase runs git pull --rebase origin <branch>.
+// For cloned repos with an origin remote, this avoids relying on potentially incorrect
+// upstream config. For local repos without origin, skips the pull.
+func (m *Manager) gitPullRebase(ctx context.Context, dir, branch string) error {
+	// Check if origin remote exists
+	remoteCmd := exec.CommandContext(ctx, "git", "remote", "get-url", "origin")
+	remoteCmd.Dir = dir
+	if _, err := remoteCmd.CombinedOutput(); err != nil {
+		// No origin remote - local-only repo, nothing to pull
+		m.logger.Printf("no origin remote, skipping pull")
+		return nil
+	}
+
+	// Explicitly pull from origin/<branch> to avoid broken upstream config
+	args := []string{"pull", "--rebase", "origin", branch}
 	cmd := exec.CommandContext(ctx, "git", args...)
 	cmd.Dir = dir
 
 	if output, err := cmd.CombinedOutput(); err != nil {
-		// If pull fails due to no tracking info, that's ok for new local branches
-		if strings.Contains(string(output), "no tracking information") {
-			m.logger.Printf("no tracking information for branch, skipping pull")
-			return nil
-		}
 		return fmt.Errorf("git pull failed: %w: %s", err, string(output))
 	}
 
