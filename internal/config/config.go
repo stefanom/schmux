@@ -23,6 +23,10 @@ const (
 	DefaultTerminalSeedLines = 100
 	DefaultBootstrapLines    = 20000
 
+	// Default log rotation
+	DefaultMaxLogSizeMB     = 50 // 50MB
+	DefaultRotatedLogSizeMB = 1  // 1MB
+
 	// Default timeout values in seconds
 	DefaultGitCloneTimeoutSeconds      = 300 // 5 minutes
 	DefaultGitStatusTimeoutSeconds     = 30  // 30 seconds
@@ -62,6 +66,8 @@ type InternalIntervals struct {
 	ViewedBufferMs          int       `json:"viewed_buffer_ms"`
 	SessionSeenIntervalMs   int       `json:"session_seen_interval_ms"`
 	GitStatusPollIntervalMs int       `json:"git_status_poll_interval_ms"`
+	MaxLogSizeMB            int       `json:"max_log_size_mb,omitempty"`         // max log size before rotation
+	RotatedLogSizeMB        int       `json:"rotated_log_size_mb,omitempty"`     // target size after rotation (keeps tail)
 	Timeouts                *Timeouts `json:"timeouts,omitempty"`
 }
 
@@ -499,6 +505,22 @@ func (c *Config) GetGitStatusPollIntervalMs() int {
 		return 10000
 	}
 	return c.Internal.GitStatusPollIntervalMs
+}
+
+// GetMaxLogSizeMB returns the max log size in MB before rotation. Defaults to 50MB.
+func (c *Config) GetMaxLogSizeMB() int64 {
+	if c.Internal == nil || c.Internal.MaxLogSizeMB <= 0 {
+		return DefaultMaxLogSizeMB
+	}
+	return int64(c.Internal.MaxLogSizeMB)
+}
+
+// GetRotatedLogSizeMB returns the target log size in MB after rotation. Defaults to 1MB.
+func (c *Config) GetRotatedLogSizeMB() int64 {
+	if c.Internal == nil || c.Internal.RotatedLogSizeMB <= 0 {
+		return DefaultRotatedLogSizeMB
+	}
+	return int64(c.Internal.RotatedLogSizeMB)
 }
 
 // GetTimeouts returns the Timeouts config, or defaults if not set.

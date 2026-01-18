@@ -2,12 +2,15 @@ package dashboard
 
 import (
 	"context"
+	"encoding/json"
 	"fmt"
 	"net/http"
 	"os"
 	"path/filepath"
+	"sync"
 	"time"
 
+	"github.com/gorilla/websocket"
 	"github.com/sergek/schmux/internal/config"
 	"github.com/sergek/schmux/internal/session"
 	"github.com/sergek/schmux/internal/state"
@@ -28,16 +31,26 @@ type Server struct {
 	session    *session.Manager
 	workspace  workspace.WorkspaceManager
 	httpServer *http.Server
+
+	// WebSocket connection registry: sessionID -> list of active connections
+	wsConns   map[string][]*websocket.Conn
+	wsConnsMu sync.RWMutex
+
+	// Per-session rotation locks to prevent concurrent rotations
+	rotationLocks   map[string]*sync.Mutex
+	rotationLocksMu sync.RWMutex
 }
 
 // NewServer creates a new dashboard server.
 func NewServer(cfg *config.Config, st state.StateStore, statePath string, sm *session.Manager, wm workspace.WorkspaceManager) *Server {
 	return &Server{
-		config:    cfg,
-		state:     st,
-		statePath: statePath,
-		session:   sm,
-		workspace: wm,
+		config:        cfg,
+		state:         st,
+		statePath:     statePath,
+		session:       sm,
+		workspace:     wm,
+		wsConns:       make(map[string][]*websocket.Conn),
+		rotationLocks: make(map[string]*sync.Mutex),
 	}
 }
 
@@ -174,4 +187,62 @@ func (s *Server) getAssetPath() string {
 func (s *Server) getDashboardDistPath() string {
 	assetPath := s.getAssetPath()
 	return filepath.Join(assetPath, "dist")
+}
+
+// RegisterWebSocket registers a WebSocket connection for a session.
+func (s *Server) RegisterWebSocket(sessionID string, conn *websocket.Conn) {
+	s.wsConnsMu.Lock()
+	defer s.wsConnsMu.Unlock()
+	s.wsConns[sessionID] = append(s.wsConns[sessionID], conn)
+}
+
+// UnregisterWebSocket removes a WebSocket connection for a session.
+func (s *Server) UnregisterWebSocket(sessionID string, conn *websocket.Conn) {
+	s.wsConnsMu.Lock()
+	defer s.wsConnsMu.Unlock()
+	conns := s.wsConns[sessionID]
+	for i, c := range conns {
+		if c == conn {
+			s.wsConns[sessionID] = append(conns[:i], conns[i+1:]...)
+			if len(s.wsConns[sessionID]) == 0 {
+				delete(s.wsConns, sessionID)
+			}
+			return
+		}
+	}
+}
+
+// BroadcastToSession sends a message to all WebSocket connections for a session
+// and closes them. Returns the number of connections notified.
+func (s *Server) BroadcastToSession(sessionID string, msgType string, content string) int {
+	s.wsConnsMu.Lock()
+	conns := s.wsConns[sessionID]
+	// Clear the entry so we don't re-notify the same connections
+	delete(s.wsConns, sessionID)
+	s.wsConnsMu.Unlock()
+
+	count := 0
+	for _, conn := range conns {
+		msg := WSOutputMessage{Type: msgType, Content: content}
+		data, err := json.Marshal(msg)
+		if err != nil {
+			continue
+		}
+		if err := conn.WriteMessage(websocket.TextMessage, data); err == nil {
+			count++
+		}
+		conn.Close()
+	}
+	return count
+}
+
+// getRotationLock returns the rotation mutex for a session, creating it if needed.
+func (s *Server) getRotationLock(sessionID string) *sync.Mutex {
+	s.rotationLocksMu.Lock()
+	defer s.rotationLocksMu.Unlock()
+
+	if _, exists := s.rotationLocks[sessionID]; !exists {
+		s.rotationLocks[sessionID] = &sync.Mutex{}
+	}
+	return s.rotationLocks[sessionID]
 }

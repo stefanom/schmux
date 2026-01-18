@@ -225,6 +225,108 @@ func contains(slice []byte, b byte) bool {
 	return false
 }
 
+// rotateLogFile rotates a log file that has exceeded the size threshold.
+// Keeps approximately the last 1MB of data by copying the tail to a temp file,
+// replacing the original, and restarting pipe-pane.
+func (s *Server) rotateLogFile(ctx context.Context, sessionID, logPath string) error {
+	fmt.Printf("[ws %s] rotating log file (size > threshold)\n", sessionID[:8])
+
+	// Get the session to find the tmux session name
+	sess, err := s.session.GetSession(sessionID)
+	if err != nil {
+		return fmt.Errorf("failed to get session: %w", err)
+	}
+
+	// 1. Stop pipe-pane
+	if err := tmux.StopPipePane(ctx, sess.TmuxSession); err != nil {
+		return fmt.Errorf("failed to stop pipe-pane: %w", err)
+	}
+
+	// 2. Copy the last ~N MB to a temp file
+	keepSize := s.config.GetRotatedLogSizeMB() * 1024 * 1024 // Convert MB to bytes
+	srcFile, err := os.Open(logPath)
+	if err != nil {
+		// If we can't open the file, try restarting pipe-pane anyway
+		tmux.StartPipePane(ctx, sess.TmuxSession, logPath)
+		return fmt.Errorf("failed to open log file for rotation: %w", err)
+	}
+
+	srcInfo, err := srcFile.Stat()
+	if err != nil {
+		srcFile.Close()
+		tmux.StartPipePane(ctx, sess.TmuxSession, logPath)
+		return fmt.Errorf("failed to stat log file: %w", err)
+	}
+
+	fileSize := srcInfo.Size()
+	var offset int64 = 0
+	if fileSize > keepSize {
+		offset = fileSize - keepSize
+	}
+
+	// Find a safe start point (after a newline) to avoid mid-line corruption
+	safeOffset, err := findSafeStartPoint(logPath, offset, 4096)
+	if err != nil {
+		fmt.Printf("[ws %s] warning: failed to find safe start point, using offset %d: %v\n", sessionID[:8], offset, err)
+		safeOffset = offset
+	}
+
+	// Copy from safe offset to end
+	tmpPath := logPath + ".tmp"
+	tmpFile, err := os.Create(tmpPath)
+	if err != nil {
+		srcFile.Close()
+		tmux.StartPipePane(ctx, sess.TmuxSession, logPath)
+		return fmt.Errorf("failed to create temp file: %w", err)
+	}
+
+	if _, err := srcFile.Seek(safeOffset, io.SeekStart); err != nil {
+		srcFile.Close()
+		tmpFile.Close()
+		os.Remove(tmpPath)
+		tmux.StartPipePane(ctx, sess.TmuxSession, logPath)
+		return fmt.Errorf("failed to seek in log file: %w", err)
+	}
+
+	if _, err := io.Copy(tmpFile, srcFile); err != nil {
+		srcFile.Close()
+		tmpFile.Close()
+		os.Remove(tmpPath)
+		tmux.StartPipePane(ctx, sess.TmuxSession, logPath)
+		return fmt.Errorf("failed to copy log tail: %w", err)
+	}
+
+	srcFile.Close()
+	tmpFile.Close()
+
+	// 3. Replace original with temp file
+	if err := os.Remove(logPath); err != nil && !os.IsNotExist(err) {
+		os.Remove(tmpPath)
+		tmux.StartPipePane(ctx, sess.TmuxSession, logPath)
+		return fmt.Errorf("failed to remove original log file: %w", err)
+	}
+
+	if err := os.Rename(tmpPath, logPath); err != nil {
+		tmux.StartPipePane(ctx, sess.TmuxSession, logPath)
+		return fmt.Errorf("failed to rename temp file: %w", err)
+	}
+
+	// 4. Restart pipe-pane
+	if err := tmux.StartPipePane(ctx, sess.TmuxSession, logPath); err != nil {
+		return fmt.Errorf("failed to restart pipe-pane: %w", err)
+	}
+
+	newInfo, _ := os.Stat(logPath)
+	newSize := int64(0)
+	if newInfo != nil {
+		newSize = newInfo.Size()
+	}
+	fmt.Printf("[ws %s] log rotation complete: %.2f MB -> %.2f MB\n",
+		sessionID[:8], float64(fileSize)/(1024*1024), float64(newSize)/(1024*1024))
+
+	return nil
+}
+
 // WSMessage represents a WebSocket message from the client
 type WSMessage struct {
 	Type string `json:"type"`
@@ -280,11 +382,47 @@ func (s *Server) handleTerminalWebSocket(w http.ResponseWriter, r *http.Request)
 		}
 	}
 
+	// Acquire rotation lock for this session to prevent concurrent rotations
+	rotationLock := s.getRotationLock(sessionID)
+	rotationLock.Lock()
+
+	// Check log file size and rotate if over threshold
+	maxLogSize := s.config.GetMaxLogSizeMB() * 1024 * 1024 // Convert MB to bytes
+	if fileInfo, err := os.Stat(logPath); err == nil && fileInfo.Size() > maxLogSize {
+		fmt.Printf("[ws %s] log file size %.2f MB exceeds threshold %.2f MB, rotating\n",
+			sessionID[:8], float64(fileInfo.Size())/(1024*1024), float64(maxLogSize)/(1024*1024))
+
+		// Disconnect existing connections for this session
+		count := s.BroadcastToSession(sessionID, "reconnect", "Log rotated, please reconnect")
+		if count > 0 {
+			fmt.Printf("[ws %s] disconnected %d existing connection(s) for rotation\n", sessionID[:8], count)
+		}
+
+		// Rotate the log file
+		ctx, cancel := context.WithTimeout(context.Background(), time.Duration(s.config.GetTmuxOperationTimeoutSeconds())*time.Second)
+		if err := s.rotateLogFile(ctx, sessionID, logPath); err != nil {
+			cancel()
+			fmt.Printf("[ws %s] log rotation failed: %v\n", sessionID[:8], err)
+			// Continue anyway - the session is still usable
+		} else {
+			cancel()
+		}
+	}
+
+	// Release rotation lock before blocking on WebSocket upgrade
+	rotationLock.Unlock()
+
 	conn, err := upgrader.Upgrade(w, r, nil)
 	if err != nil {
 		return
 	}
-	defer conn.Close()
+
+	// Register this connection
+	s.RegisterWebSocket(sessionID, conn)
+	defer func() {
+		s.UnregisterWebSocket(sessionID, conn)
+		conn.Close()
+	}()
 
 	controlChan := make(chan WSMessage, 10)
 	go func() {

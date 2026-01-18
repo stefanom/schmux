@@ -74,6 +74,8 @@ export interface ConfigResponse {
     git_status_poll_interval_ms: number;
     git_clone_timeout_seconds: number;
     git_status_timeout_seconds: number;
+    max_log_size_mb?: number;
+    rotated_log_size_mb?: number;
     network_access: boolean;
   };
   needs_restart: boolean;
@@ -99,6 +101,8 @@ export interface ConfigUpdateRequest {
     git_status_poll_interval_ms: number;
     git_clone_timeout_seconds: number;
     git_status_timeout_seconds: number;
+    max_log_size_mb?: number;
+    rotated_log_size_mb?: number;
     network_access: boolean;
   };
 }

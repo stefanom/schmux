@@ -49,6 +49,8 @@ type ConfigSnapshot = {
   gitStatusPollInterval: number;
   gitCloneTimeout: number;
   gitStatusTimeout: number;
+  maxLogSizeMB: number;
+  rotatedLogSizeMB: number;
   networkAccess: boolean;
 };
 
@@ -124,6 +126,8 @@ export default function ConfigPage() {
   const [gitStatusPollInterval, setGitStatusPollInterval] = useState(10000);
   const [gitCloneTimeout, setGitCloneTimeout] = useState(300);
   const [gitStatusTimeout, setGitStatusTimeout] = useState(30);
+  const [maxLogSizeMB, setMaxLogSizeMB] = useState(50);
+  const [rotatedLogSizeMB, setRotatedLogSizeMB] = useState(1);
   const [networkAccess, setNetworkAccess] = useState(false);
   const [originalNetworkAccess, setOriginalNetworkAccess] = useState(false);
   const [apiNeedsRestart, setApiNeedsRestart] = useState(false);
@@ -158,6 +162,8 @@ export default function ConfigPage() {
       gitStatusPollInterval,
       gitCloneTimeout,
       gitStatusTimeout,
+      maxLogSizeMB,
+      rotatedLogSizeMB,
       networkAccess,
     };
 
@@ -185,6 +191,8 @@ export default function ConfigPage() {
       current.gitStatusPollInterval !== originalConfig.gitStatusPollInterval ||
       current.gitCloneTimeout !== originalConfig.gitCloneTimeout ||
       current.gitStatusTimeout !== originalConfig.gitStatusTimeout ||
+      current.maxLogSizeMB !== originalConfig.maxLogSizeMB ||
+      current.rotatedLogSizeMB !== originalConfig.rotatedLogSizeMB ||
       current.networkAccess !== originalConfig.networkAccess
     );
   };
@@ -236,6 +244,8 @@ export default function ConfigPage() {
         setGitStatusPollInterval(data.internal?.git_status_poll_interval_ms || 10000);
         setGitCloneTimeout(data.internal?.git_clone_timeout_seconds || 300);
         setGitStatusTimeout(data.internal?.git_status_timeout_seconds || 30);
+        setMaxLogSizeMB(data.internal?.max_log_size_mb || 50);
+        setRotatedLogSizeMB(data.internal?.rotated_log_size_mb || 1);
         const netAccess = data.internal?.network_access || false;
         setNetworkAccess(netAccess);
         setOriginalNetworkAccess(netAccess);
@@ -261,6 +271,8 @@ export default function ConfigPage() {
             gitStatusPollInterval: data.internal?.git_status_poll_interval_ms || 10000,
             gitCloneTimeout: data.internal?.git_clone_timeout_seconds || 300,
             gitStatusTimeout: data.internal?.git_status_timeout_seconds || 30,
+            maxLogSizeMB: data.internal?.max_log_size_mb || 50,
+            rotatedLogSizeMB: data.internal?.rotated_log_size_mb || 1,
             networkAccess: netAccess,
           });
         }
@@ -399,6 +411,8 @@ export default function ConfigPage() {
           git_status_poll_interval_ms: gitStatusPollInterval,
           git_clone_timeout_seconds: gitCloneTimeout,
           git_status_timeout_seconds: gitStatusTimeout,
+          max_log_size_mb: maxLogSizeMB,
+          rotated_log_size_mb: rotatedLogSizeMB,
           network_access: networkAccess,
         }
       };
@@ -431,6 +445,8 @@ export default function ConfigPage() {
           gitStatusPollInterval,
           gitCloneTimeout,
           gitStatusTimeout,
+          maxLogSizeMB,
+          rotatedLogSizeMB,
           networkAccess,
         });
       }
@@ -1513,6 +1529,31 @@ export default function ConfigPage() {
                       onChange={(e) => setGitStatusTimeout(e.target.value === '' ? 0 : parseInt(e.target.value) || 30)}
                     />
                     <p className="form-group__hint">Maximum time to wait for git status/diff operations (default: 30s)</p>
+                  </div>
+
+                  <div className="form-group">
+                    <label className="form-group__label">Max Log Size (MB)</label>
+                    <input
+                      type="number"
+                      className="input input--compact"
+                      min="1"
+                      value={maxLogSizeMB === 0 ? '' : maxLogSizeMB}
+                      onChange={(e) => setMaxLogSizeMB(e.target.value === '' ? 0 : parseInt(e.target.value) || 50)}
+                    />
+                    <p className="form-group__hint">Maximum log file size before rotation (default: 50MB)</p>
+                  </div>
+
+                  <div className="form-group">
+                    <label className="form-group__label">Rotated Log Size (MB)</label>
+                    <input
+                      type="number"
+                      className="input input--compact"
+                      min="1"
+                      max={maxLogSizeMB}
+                      value={rotatedLogSizeMB === 0 ? '' : rotatedLogSizeMB}
+                      onChange={(e) => setRotatedLogSizeMB(e.target.value === '' ? 0 : Math.min(parseInt(e.target.value) || 1, maxLogSizeMB))}
+                    />
+                    <p className="form-group__hint">Target log size after rotation - keeps the tail (default: 1MB)</p>
                   </div>
                 </div>
               </div>

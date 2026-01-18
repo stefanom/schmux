@@ -567,6 +567,8 @@ func (s *Server) handleConfigGet(w http.ResponseWriter, r *http.Request) {
 		GitStatusPollIntervalMs int  `json:"git_status_poll_interval_ms"`
 		GitCloneTimeoutSeconds  int  `json:"git_clone_timeout_seconds"`
 		GitStatusTimeoutSeconds int  `json:"git_status_timeout_seconds"`
+		MaxLogSizeMB            int  `json:"max_log_size_mb,omitempty"`
+		RotatedLogSizeMB        int  `json:"rotated_log_size_mb,omitempty"`
 		NetworkAccess           bool `json:"network_access"`
 	}
 
@@ -619,6 +621,8 @@ func (s *Server) handleConfigGet(w http.ResponseWriter, r *http.Request) {
 			GitStatusPollIntervalMs: s.config.GetGitStatusPollIntervalMs(),
 			GitCloneTimeoutSeconds:  s.config.GetGitCloneTimeoutSeconds(),
 			GitStatusTimeoutSeconds: s.config.GetGitStatusTimeoutSeconds(),
+			MaxLogSizeMB:            int(s.config.GetMaxLogSizeMB()),
+			RotatedLogSizeMB:        int(s.config.GetRotatedLogSizeMB()),
 			NetworkAccess:           s.config.GetNetworkAccess(),
 		},
 		NeedsRestart: s.state.GetNeedsRestart(),
@@ -668,6 +672,8 @@ type ConfigUpdateRequest struct {
 		GitStatusPollIntervalMs *int  `json:"git_status_poll_interval_ms,omitempty"`
 		GitCloneTimeoutSeconds  *int  `json:"git_clone_timeout_seconds,omitempty"`
 		GitStatusTimeoutSeconds *int  `json:"git_status_timeout_seconds,omitempty"`
+		MaxLogSizeMB            *int  `json:"max_log_size_mb,omitempty"`
+		RotatedLogSizeMB        *int  `json:"rotated_log_size_mb,omitempty"`
 		NetworkAccess           *bool `json:"network_access,omitempty"`
 	} `json:"internal,omitempty"`
 }
@@ -831,6 +837,12 @@ func (s *Server) handleConfigUpdate(w http.ResponseWriter, r *http.Request) {
 		}
 		if req.Internal.GitStatusTimeoutSeconds != nil && *req.Internal.GitStatusTimeoutSeconds > 0 {
 			cfg.Internal.Timeouts.GitStatusSeconds = *req.Internal.GitStatusTimeoutSeconds
+		}
+		if req.Internal.MaxLogSizeMB != nil && *req.Internal.MaxLogSizeMB > 0 {
+			cfg.Internal.MaxLogSizeMB = *req.Internal.MaxLogSizeMB
+		}
+		if req.Internal.RotatedLogSizeMB != nil && *req.Internal.RotatedLogSizeMB > 0 {
+			cfg.Internal.RotatedLogSizeMB = *req.Internal.RotatedLogSizeMB
 		}
 		if req.Internal.NetworkAccess != nil {
 			// Check if network access is changing
