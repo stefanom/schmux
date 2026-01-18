@@ -45,11 +45,11 @@ func SessionExists(ctx context.Context, name string) bool {
 
 // GetPanePID returns the PID of the first process in the tmux session's pane.
 func GetPanePID(ctx context.Context, name string) (int, error) {
-	// tmux display-message -p -t <name> "#{pane_pid}" (= prefix for exact match)
+	// tmux display-message -p -t <name> "#{pane_pid}"
 	args := []string{
 		"display-message",
-		"-p",              // output to stdout
-		"-t", "=" + name, // target session
+		"-p",       // output to stdout
+		"-t", name, // target session
 		"#{pane_pid}",
 	}
 
@@ -247,7 +247,7 @@ func StopPipePane(ctx context.Context, sessionName string) error {
 func IsPipePaneActive(ctx context.Context, sessionName string) bool {
 	args := []string{
 		"display-message", "-p", "-t",
-		fmt.Sprintf("=%s:0.0", sessionName),
+		fmt.Sprintf("%s:0.0", sessionName),
 		"#{pane_pipe}",
 	}
 	cmd := exec.CommandContext(ctx, "tmux", args...)
@@ -275,7 +275,7 @@ func RenameSession(ctx context.Context, oldName, newName string) error {
 // Coordinates are 0-indexed.
 func GetCursorPosition(ctx context.Context, sessionName string) (x, y int, err error) {
 	args := []string{
-		"display-message", "-p", "-t", "=" + sessionName,
+		"display-message", "-p", "-t", sessionName,
 		"#{cursor_x}", "#{cursor_y}",
 	}
 	cmd := exec.CommandContext(ctx, "tmux", args...)
