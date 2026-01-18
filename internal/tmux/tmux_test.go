@@ -83,22 +83,22 @@ func TestGetAttachCommand(t *testing.T) {
 		{
 			name:  "simple session name",
 			input: "test-session",
-			want:  `tmux attach -t "test-session"`,
+			want:  `tmux attach -t "=test-session"`,
 		},
 		{
 			name:  "session with spaces",
 			input: "cli commands",
-			want:  `tmux attach -t "cli commands"`,
+			want:  `tmux attach -t "=cli commands"`,
 		},
 		{
 			name:  "session with special chars",
 			input: "session-123_abc",
-			want:  `tmux attach -t "session-123_abc"`,
+			want:  `tmux attach -t "=session-123_abc"`,
 		},
 		{
 			name:  "empty string",
 			input: "",
-			want:  `tmux attach -t ""`,
+			want:  `tmux attach -t "="`,
 		},
 	}
 

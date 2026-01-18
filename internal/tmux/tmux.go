@@ -35,8 +35,8 @@ func CreateSession(ctx context.Context, name, dir, command string) error {
 
 // SessionExists checks if a tmux session with the given name exists.
 func SessionExists(ctx context.Context, name string) bool {
-	// tmux has-session -t <name>
-	args := []string{"has-session", "-t", name}
+	// tmux has-session -t <name> (= prefix for exact match)
+	args := []string{"has-session", "-t", "=" + name}
 
 	cmd := exec.CommandContext(ctx, "tmux", args...)
 	err := cmd.Run()
@@ -45,11 +45,11 @@ func SessionExists(ctx context.Context, name string) bool {
 
 // GetPanePID returns the PID of the first process in the tmux session's pane.
 func GetPanePID(ctx context.Context, name string) (int, error) {
-	// tmux display-message -p -t <name> "#{pane_pid}"
+	// tmux display-message -p -t <name> "#{pane_pid}" (= prefix for exact match)
 	args := []string{
 		"display-message",
-		"-p",       // output to stdout
-		"-t", name, // target session
+		"-p",              // output to stdout
+		"-t", "=" + name, // target session
 		"#{pane_pid}",
 	}
 
@@ -75,13 +75,13 @@ func CaptureOutput(ctx context.Context, name string) (string, error) {
 	// tmux capture-pane -e -p -S - -t <name>
 	// -e includes escape sequences for colors/attributes
 	// -p outputs to stdout
-	// -S - captures from the start of the scrollback buffer
+	// -S - captures from the start of the scrollback buffer (= prefix for exact match)
 	args := []string{
 		"capture-pane",
-		"-e",      // include escape sequences
-		"-p",      // output to stdout
-		"-S", "-", // start from beginning of scrollback
-		"-t", name, // target session/pane
+		"-e",            // include escape sequences
+		"-p",            // output to stdout
+		"-S", "-",       // start from beginning of scrollback
+		"-t", "=" + name, // target session/pane
 	}
 
 	cmd := exec.CommandContext(ctx, "tmux", args...)
@@ -102,10 +102,10 @@ func CaptureLastLines(ctx context.Context, name string, lines int) (string, erro
 	}
 	args := []string{
 		"capture-pane",
-		"-e", // include escape sequences
-		"-p", // output to stdout
+		"-e",                      // include escape sequences
+		"-p",                      // output to stdout
 		"-S", fmt.Sprintf("-%d", lines),
-		"-t", name, // target session/pane
+		"-t", "=" + name, // target session/pane
 	}
 
 	cmd := exec.CommandContext(ctx, "tmux", args...)
@@ -121,8 +121,8 @@ func CaptureLastLines(ctx context.Context, name string, lines int) (string, erro
 
 // KillSession kills a tmux session.
 func KillSession(ctx context.Context, name string) error {
-	// tmux kill-session -t <name>
-	args := []string{"kill-session", "-t", name}
+	// tmux kill-session -t <name> (= prefix for exact match)
+	args := []string{"kill-session", "-t", "=" + name}
 
 	cmd := exec.CommandContext(ctx, "tmux", args...)
 	if output, err := cmd.CombinedOutput(); err != nil {
@@ -156,8 +156,8 @@ func ListSessions(ctx context.Context) ([]string, error) {
 
 // SendKeys sends keys to a tmux session (useful for interactive commands).
 func SendKeys(ctx context.Context, name, keys string) error {
-	// tmux send-keys -t <name> <keys>
-	args := []string{"send-keys", "-t", name, keys}
+	// tmux send-keys -t <name> <keys> (= prefix for exact match)
+	args := []string{"send-keys", "-t", "=" + name, keys}
 
 	cmd := exec.CommandContext(ctx, "tmux", args...)
 	if output, err := cmd.CombinedOutput(); err != nil {
@@ -169,8 +169,8 @@ func SendKeys(ctx context.Context, name, keys string) error {
 
 // SendLiteral sends literal text to a tmux session (spaces/newlines are treated as text).
 func SendLiteral(ctx context.Context, name, text string) error {
-	// tmux send-keys -l -t <name> <text>
-	args := []string{"send-keys", "-l", "-t", name, text}
+	// tmux send-keys -l -t <name> <text> (= prefix for exact match)
+	args := []string{"send-keys", "-l", "-t", "=" + name, text}
 
 	cmd := exec.CommandContext(ctx, "tmux", args...)
 	if output, err := cmd.CombinedOutput(); err != nil {
@@ -182,7 +182,7 @@ func SendLiteral(ctx context.Context, name, text string) error {
 
 // GetAttachCommand returns the command to attach to a tmux session.
 func GetAttachCommand(name string) string {
-	return fmt.Sprintf("tmux attach -t \"%s\"", name)
+	return fmt.Sprintf("tmux attach -t \"=%s\"", name)
 }
 
 // StripAnsi removes ANSI escape sequences from text.
@@ -192,7 +192,7 @@ func StripAnsi(text string) string {
 
 // SetWindowSizeManual forces tmux to ignore client resize requests.
 func SetWindowSizeManual(ctx context.Context, sessionName string) error {
-	args := []string{"set-option", "-t", sessionName, "window-size", "manual"}
+	args := []string{"set-option", "-t", "=" + sessionName, "window-size", "manual"}
 	cmd := exec.CommandContext(ctx, "tmux", args...)
 	if output, err := cmd.CombinedOutput(); err != nil {
 		return fmt.Errorf("failed to set window-size manual: %w: %s", err, string(output))
@@ -204,7 +204,7 @@ func SetWindowSizeManual(ctx context.Context, sessionName string) error {
 func ResizeWindow(ctx context.Context, sessionName string, width, height int) error {
 	args := []string{
 		"resize-window",
-		"-t", fmt.Sprintf("%s:0.0", sessionName),
+		"-t", fmt.Sprintf("=%s:0.0", sessionName),
 		"-x", strconv.Itoa(width),
 		"-y", strconv.Itoa(height),
 	}
@@ -222,7 +222,7 @@ func StartPipePane(ctx context.Context, sessionName, logPath string) error {
 	args := []string{
 		"pipe-pane",
 		"-o", // only output, not input
-		"-t", fmt.Sprintf("%s:0.0", sessionName),
+		"-t", fmt.Sprintf("=%s:0.0", sessionName),
 		fmt.Sprintf("cat >> '%s'", escapedPath),
 	}
 	cmd := exec.CommandContext(ctx, "tmux", args...)
@@ -234,7 +234,7 @@ func StartPipePane(ctx context.Context, sessionName, logPath string) error {
 
 // StopPipePane stops streaming pane output.
 func StopPipePane(ctx context.Context, sessionName string) error {
-	args := []string{"pipe-pane", "-t", fmt.Sprintf("%s:0.0", sessionName), ""}
+	args := []string{"pipe-pane", "-t", fmt.Sprintf("=%s:0.0", sessionName), ""}
 	cmd := exec.CommandContext(ctx, "tmux", args...)
 	if output, err := cmd.CombinedOutput(); err != nil {
 		return fmt.Errorf("failed to stop pipe-pane: %w: %s", err, string(output))
@@ -246,7 +246,7 @@ func StopPipePane(ctx context.Context, sessionName string) error {
 func IsPipePaneActive(ctx context.Context, sessionName string) bool {
 	args := []string{
 		"display-message", "-p", "-t",
-		fmt.Sprintf("%s:0.0", sessionName),
+		fmt.Sprintf("=%s:0.0", sessionName),
 		"#{pane_pipe}",
 	}
 	cmd := exec.CommandContext(ctx, "tmux", args...)
@@ -262,7 +262,7 @@ func IsPipePaneActive(ctx context.Context, sessionName string) bool {
 // RenameSession renames an existing tmux session.
 // This is used when updating session nicknames.
 func RenameSession(ctx context.Context, oldName, newName string) error {
-	args := []string{"rename-session", "-t", oldName, newName}
+	args := []string{"rename-session", "-t", "=" + oldName, newName}
 	cmd := exec.CommandContext(ctx, "tmux", args...)
 	if output, err := cmd.CombinedOutput(); err != nil {
 		return fmt.Errorf("failed to rename tmux session: %w: %s", err, string(output))
@@ -274,7 +274,7 @@ func RenameSession(ctx context.Context, oldName, newName string) error {
 // Coordinates are 0-indexed.
 func GetCursorPosition(ctx context.Context, sessionName string) (x, y int, err error) {
 	args := []string{
-		"display-message", "-p", "-t", sessionName,
+		"display-message", "-p", "-t", "=" + sessionName,
 		"#{cursor_x}", "#{cursor_y}",
 	}
 	cmd := exec.CommandContext(ctx, "tmux", args...)
