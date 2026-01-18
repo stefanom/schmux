@@ -67,7 +67,7 @@ export default function SpawnDropdown({ workspace, quickLaunch, disabled }: Spaw
         repo: workspace.repo,
         branch: workspace.branch,
         prompt: preset.prompt || '',
-        nickname: '',
+        nickname: preset.name,
         targets: { [preset.target]: 1 },
         workspace_id: workspace.id,
       });
