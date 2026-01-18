@@ -16,11 +16,11 @@ import type {
   VariantResponse,
 } from '../lib/types';
 
-const TOTAL_STEPS = 6;
-const TABS = ['Workspace', 'Repositories', 'Run Targets', 'Variants', 'Quick Launch', 'Advanced'];
+const TOTAL_STEPS = 5;
+const TABS = ['Workspace', 'Run Targets', 'Variants', 'Quick Launch', 'Advanced'];
 
 // Map step number to URL slug
-const TAB_SLUGS = ['workspace', 'repos', 'targets', 'variants', 'quicklaunch', 'advanced'];
+const TAB_SLUGS = ['workspace', 'targets', 'variants', 'quicklaunch', 'advanced'];
 
 // Helper: step number -> slug
 const stepToSlug = (step: number) => TAB_SLUGS[step - 1];
@@ -202,7 +202,7 @@ export default function ConfigPage() {
   const [selectedCookbookTemplate, setSelectedCookbookTemplate] = useState<BuiltinQuickLaunchPreset | null>(null); // Track which cookbook template is being added
 
   // Validation state per step
-  const [stepErrors, setStepErrors] = useState<Record<number, string | null>>({ 1: null, 2: null, 3: null, 4: null, 5: null, 6: null });
+  const [stepErrors, setStepErrors] = useState<Record<number, string | null>>({ 1: null, 2: null, 3: null, 4: null, 5: null });
 
   useEffect(() => {
     let active = true;
@@ -341,18 +341,16 @@ export default function ConfigPage() {
     if (step === 1) {
       if (!workspacePath.trim()) {
         error = 'Workspace path is required';
-      }
-    } else if (step === 2) {
-      if (repos.length === 0) {
+      } else if (repos.length === 0) {
         error = 'Add at least one repository';
       }
-    } else if (step === 3) {
+    } else if (step === 2) {
       // Run targets are optional
-    } else if (step === 4) {
+    } else if (step === 3) {
       // Variants are optional
-    } else if (step === 5) {
+    } else if (step === 4) {
       // Quick launch is optional
-    } else if (step === 6) {
+    } else if (step === 5) {
       const width = parseInt(terminalWidth);
       const height = parseInt(terminalHeight);
       const seedLines = parseInt(terminalSeedLines);
@@ -612,6 +610,26 @@ export default function ConfigPage() {
   };
 
   const [variantModal, setVariantModal] = useState<VariantModalState>(null);
+  const [showWorkspaceModal, setShowWorkspaceModal] = useState(false);
+  const [workspaceModalPath, setWorkspaceModalPath] = useState('');
+
+  const openWorkspaceModal = () => {
+    setWorkspaceModalPath(workspacePath);
+    setShowWorkspaceModal(true);
+  };
+
+  const closeWorkspaceModal = () => {
+    setShowWorkspaceModal(false);
+    setWorkspaceModalPath('');
+  };
+
+  const saveWorkspaceModal = () => {
+    setWorkspacePath(workspaceModalPath);
+    setShowWorkspaceModal(false);
+    if (workspaceModalPath.trim()) {
+      setStepErrors(prev => ({ ...prev, 1: null }));
+    }
+  };
 
   const openVariantModal = (variant: VariantResponse, mode: 'add' | 'remove' | 'update') => {
     if (mode === 'remove') {
@@ -712,12 +730,11 @@ export default function ConfigPage() {
 
   // Check if each step is valid
   const stepValid = {
-    1: workspacePath.trim().length > 0,
-    2: repos.length > 0,
-    3: true, // Run targets are optional
-    4: true, // Variants are optional
-    5: true, // Quick launch is optional
-    6: true // Advanced step is always valid (has defaults)
+    1: workspacePath.trim().length > 0 && repos.length > 0,
+    2: true, // Run targets are optional
+    3: true, // Variants are optional
+    4: true, // Quick launch is optional
+    5: true // Advanced step is always valid (has defaults)
   };
 
   if (loading) {
@@ -807,32 +824,28 @@ export default function ConfigPage() {
 
               <div className="form-group">
                 <label className="form-group__label">Workspace Path</label>
-                <input
-                  type="text"
-                  className="input"
-                  value={workspacePath}
-                  onChange={(e) => {
-                    setWorkspacePath(e.target.value);
-                    if (e.target.value.trim()) {
-                      setStepErrors(prev => ({ ...prev, 1: null }));
-                    }
-                  }}
-                  placeholder="~/schmux-workspaces"
-                  autoFocus
-                />
+                <div style={{ display: 'flex', gap: 'var(--spacing-sm)', alignItems: 'stretch' }}>
+                  <input
+                    type="text"
+                    className="input"
+                    value={workspacePath}
+                    readOnly
+                    style={{ background: 'var(--color-surface-alt)', flex: 1 }}
+                  />
+                  <button
+                    type="button"
+                    className="btn"
+                    onClick={openWorkspaceModal}
+                  >
+                    Edit
+                  </button>
+                </div>
                 <p className="form-group__hint">
                   Directory where cloned repositories will be stored. Can use ~ for home directory.
                 </p>
-                {stepErrors[1] && (
-                  <p className="form-group__error">{stepErrors[1]}</p>
-                )}
               </div>
-            </div>
-          )}
 
-          {currentTab === 2 && (
-            <div className="wizard-step-content" data-step="2">
-              <h2 className="wizard-step-content__title">Repositories</h2>
+              <h3 style={{ marginTop: 'var(--spacing-lg)' }}>Repositories</h3>
               <p className="wizard-step-content__description">
                 Add the Git repositories that run targets will work on.
               </p>
@@ -893,16 +906,16 @@ export default function ConfigPage() {
                     onKeyDown={(e) => e.key === 'Enter' && addRepo()}
                   />
                 </div>
-                <button type="button" className="btn btn--sm" onClick={addRepo}>Add</button>
+                <button type="button" className="btn btn--sm btn--primary" onClick={addRepo}>Add</button>
               </div>
-              {stepErrors[2] && (
-                <p className="form-group__error" style={{ marginTop: 'var(--spacing-md)' }}>{stepErrors[2]}</p>
+              {stepErrors[1] && (
+                <p className="form-group__error" style={{ marginTop: 'var(--spacing-md)' }}>{stepErrors[1]}</p>
               )}
             </div>
           )}
 
-          {currentTab === 3 && (
-            <div className="wizard-step-content" data-step="3">
+          {currentTab === 2 && (
+            <div className="wizard-step-content" data-step="2">
               <h2 className="wizard-step-content__title">Run Targets</h2>
               <p className="wizard-step-content__description">
                 Configure user-supplied run targets. Detected tools appear automatically in the spawn wizard.
@@ -1029,8 +1042,8 @@ export default function ConfigPage() {
             </div>
           )}
 
-          {currentTab === 4 && (
-            <div className="wizard-step-content" data-step="4">
+          {currentTab === 3 && (
+            <div className="wizard-step-content" data-step="3">
               <h2 className="wizard-step-content__title">Variants</h2>
               <p className="wizard-step-content__description">
                 Add secrets to enable variants for quick launch and spawning.
@@ -1090,8 +1103,8 @@ export default function ConfigPage() {
             </div>
           )}
 
-          {currentTab === 5 && (
-            <div className="wizard-step-content" data-step="5">
+          {currentTab === 4 && (
+            <div className="wizard-step-content" data-step="4">
               <h2 className="wizard-step-content__title">Quick Launch</h2>
               <p className="wizard-step-content__description">
                 Quick launch runs a target with a preset prompt. Promptable targets require a prompt.
@@ -1271,8 +1284,8 @@ export default function ConfigPage() {
             </div>
           )}
 
-          {currentTab === 6 && (
-            <div className="wizard-step-content" data-step="6">
+          {currentTab === 5 && (
+            <div className="wizard-step-content" data-step="5">
               <h2 className="wizard-step-content__title">Advanced Settings</h2>
               <p className="wizard-step-content__description">
                 Terminal dimensions and internal timing intervals. You can leave these as defaults unless you have specific needs.
@@ -1500,8 +1513,8 @@ export default function ConfigPage() {
                   </div>
                 </div>
               </div>
-              {stepErrors[6] && (
-                <p className="form-group__error">{stepErrors[6]}</p>
+              {stepErrors[5] && (
+                <p className="form-group__error">{stepErrors[5]}</p>
               )}
             </div>
           )}
@@ -1549,6 +1562,49 @@ export default function ConfigPage() {
         <SetupCompleteModal
           onClose={() => navigate('/spawn')}
         />
+      )}
+
+      {showWorkspaceModal && (
+        <div
+          className="modal-overlay"
+          role="dialog"
+          aria-modal="true"
+          aria-labelledby="workspace-modal-title"
+          onKeyDown={(e) => {
+            if (e.key === 'Escape') closeWorkspaceModal();
+          }}
+        >
+          <div className="modal">
+            <div className="modal__header">
+              <h2 className="modal__title" id="workspace-modal-title">
+                Edit Workspace Directory
+              </h2>
+            </div>
+            <div className="modal__body">
+              <div className="form-group">
+                <label className="form-group__label">Workspace Path</label>
+                <input
+                  type="text"
+                  className="input"
+                  value={workspaceModalPath}
+                  onChange={(e) => setWorkspaceModalPath(e.target.value)}
+                  placeholder="~/schmux-workspaces"
+                  autoFocus
+                  onKeyDown={(e) => {
+                    if (e.key === 'Enter') saveWorkspaceModal();
+                  }}
+                />
+                <p className="form-group__hint">
+                  Directory where cloned repositories will be stored. Can use ~ for home directory.
+                </p>
+              </div>
+            </div>
+            <div className="modal__footer">
+              <button className="btn" onClick={closeWorkspaceModal}>Cancel</button>
+              <button className="btn btn--primary" onClick={saveWorkspaceModal}>Save</button>
+            </div>
+          </div>
+        </div>
       )}
 
       {variantModal && (
