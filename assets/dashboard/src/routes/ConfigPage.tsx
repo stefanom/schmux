@@ -1169,6 +1169,9 @@ export default function ConfigPage() {
                       onChange={(e) => {
                         const value = e.target.value;
                         setNewQuickLaunchTarget(value);
+                        if (!newQuickLaunchName.trim()) {
+                          setNewQuickLaunchName(value);
+                        }
                         if (commandTargetNames.has(value)) {
                           setNewQuickLaunchPrompt('');
                         }
