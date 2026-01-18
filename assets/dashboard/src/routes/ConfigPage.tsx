@@ -1437,8 +1437,8 @@ export default function ConfigPage() {
                       type="number"
                       className="input input--compact"
                       min="100"
-                      value={mtimePollInterval}
-                      onChange={(e) => setMtimePollInterval(parseInt(e.target.value) || 5000)}
+                      value={mtimePollInterval === 0 ? '' : mtimePollInterval}
+                      onChange={(e) => setMtimePollInterval(e.target.value === '' ? 0 : parseInt(e.target.value) || 5000)}
                     />
                     <p className="form-group__hint">How often to check log file mtimes for new output</p>
                   </div>
@@ -1449,8 +1449,8 @@ export default function ConfigPage() {
                       type="number"
                       className="input input--compact"
                       min="100"
-                      value={sessionsPollInterval}
-                      onChange={(e) => setSessionsPollInterval(parseInt(e.target.value) || 5000)}
+                      value={sessionsPollInterval === 0 ? '' : sessionsPollInterval}
+                      onChange={(e) => setSessionsPollInterval(e.target.value === '' ? 0 : parseInt(e.target.value) || 5000)}
                     />
                     <p className="form-group__hint">How often to refresh sessions list</p>
                   </div>
@@ -1461,8 +1461,8 @@ export default function ConfigPage() {
                       type="number"
                       className="input input--compact"
                       min="100"
-                      value={viewedBuffer}
-                      onChange={(e) => setViewedBuffer(parseInt(e.target.value) || 5000)}
+                      value={viewedBuffer === 0 ? '' : viewedBuffer}
+                      onChange={(e) => setViewedBuffer(e.target.value === '' ? 0 : parseInt(e.target.value) || 5000)}
                     />
                     <p className="form-group__hint">Time to keep session marked as "viewed" after last check</p>
                   </div>
@@ -1473,8 +1473,8 @@ export default function ConfigPage() {
                       type="number"
                       className="input input--compact"
                       min="100"
-                      value={sessionSeenInterval}
-                      onChange={(e) => setSessionSeenInterval(parseInt(e.target.value) || 2000)}
+                      value={sessionSeenInterval === 0 ? '' : sessionSeenInterval}
+                      onChange={(e) => setSessionSeenInterval(e.target.value === '' ? 0 : parseInt(e.target.value) || 2000)}
                     />
                     <p className="form-group__hint">How often to check for session activity</p>
                   </div>
@@ -1485,8 +1485,8 @@ export default function ConfigPage() {
                       type="number"
                       className="input input--compact"
                       min="100"
-                      value={gitStatusPollInterval}
-                      onChange={(e) => setGitStatusPollInterval(parseInt(e.target.value) || 10000)}
+                      value={gitStatusPollInterval === 0 ? '' : gitStatusPollInterval}
+                      onChange={(e) => setGitStatusPollInterval(e.target.value === '' ? 0 : parseInt(e.target.value) || 10000)}
                     />
                     <p className="form-group__hint">How often to refresh git status (dirty, ahead, behind)</p>
                   </div>
@@ -1497,8 +1497,8 @@ export default function ConfigPage() {
                       type="number"
                       className="input input--compact"
                       min="10"
-                      value={gitCloneTimeout}
-                      onChange={(e) => setGitCloneTimeout(parseInt(e.target.value) || 300)}
+                      value={gitCloneTimeout === 0 ? '' : gitCloneTimeout}
+                      onChange={(e) => setGitCloneTimeout(e.target.value === '' ? 0 : parseInt(e.target.value) || 300)}
                     />
                     <p className="form-group__hint">Maximum time to wait for git clone when spawning sessions (default: 300s = 5 min)</p>
                   </div>
@@ -1509,8 +1509,8 @@ export default function ConfigPage() {
                       type="number"
                       className="input input--compact"
                       min="5"
-                      value={gitStatusTimeout}
-                      onChange={(e) => setGitStatusTimeout(parseInt(e.target.value) || 30)}
+                      value={gitStatusTimeout === 0 ? '' : gitStatusTimeout}
+                      onChange={(e) => setGitStatusTimeout(e.target.value === '' ? 0 : parseInt(e.target.value) || 30)}
                     />
                     <p className="form-group__hint">Maximum time to wait for git status/diff operations (default: 30s)</p>
                   </div>
