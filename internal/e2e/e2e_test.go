@@ -5,6 +5,7 @@ import (
 	"path/filepath"
 	"strings"
 	"testing"
+	"time"
 )
 
 // TestE2EFullLifecycle runs the full E2E test suite as one integrated test.
@@ -26,8 +27,8 @@ func TestE2EFullLifecycle(t *testing.T) {
 			t.Fatalf("Failed to create repo dir: %v", err)
 		}
 
-		// Initialize git repo
-		RunCmd(t, repoPath, "git", "init")
+		// Initialize git repo on main to match test branch usage.
+		RunCmd(t, repoPath, "git", "init", "-b", "main")
 		RunCmd(t, repoPath, "git", "config", "user.email", "e2e@test.local")
 		RunCmd(t, repoPath, "git", "config", "user.name", "E2E Test")
 
@@ -244,8 +245,8 @@ func TestE2ETwoSessionsNaming(t *testing.T) {
 			t.Fatalf("Failed to create repo dir: %v", err)
 		}
 
-		// Initialize git repo
-		RunCmd(t, repoPath, "git", "init")
+		// Initialize git repo on main to match test branch usage.
+		RunCmd(t, repoPath, "git", "init", "-b", "main")
 		RunCmd(t, repoPath, "git", "config", "user.email", "e2e@test.local")
 		RunCmd(t, repoPath, "git", "config", "user.name", "E2E Test")
 
@@ -338,6 +339,72 @@ func TestE2ETwoSessionsNaming(t *testing.T) {
 		}
 		if !hasBeta {
 			t.Error("tmux does not show session with 'beta'")
+		}
+	})
+}
+
+// TestE2ETwitterStream validates websocket output after tmux input.
+func TestE2ETwitterStream(t *testing.T) {
+	env := New(t)
+
+	const workspaceRoot = "/tmp/schmux-e2e-ws-test"
+
+	t.Run("CreateConfig", func(t *testing.T) {
+		env.CreateConfig(workspaceRoot)
+	})
+
+	t.Run("CreateGitRepo", func(t *testing.T) {
+		repoPath := workspaceRoot + "/ws-test-repo"
+		if err := os.MkdirAll(repoPath, 0755); err != nil {
+			t.Fatalf("Failed to create repo dir: %v", err)
+		}
+
+		RunCmd(t, repoPath, "git", "init", "-b", "main")
+		RunCmd(t, repoPath, "git", "config", "user.email", "e2e@test.local")
+		RunCmd(t, repoPath, "git", "config", "user.name", "E2E Test")
+
+		testFile := filepath.Join(repoPath, "README.md")
+		if err := os.WriteFile(testFile, []byte("# WS Test\n"), 0644); err != nil {
+			t.Fatalf("Failed to create test file: %v", err)
+		}
+
+		RunCmd(t, repoPath, "git", "add", ".")
+		RunCmd(t, repoPath, "git", "commit", "-m", "Initial commit")
+
+		env.AddRepoToConfig("ws-test-repo", "file://"+repoPath)
+	})
+
+	t.Run("DaemonStart", func(t *testing.T) {
+		env.DaemonStart()
+	})
+
+	defer func() {
+		env.DaemonStop()
+		if t.Failed() {
+			env.CaptureArtifacts()
+		}
+	}()
+
+	var sessionID string
+	t.Run("SpawnSession", func(t *testing.T) {
+		sessionID = env.SpawnSession("ws-test-repo", "main", "cat", "", "ws-echo")
+		if sessionID == "" {
+			t.Fatal("Expected session ID from spawn")
+		}
+	})
+
+	t.Run("WebSocketOutput", func(t *testing.T) {
+		conn, err := env.ConnectTerminalWebSocket(sessionID)
+		if err != nil {
+			t.Fatalf("Failed to connect websocket: %v", err)
+		}
+		defer conn.Close()
+
+		payload := "ws-e2e-hello"
+		env.SendKeysToTmux("ws-echo", payload)
+
+		if _, err := env.WaitForWebSocketContent(conn, payload, 3*time.Second); err != nil {
+			t.Fatalf("Did not receive websocket output: %v", err)
 		}
 	})
 }

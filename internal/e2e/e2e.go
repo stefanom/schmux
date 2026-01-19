@@ -6,8 +6,11 @@ import (
 	"bytes"
 	"context"
 	"encoding/json"
+	"fmt"
 	"io"
+	"net"
 	"net/http"
+	"net/url"
 	"os"
 	"os/exec"
 	"path/filepath"
@@ -16,6 +19,7 @@ import (
 	"time"
 
 	"github.com/sergek/schmux/internal/config"
+	"github.com/gorilla/websocket"
 )
 
 const (
@@ -175,8 +179,8 @@ func (e *Env) CreateLocalGitRepo(name string) string {
 		e.T.Fatalf("Failed to create repo dir: %v", err)
 	}
 
-	// Initialize git repo
-	RunCmd(e.T, repoPath, "git", "init")
+	// Initialize git repo on main to match test branch usage.
+	RunCmd(e.T, repoPath, "git", "init", "-b", "main")
 	RunCmd(e.T, repoPath, "git", "config", "user.email", "e2e@test.local")
 	RunCmd(e.T, repoPath, "git", "config", "user.name", "E2E Test")
 
@@ -215,7 +219,10 @@ func (e *Env) CreateConfig(workspacePath string) {
 		WorkspacePath: workspacePath,
 		Repos:         []config.Repo{},
 		RunTargets: []config.RunTarget{
-			{Name: "echo", Type: "command", Command: "echo hello", Source: "user"},
+			// Keep the session alive long enough for pipe-pane and tmux assertions.
+			{Name: "echo", Type: "command", Command: "sh -c 'echo hello; sleep 600'", Source: "user"},
+			// Echoes input back for websocket output tests.
+			{Name: "cat", Type: "command", Command: "cat", Source: "user"},
 		},
 		Terminal: &config.TerminalSize{
 			Width:     120,
@@ -227,6 +234,83 @@ func (e *Env) CreateConfig(workspacePath string) {
 	cfg.SetPath(filepath.Join(schmuxDir, "config.json"))
 	if err := cfg.Save(); err != nil {
 		e.T.Fatalf("Failed to save config: %v", err)
+	}
+}
+
+// WSOutputMessage represents a WebSocket message to the client.
+type WSOutputMessage struct {
+	Type    string `json:"type"` // "full", "append", "reconnect"
+	Content string `json:"content"`
+}
+
+// ConnectTerminalWebSocket connects to the terminal websocket for a session.
+func (e *Env) ConnectTerminalWebSocket(sessionID string) (*websocket.Conn, error) {
+	base, err := url.Parse(e.DaemonURL)
+	if err != nil {
+		return nil, err
+	}
+	wsURL := url.URL{
+		Scheme: "ws",
+		Host:   base.Host,
+		Path:   "/ws/terminal/" + sessionID,
+	}
+
+	header := http.Header{}
+	header.Set("Origin", "http://localhost:7337")
+	conn, _, err := websocket.DefaultDialer.Dial(wsURL.String(), header)
+	if err != nil {
+		return nil, err
+	}
+	return conn, nil
+}
+
+// WaitForWebSocketContent reads websocket output until it finds the substring or times out.
+func (e *Env) WaitForWebSocketContent(conn *websocket.Conn, substr string, timeout time.Duration) (string, error) {
+	deadline := time.Now().Add(timeout)
+	var buffer strings.Builder
+
+	for time.Now().Before(deadline) {
+		conn.SetReadDeadline(time.Now().Add(200 * time.Millisecond))
+		_, data, err := conn.ReadMessage()
+		if err != nil {
+			if nerr, ok := err.(net.Error); ok && nerr.Timeout() {
+				continue
+			}
+			return buffer.String(), err
+		}
+
+		var msg WSOutputMessage
+		if err := json.Unmarshal(data, &msg); err != nil {
+			continue
+		}
+		if msg.Content != "" {
+			buffer.WriteString(msg.Content)
+			if strings.Contains(buffer.String(), substr) {
+				return buffer.String(), nil
+			}
+		}
+	}
+
+	return buffer.String(), fmt.Errorf("timed out waiting for websocket output: %q", substr)
+}
+
+// SendKeysToTmux sends literal keys plus Enter to a tmux session.
+func (e *Env) SendKeysToTmux(sessionName, text string) {
+	e.T.Helper()
+	ctx, cancel := context.WithTimeout(context.Background(), 3*time.Second)
+	cmd := exec.CommandContext(ctx, "tmux", "send-keys", "-t", sessionName, "-l", text)
+	out, err := cmd.CombinedOutput()
+	cancel()
+	if err != nil {
+		e.T.Fatalf("Failed to send keys to tmux: %v\nOutput: %s", err, out)
+	}
+
+	ctx, cancel = context.WithTimeout(context.Background(), 3*time.Second)
+	cmd = exec.CommandContext(ctx, "tmux", "send-keys", "-t", sessionName, "C-m")
+	out, err = cmd.CombinedOutput()
+	cancel()
+	if err != nil {
+		e.T.Fatalf("Failed to send Enter to tmux: %v\nOutput: %s", err, out)
 	}
 }
 
@@ -346,6 +430,8 @@ func (e *Env) DisposeSession(sessionID string) {
 
 	ctx, cancel := context.WithTimeout(context.Background(), 10*time.Second)
 	cmd := exec.CommandContext(ctx, e.SchmuxBin, "dispose", sessionID)
+	// Confirm the interactive prompt.
+	cmd.Stdin = strings.NewReader("y\n")
 	out, err := cmd.CombinedOutput()
 	cancel()
 	if err != nil {
