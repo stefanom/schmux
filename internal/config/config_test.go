@@ -10,21 +10,16 @@ import (
 func TestLoad(t *testing.T) {
 	// Create a temporary config directory
 	tmpDir := t.TempDir()
-	configDir := filepath.Join(tmpDir, ".schmux")
-	if err := os.MkdirAll(configDir, 0755); err != nil {
-		t.Fatalf("failed to create config dir: %v", err)
-	}
-
-	configPath := filepath.Join(configDir, "config.json")
+	configPath := filepath.Join(tmpDir, "test-config.json")
 
 	// Create a valid config
 	validConfig := Config{
-		WorkspacePath: "~/dev/schmux-workspaces",
+		WorkspacePath: tmpDir,
 		Repos: []Repo{
 			{Name: "myproject", URL: "git@github.com:user/myproject.git"},
 		},
 		RunTargets: []RunTarget{
-			{Name: "glm-4.7", Type: RunTargetTypePromptable, Command: "~/bin/glm-4.7"},
+			{Name: "test-agent", Type: RunTargetTypePromptable, Command: "echo test"},
 		},
 		Terminal: &TerminalSize{
 			Width:     120,
@@ -42,9 +37,30 @@ func TestLoad(t *testing.T) {
 		t.Fatalf("failed to write config: %v", err)
 	}
 
-	// This test would require mocking the home directory
-	// For now, we'll skip the actual load test
-	t.Skip("requires home directory mocking")
+	// Load with explicit path
+	cfg, err := Load(configPath)
+	if err != nil {
+		t.Fatalf("Load() failed: %v", err)
+	}
+
+	if cfg.WorkspacePath != tmpDir {
+		t.Errorf("WorkspacePath = %q, want %q", cfg.WorkspacePath, tmpDir)
+	}
+
+	// Verify Save() works (path should be set from Load)
+	cfg.WorkspacePath = tmpDir + "/updated"
+	if err := cfg.Save(); err != nil {
+		t.Errorf("Save() failed: %v", err)
+	}
+
+	// Reload and verify
+	cfg2, err := Load(configPath)
+	if err != nil {
+		t.Fatalf("Load() after save failed: %v", err)
+	}
+	if cfg2.WorkspacePath != tmpDir+"/updated" {
+		t.Errorf("WorkspacePath after reload = %q, want %q", cfg2.WorkspacePath, tmpDir+"/updated")
+	}
 }
 
 func TestGetWorkspacePath(t *testing.T) {
@@ -133,10 +149,13 @@ func TestGetTerminalSeedLines(t *testing.T) {
 }
 
 func TestCreateDefault(t *testing.T) {
-	cfg := CreateDefault("/tmp/test")
+	tmpDir := t.TempDir()
+	configPath := filepath.Join(tmpDir, "test-config.json")
+	cfg := CreateDefault(configPath)
 
-	if cfg.WorkspacePath != "/tmp/test" {
-		t.Errorf("WorkspacePath = %q, want %q", cfg.WorkspacePath, "/tmp/test")
+	// WorkspacePath should be empty by default
+	if cfg.WorkspacePath != "" {
+		t.Errorf("WorkspacePath = %q, want empty", cfg.WorkspacePath)
 	}
 
 	if cfg.Terminal == nil {
@@ -153,6 +172,52 @@ func TestCreateDefault(t *testing.T) {
 
 	if cfg.Terminal.SeedLines != DefaultTerminalSeedLines {
 		t.Errorf("SeedLines = %d, want %d", cfg.Terminal.SeedLines, DefaultTerminalSeedLines)
+	}
+
+	// Save should work since path is set
+	cfg2 := CreateDefault(filepath.Join(tmpDir, "saved-config.json"))
+	if err := cfg2.Save(); err != nil {
+		t.Errorf("Save() failed: %v", err)
+	}
+}
+
+func TestSave_RequiresPath(t *testing.T) {
+	// Creating a config directly without a path should fail on Save
+	cfg := &Config{
+		WorkspacePath: "/tmp/test",
+		Terminal: &TerminalSize{
+			Width:     120,
+			Height:    40,
+			SeedLines: 100,
+		},
+	}
+
+	err := cfg.Save()
+	if err == nil {
+		t.Fatal("Save() should fail when path is not set")
+	}
+	if err.Error() != "config path not set: use Load() or CreateDefault() with a path" {
+		t.Errorf("unexpected error: %v", err)
+	}
+}
+
+func TestReload_RequiresPath(t *testing.T) {
+	// Creating a config directly without a path should fail on Reload
+	cfg := &Config{
+		WorkspacePath: "/tmp/test",
+		Terminal: &TerminalSize{
+			Width:     120,
+			Height:    40,
+			SeedLines: 100,
+		},
+	}
+
+	err := cfg.Reload()
+	if err == nil {
+		t.Fatal("Reload() should fail when path is not set")
+	}
+	if err.Error() != "config path not set: use Load() or CreateDefault() with a path" {
+		t.Errorf("unexpected error: %v", err)
 	}
 }
 

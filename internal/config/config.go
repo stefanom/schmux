@@ -120,49 +120,23 @@ const (
 	RunTargetSourceDetected = "detected"
 )
 
-// Load loads the configuration from ~/.schmux/config.json.
-func Load() (*Config, error) {
-	homeDir, err := os.UserHomeDir()
-	if err != nil {
-		return nil, fmt.Errorf("failed to get home directory: %w", err)
-	}
 
-	configPath := filepath.Join(homeDir, ".schmux", "config.json")
-
-	cfg, err := LoadFrom(configPath)
-	if err != nil {
-		if os.IsNotExist(err) {
-			exampleConfig := fmt.Sprintf(`{
-  "workspace_path": "~/schmux-workspaces",
-  "repos": [{"name": "myproject", "url": "git@github.com:user/myproject.git"}],
-  "run_targets": [{"name": "glm-4.7", "type": "promptable", "command": "~/bin/glm-4.7"}],
-  "terminal": {"width": %d, "height": %d, "seed_lines": %d}
-}`, DefaultTerminalWidth, DefaultTerminalHeight, DefaultTerminalSeedLines)
-			return nil, fmt.Errorf("%w: %s\n\nNo config file found. Please create it manually:\n\n  %s\n\nExample config:\n%s\n",
-				ErrConfigNotFound, configPath, configPath, exampleConfig)
-		}
-		return nil, err
-	}
-
-	// Validate terminal config (width, height, and seed_lines are required)
-	if cfg.Terminal == nil {
-		return nil, fmt.Errorf("%w: terminal is required (set terminal.width, terminal.height, and terminal.seed_lines)", ErrInvalidConfig)
-	}
-	if cfg.Terminal.Width <= 0 {
-		return nil, fmt.Errorf("%w: terminal.width must be > 0", ErrInvalidConfig)
-	}
-	if cfg.Terminal.Height <= 0 {
-		return nil, fmt.Errorf("%w: terminal.height must be > 0", ErrInvalidConfig)
-	}
-	if cfg.Terminal.SeedLines <= 0 {
-		return nil, fmt.Errorf("%w: terminal.seed_lines must be > 0", ErrInvalidConfig)
-	}
-
-	return cfg, nil
-}
-
-// Validate validates run targets, variants, and quick launch presets.
+// Validate validates the config including terminal settings, run targets, variants, and quick launch presets.
 func (c *Config) Validate() error {
+	// Validate terminal config (required for daemon operation)
+	if c.Terminal == nil {
+		return fmt.Errorf("%w: terminal is required (set terminal.width, terminal.height, and terminal.seed_lines)", ErrInvalidConfig)
+	}
+	if c.Terminal.Width <= 0 {
+		return fmt.Errorf("%w: terminal.width must be > 0", ErrInvalidConfig)
+	}
+	if c.Terminal.Height <= 0 {
+		return fmt.Errorf("%w: terminal.height must be > 0", ErrInvalidConfig)
+	}
+	if c.Terminal.SeedLines <= 0 {
+		return fmt.Errorf("%w: terminal.seed_lines must be > 0", ErrInvalidConfig)
+	}
+
 	if err := validateRunTargets(c.RunTargets); err != nil {
 		return err
 	}
@@ -274,16 +248,11 @@ func (c *Config) GetTerminalBootstrapLines() int {
 
 // Reload reloads the configuration from disk and replaces this Config struct.
 func (c *Config) Reload() error {
-	configPath := c.path
-	if configPath == "" {
-		homeDir, err := os.UserHomeDir()
-		if err != nil {
-			return fmt.Errorf("failed to get home directory: %w", err)
-		}
-		configPath = filepath.Join(homeDir, ".schmux", "config.json")
+	if c.path == "" {
+		return fmt.Errorf("config path not set: use Load() or CreateDefault() with a path")
 	}
 
-	data, err := os.ReadFile(configPath)
+	data, err := os.ReadFile(c.path)
 	if err != nil {
 		return fmt.Errorf("failed to read config: %w", err)
 	}
@@ -313,10 +282,11 @@ func (c *Config) Reload() error {
 	return nil
 }
 
-// CreateDefault creates a default config with the given workspace path.
-func CreateDefault(workspacePath string) *Config {
+// CreateDefault creates a default config with the given config file path.
+// The path is stored so that subsequent Save() calls write to the same location.
+func CreateDefault(configPath string) *Config {
 	return &Config{
-		WorkspacePath: workspacePath,
+		WorkspacePath: "",
 		Repos:         []Repo{},
 		RunTargets:    []RunTarget{},
 		QuickLaunch:   []QuickLaunch{},
@@ -325,12 +295,13 @@ func CreateDefault(workspacePath string) *Config {
 			Height:    DefaultTerminalHeight,
 			SeedLines: DefaultTerminalSeedLines,
 		},
+		path: configPath,
 	}
 }
 
-// LoadFrom loads the configuration from a specific path.
+// Load loads the configuration from the specified path.
 // The path is stored so that subsequent Save() calls write to the same location.
-func LoadFrom(configPath string) (*Config, error) {
+func Load(configPath string) (*Config, error) {
 	data, err := os.ReadFile(configPath)
 	if err != nil {
 		return nil, fmt.Errorf("failed to read config: %w", err)
@@ -364,25 +335,14 @@ func LoadFrom(configPath string) (*Config, error) {
 	return &cfg, nil
 }
 
-// SetPath sets the file path for this config. Used in tests to specify where Save() should write.
-func (c *Config) SetPath(p string) {
-	c.path = p
-}
-
-// Save writes the config to the path it was loaded from.
-// If no path is set, uses the default ~/.schmux/config.json.
+// Save writes the config to the path it was loaded from or created with.
 func (c *Config) Save() error {
-	configPath := c.path
-	if configPath == "" {
-		homeDir, err := os.UserHomeDir()
-		if err != nil {
-			return fmt.Errorf("failed to get home directory: %w", err)
-		}
-		configPath = filepath.Join(homeDir, ".schmux", "config.json")
+	if c.path == "" {
+		return fmt.Errorf("config path not set: use Load() or CreateDefault() with a path")
 	}
 
 	// Ensure the directory exists
-	schmuxDir := filepath.Dir(configPath)
+	schmuxDir := filepath.Dir(c.path)
 	if schmuxDir != "." && schmuxDir != "" {
 		if err := os.MkdirAll(schmuxDir, 0755); err != nil {
 			return fmt.Errorf("failed to create config directory: %w", err)
@@ -396,12 +356,12 @@ func (c *Config) Save() error {
 	}
 
 	// Write to a temporary file first, then rename for atomicity
-	tmpPath := configPath + ".tmp"
+	tmpPath := c.path + ".tmp"
 	if err := os.WriteFile(tmpPath, data, 0644); err != nil {
 		return fmt.Errorf("failed to write config: %w", err)
 	}
 
-	if err := os.Rename(tmpPath, configPath); err != nil {
+	if err := os.Rename(tmpPath, c.path); err != nil {
 		os.Remove(tmpPath) // Clean up temp file
 		return fmt.Errorf("failed to save config: %w", err)
 	}
@@ -422,6 +382,10 @@ func ConfigExists() bool {
 
 // EnsureExists checks if config exists, and offers to create one interactively if not.
 // Returns true if config exists or was created, false if user declined or error occurred.
+//
+// Note: There is a TOCTOU race between ConfigExists() and Save(). If another process
+// creates the config file between the check and save, this will overwrite it.
+// This is acceptable for an interactive first-run flow where racing is unlikely.
 func EnsureExists() (bool, error) {
 	if ConfigExists() {
 		return true, nil
@@ -450,16 +414,15 @@ func EnsureExists() (bool, error) {
 		return false, nil
 	}
 
-	// Detect available AI agent tools
-	// Create default config with empty workspace path (user will set in wizard)
-	cfg := CreateDefault("")
+	// Create default config with the config path set
+	configPath := filepath.Join(homeDir, ".schmux", "config.json")
+	cfg := CreateDefault(configPath)
 
 	// Save config
 	if err := cfg.Save(); err != nil {
 		return false, fmt.Errorf("failed to save config: %w", err)
 	}
 
-	configPath := filepath.Join(homeDir, ".schmux", "config.json")
 	fmt.Printf("Config created at %s\n", configPath)
 	fmt.Println()
 	fmt.Println("Open http://localhost:7337 to complete setup in the web dashboard")
