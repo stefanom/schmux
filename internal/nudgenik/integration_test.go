@@ -33,7 +33,12 @@ func TestNudgenikClassification(t *testing.T) {
 	}
 
 	// Load config to access variants and run targets
-	cfg, err := config.Load()
+	homeDir, err := os.UserHomeDir()
+	if err != nil {
+		t.Fatalf("get home dir: %v", err)
+	}
+	configPath := filepath.Join(homeDir, ".schmux", "config.json")
+	cfg, err := config.Load(configPath)
 	if err != nil {
 		t.Fatalf("load config: %v", err)
 	}

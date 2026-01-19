@@ -262,17 +262,14 @@ func Run(background bool) error {
 	}
 
 	// Load config
-	cfg, err := config.Load()
+	configPath := filepath.Join(schmuxDir, "config.json")
+	cfg, err := config.Load(configPath)
 	if err != nil {
 		return fmt.Errorf("failed to load config: %w", err)
 	}
 
 	// Compute state path
-	homeDir, err = os.UserHomeDir()
-	if err != nil {
-		return fmt.Errorf("failed to get home directory: %w", err)
-	}
-	statePath := filepath.Join(homeDir, ".schmux", "state.json")
+	statePath := filepath.Join(schmuxDir, "state.json")
 
 	// Load state
 	st, err := state.Load(statePath)
