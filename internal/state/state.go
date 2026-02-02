@@ -26,6 +26,7 @@ type Workspace struct {
 	Repo            string `json:"repo"`
 	Branch          string `json:"branch"`
 	Path            string `json:"path"`
+	External        bool   `json:"external,omitempty"` // true if workspace is externally managed (no VCS operations)
 	GitDirty        bool   `json:"-"`
 	GitAhead        int    `json:"-"`
 	GitBehind       int    `json:"-"`
@@ -42,15 +43,16 @@ type WorktreeBase struct {
 
 // Session represents a run target session.
 type Session struct {
-	ID           string    `json:"id"`
-	WorkspaceID  string    `json:"workspace_id"`
-	Target       string    `json:"target"`
-	Nickname     string    `json:"nickname,omitempty"` // Optional human-friendly name
-	TmuxSession  string    `json:"tmux_session"`
-	CreatedAt    time.Time `json:"created_at"`
-	Pid          int       `json:"pid"`             // PID of the target process from tmux pane
-	LastOutputAt time.Time `json:"-"`               // Last time terminal had new output (in-memory only, not persisted)
-	Nudge        string    `json:"nudge,omitempty"` // NudgeNik consultation result
+	ID            string    `json:"id"`
+	WorkspaceID   string    `json:"workspace_id"`
+	Target        string    `json:"target"`
+	Nickname      string    `json:"nickname,omitempty"` // Optional human-friendly name
+	TmuxSession   string    `json:"tmux_session"`
+	CreatedAt     time.Time `json:"created_at"`
+	Pid           int       `json:"pid"`                      // PID of the target process from tmux pane
+	EnvironmentID string    `json:"environment_id,omitempty"` // Remote environment ID (e.g., OD hostname)
+	LastOutputAt  time.Time `json:"-"`                        // Last time terminal had new output (in-memory only, not persisted)
+	Nudge         string    `json:"nudge,omitempty"`          // NudgeNik consultation result
 }
 
 // New creates a new empty State instance.

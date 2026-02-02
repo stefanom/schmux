@@ -15,6 +15,7 @@ import (
 // EnsureOriginQueries ensures origin query repos exist for all configured repos.
 // These are bare clones stored in ~/.schmux/query/ used for branch/commit queries
 // without needing a workspace checked out.
+// Ondemand repos are skipped since they use external VCS (e.g., Sapling) rather than git.
 func (m *Manager) EnsureOriginQueries(ctx context.Context) error {
 	queryRepoPath := m.config.GetQueryRepoPath()
 	if queryRepoPath == "" {
@@ -27,6 +28,11 @@ func (m *Manager) EnsureOriginQueries(ctx context.Context) error {
 	}
 
 	for _, repo := range m.config.GetRepos() {
+		// Skip ondemand repos - they use external VCS, not git
+		if repo.IsOnDemand() {
+			continue
+		}
+
 		queryRepoPath, err := m.ensureOriginQueryRepo(ctx, repo.URL)
 		if err != nil {
 			fmt.Printf("[workspace] warning: %v\n", err)
@@ -158,6 +164,7 @@ func (m *Manager) originQueryRepoNeedsRepair(ctx context.Context, queryRepoPath 
 }
 
 // FetchOriginQueries fetches updates for all origin query repos.
+// Ondemand repos are skipped since they use external VCS.
 func (m *Manager) FetchOriginQueries(ctx context.Context) {
 	queryRepoDir := m.config.GetQueryRepoPath()
 	if queryRepoDir == "" {
@@ -165,6 +172,11 @@ func (m *Manager) FetchOriginQueries(ctx context.Context) {
 	}
 
 	for _, repo := range m.config.GetRepos() {
+		// Skip ondemand repos - they use external VCS, not git
+		if repo.IsOnDemand() {
+			continue
+		}
+
 		repoName := extractRepoName(repo.URL)
 		queryRepoPath := filepath.Join(queryRepoDir, repoName+".git")
 
@@ -193,6 +205,7 @@ func (m *Manager) FetchOriginQueries(ctx context.Context) {
 }
 
 // GetRecentBranches returns recent branches from all bare clones, sorted by commit date.
+// Ondemand repos are skipped since they use external VCS.
 func (m *Manager) GetRecentBranches(ctx context.Context, limit int) ([]RecentBranch, error) {
 	if limit <= 0 {
 		limit = 10
@@ -206,6 +219,11 @@ func (m *Manager) GetRecentBranches(ctx context.Context, limit int) ([]RecentBra
 	var allBranches []RecentBranch
 
 	for _, repo := range m.config.GetRepos() {
+		// Skip ondemand repos - they use external VCS, not git
+		if repo.IsOnDemand() {
+			continue
+		}
+
 		repoName := extractRepoName(repo.URL)
 		queryRepoPath := filepath.Join(queryRepoDir, repoName+".git")
 

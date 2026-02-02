@@ -23,6 +23,12 @@ const TABS = ['Workspaces', 'Sessions', 'Quick Launch', 'Code Review', 'Advanced
 // Map step number to URL slug
 const TAB_SLUGS = ['workspaces', 'sessions', 'quicklaunch', 'codereview', 'advanced'];
 
+// Default OnDemand runner configuration
+const DEFAULT_ONDEMAND_HOSTNAME_REGEX = '^([0-9]+\\.od).*';
+const DEFAULT_ONDEMAND_PROVISION = 'dev connect -t {{.Flavor}} --no-connect';
+const DEFAULT_ONDEMAND_LIST_ENVIRONMENTS = 'ondemand list';
+const DEFAULT_ONDEMAND_CONNECTION_PREFIX = 'dev connect -n {{.Hostname}} --';
+
 // Helper: step number -> slug
 const stepToSlug = (step: number) => TAB_SLUGS[step - 1];
 
@@ -74,6 +80,10 @@ type ConfigSnapshot = {
   authSessionTTLMinutes: number;
   authTlsCertPath: string;
   authTlsKeyPath: string;
+  ondemandRunnerHostnameRegex: string;
+  ondemandRunnerProvision: string;
+  ondemandRunnerListEnvironments: string;
+  ondemandRunnerConnectionPrefix: string;
 };
 
 type ModelModalState = {
@@ -186,6 +196,12 @@ export default function ConfigPage() {
   const [authWarnings, setAuthWarnings] = useState<string[]>([]);
   const [apiNeedsRestart, setApiNeedsRestart] = useState(false);
 
+  // OnDemand Runner state (for repos with mode=ondemand)
+  const [ondemandRunnerHostnameRegex, setOndemandRunnerHostnameRegex] = useState(DEFAULT_ONDEMAND_HOSTNAME_REGEX);
+  const [ondemandRunnerProvision, setOndemandRunnerProvision] = useState(DEFAULT_ONDEMAND_PROVISION);
+  const [ondemandRunnerListEnvironments, setOndemandRunnerListEnvironments] = useState(DEFAULT_ONDEMAND_LIST_ENVIRONMENTS);
+  const [ondemandRunnerConnectionPrefix, setOndemandRunnerConnectionPrefix] = useState(DEFAULT_ONDEMAND_CONNECTION_PREFIX);
+
   // Overlays state
   const [overlays, setOverlays] = useState<OverlayInfo[]>([]);
   const [loadingOverlays, setLoadingOverlays] = useState(true);
@@ -232,6 +248,10 @@ export default function ConfigPage() {
       authSessionTTLMinutes,
       authTlsCertPath,
       authTlsKeyPath,
+      ondemandRunnerHostnameRegex,
+      ondemandRunnerProvision,
+      ondemandRunnerListEnvironments,
+      ondemandRunnerConnectionPrefix,
     };
 
     // Deep comparison for arrays
@@ -272,13 +292,20 @@ export default function ConfigPage() {
       current.authPublicBaseURL !== originalConfig.authPublicBaseURL ||
       current.authSessionTTLMinutes !== originalConfig.authSessionTTLMinutes ||
       current.authTlsCertPath !== originalConfig.authTlsCertPath ||
-      current.authTlsKeyPath !== originalConfig.authTlsKeyPath
+      current.authTlsKeyPath !== originalConfig.authTlsKeyPath ||
+      current.ondemandRunnerHostnameRegex !== originalConfig.ondemandRunnerHostnameRegex ||
+      current.ondemandRunnerProvision !== originalConfig.ondemandRunnerProvision ||
+      current.ondemandRunnerListEnvironments !== originalConfig.ondemandRunnerListEnvironments ||
+      current.ondemandRunnerConnectionPrefix !== originalConfig.ondemandRunnerConnectionPrefix
     );
   };
 
   // Input states for new items
   const [newRepoName, setNewRepoName] = useState('');
   const [newRepoUrl, setNewRepoUrl] = useState('');
+  const [newRepoMode, setNewRepoMode] = useState<'local' | 'ondemand'>('local');
+  const [newRepoFlavor, setNewRepoFlavor] = useState('');
+  const [newRepoWorkspacePath, setNewRepoWorkspacePath] = useState('');
   const [newPromptableName, setNewPromptableName] = useState('');
   const [newPromptableCommand, setNewPromptableCommand] = useState('');
   const [newCommandName, setNewCommandName] = useState('');
@@ -372,6 +399,12 @@ export default function ConfigPage() {
         setAuthWarnings([]);
         setApiNeedsRestart(data.needs_restart || false);
 
+        // OnDemand runner configuration (use defaults if not set)
+        setOndemandRunnerHostnameRegex(data.ondemand_runner?.hostname_regex || DEFAULT_ONDEMAND_HOSTNAME_REGEX);
+        setOndemandRunnerProvision(data.ondemand_runner?.provision || DEFAULT_ONDEMAND_PROVISION);
+        setOndemandRunnerListEnvironments(data.ondemand_runner?.list_environments || DEFAULT_ONDEMAND_LIST_ENVIRONMENTS);
+        setOndemandRunnerConnectionPrefix(data.ondemand_runner?.connection_prefix || DEFAULT_ONDEMAND_CONNECTION_PREFIX);
+
         // Set original config for change detection (non-wizard mode)
         if (!isFirstRun) {
           setOriginalConfig({
@@ -408,6 +441,10 @@ export default function ConfigPage() {
             authSessionTTLMinutes: data.access_control?.session_ttl_minutes || 1440,
             authTlsCertPath: data.network?.tls?.cert_path || '',
             authTlsKeyPath: data.network?.tls?.key_path || '',
+            ondemandRunnerHostnameRegex: data.ondemand_runner?.hostname_regex || DEFAULT_ONDEMAND_HOSTNAME_REGEX,
+            ondemandRunnerProvision: data.ondemand_runner?.provision || DEFAULT_ONDEMAND_PROVISION,
+            ondemandRunnerListEnvironments: data.ondemand_runner?.list_environments || DEFAULT_ONDEMAND_LIST_ENVIRONMENTS,
+            ondemandRunnerConnectionPrefix: data.ondemand_runner?.connection_prefix || DEFAULT_ONDEMAND_CONNECTION_PREFIX,
           });
         }
 
@@ -583,6 +620,13 @@ export default function ConfigPage() {
           provider: authProvider,
           session_ttl_minutes: authSessionTTLMinutes,
         },
+        ondemand_runner: {
+          type: 'external',
+          hostname_regex: ondemandRunnerHostnameRegex,
+          provision: ondemandRunnerProvision,
+          list_environments: ondemandRunnerListEnvironments,
+          connection_prefix: ondemandRunnerConnectionPrefix,
+        },
       };
 
       const result = await updateConfig(updateRequest);
@@ -631,6 +675,10 @@ export default function ConfigPage() {
           authSessionTTLMinutes,
           authTlsCertPath,
           authTlsKeyPath,
+          ondemandRunnerHostnameRegex,
+          ondemandRunnerProvision,
+          ondemandRunnerListEnvironments,
+          ondemandRunnerConnectionPrefix,
         });
       }
 
@@ -672,17 +720,43 @@ export default function ConfigPage() {
       toastError('Repo name is required');
       return;
     }
-    if (!newRepoUrl.trim()) {
-      toastError('Repo URL is required');
-      return;
-    }
     if (repos.some(r => r.name === newRepoName)) {
       toastError('Repo name already exists');
       return;
     }
-    setRepos([...repos, { name: newRepoName, url: newRepoUrl }]);
+    if (newRepoMode === 'local') {
+      if (!newRepoUrl.trim()) {
+        toastError('Git URL is required for local repos');
+        return;
+      }
+    }
+    if (newRepoMode === 'ondemand') {
+      if (!newRepoFlavor.trim()) {
+        toastError('Flavor is required for ondemand repos');
+        return;
+      }
+      if (!newRepoWorkspacePath.trim()) {
+        toastError('Workspace path is required for ondemand repos');
+        return;
+      }
+    }
+    const newRepo: RepoResponse = {
+      name: newRepoName,
+      url: newRepoMode === 'ondemand' ? `local:${newRepoName}` : newRepoUrl,
+      mode: newRepoMode,
+    };
+    if (newRepoMode === 'ondemand') {
+      newRepo.ondemand = {
+        flavor: newRepoFlavor,
+        workspace_path: newRepoWorkspacePath,
+      };
+    }
+    setRepos([...repos, newRepo]);
     setNewRepoName('');
     setNewRepoUrl('');
+    setNewRepoMode('local');
+    setNewRepoFlavor('');
+    setNewRepoWorkspacePath('');
   };
 
   const removeRepo = async (name) => {
@@ -1239,19 +1313,47 @@ export default function ConfigPage() {
                     const overlay = overlays.find(o => o.repo_name === repo.name);
                     const overlayPath = overlay?.path || `~/.schmux/overlays/${repo.name}`;
                     const fileCount = overlay?.exists ? overlay.file_count : 0;
+                    const isOnDemand = repo.mode === 'ondemand';
 
                     return (
                       <div className="item-list__item" key={repo.name}>
                         <div className="item-list__item-primary">
-                          <span className="item-list__item-name">{repo.name}</span>
-                          <span className="item-list__item-detail">{repo.url}</span>
-                          <span className="item-list__item-detail" style={{ fontSize: '0.85em', opacity: 0.8 }}>
-                            Overlay: {overlayPath} {overlay?.exists ? (
-                              <span style={{ color: 'var(--color-success)' }}>({fileCount} files)</span>
-                            ) : (
-                              <span style={{ color: 'var(--color-text-muted)' }}>(empty)</span>
-                            )}
-                          </span>
+                          <div style={{ display: 'flex', alignItems: 'center', gap: '0.5rem' }}>
+                            <span className="item-list__item-name" style={{ flexShrink: 0 }}>{repo.name}</span>
+                            <span style={{
+                              fontSize: '0.7rem',
+                              padding: '0.15rem 0.5rem',
+                              borderRadius: '4px',
+                              backgroundColor: isOnDemand ? 'var(--color-warning-bg, #fef3c7)' : 'var(--color-info-bg, #dbeafe)',
+                              color: isOnDemand ? 'var(--color-warning, #d97706)' : 'var(--color-info, #2563eb)',
+                              fontWeight: 500,
+                              textTransform: 'uppercase',
+                              letterSpacing: '0.05em',
+                            }}>
+                              {isOnDemand ? 'ondemand' : 'local'}
+                            </span>
+                          </div>
+                          {isOnDemand && repo.ondemand ? (
+                            <>
+                              <span className="item-list__item-detail">
+                                Flavor: <code style={{ backgroundColor: 'var(--color-bg-secondary)', padding: '0.1rem 0.3rem', borderRadius: '3px' }}>{repo.ondemand.flavor}</code>
+                              </span>
+                              <span className="item-list__item-detail">
+                                Path: <code style={{ backgroundColor: 'var(--color-bg-secondary)', padding: '0.1rem 0.3rem', borderRadius: '3px' }}>{repo.ondemand.workspace_path}</code>
+                              </span>
+                            </>
+                          ) : (
+                            <>
+                              <span className="item-list__item-detail">{repo.url}</span>
+                              <span className="item-list__item-detail" style={{ fontSize: '0.85em', opacity: 0.8 }}>
+                                Overlay: {overlayPath} {overlay?.exists ? (
+                                  <span style={{ color: 'var(--color-success)' }}>({fileCount} files)</span>
+                                ) : (
+                                  <span style={{ color: 'var(--color-text-muted)' }}>(empty)</span>
+                                )}
+                              </span>
+                            </>
+                          )}
                         </div>
                         <button
                           className="btn btn--sm btn--danger"
@@ -1270,49 +1372,73 @@ export default function ConfigPage() {
                   <input
                     type="text"
                     className="input"
-                    placeholder="Name"
+                    placeholder="Repository name"
                     value={newRepoName}
                     onChange={(e) => setNewRepoName(e.target.value)}
                     onKeyDown={(e) => e.key === 'Enter' && addRepo()}
+                    style={{ flex: 2 }}
                   />
-                  <input
-                    type="text"
-                    className="input"
-                    placeholder="git@github.com:user/repo.git"
-                    value={newRepoUrl}
-                    onChange={(e) => setNewRepoUrl(e.target.value)}
-                    onKeyDown={(e) => e.key === 'Enter' && addRepo()}
-                  />
-                </div>
-                <button type="button" className="btn btn--sm btn--primary" onClick={addRepo}>Add</button>
-              </div>
-
-              <h3>Source Code Management</h3>
-              <p className="wizard-step-content__description">
-                How schmux creates workspace directories for each session.
-              </p>
-              <div className="form-group">
-                <select
-                  className="select"
-                  value={sourceCodeManagement}
-                  onChange={(e) => setSourceCodeManager(e.target.value)}
-                >
-                  <option value="git-worktree">git worktree (default)</option>
-                  <option value="git">git</option>
-                </select>
-                <p className="form-group__hint">
-                  {sourceCodeManagement === 'git-worktree' ? (
+                  <select
+                    className="select"
+                    value={newRepoMode}
+                    onChange={(e) => setNewRepoMode(e.target.value as 'local' | 'ondemand')}
+                    style={{ width: 'auto', minWidth: 'unset' }}
+                  >
+                    <option value="local">Local</option>
+                    <option value="ondemand">OnDemand</option>
+                  </select>
+                  {newRepoMode === 'local' && (
+                    <input
+                      type="text"
+                      className="input"
+                      placeholder="git@github.com:user/repo.git"
+                      value={newRepoUrl}
+                      onChange={(e) => setNewRepoUrl(e.target.value)}
+                      onKeyDown={(e) => e.key === 'Enter' && addRepo()}
+                      style={{ flex: 3 }}
+                    />
+                  )}
+                  {newRepoMode === 'ondemand' && (
                     <>
-                      <strong>git worktree:</strong> Efficient disk usage, shares repo history across workspaces.
-                      Each branch can only be used by one workspace at a time.
-                    </>
-                  ) : (
-                    <>
-                      <strong>git:</strong> Independent clones for each workspace.
-                      Multiple workspaces can use the same branch.
+                      <input
+                        type="text"
+                        className="input"
+                        placeholder="Flavor"
+                        value={newRepoFlavor}
+                        onChange={(e) => setNewRepoFlavor(e.target.value)}
+                        style={{ flex: 1 }}
+                      />
+                      <input
+                        type="text"
+                        className="input"
+                        placeholder="~/path/to/repo"
+                        value={newRepoWorkspacePath}
+                        onChange={(e) => setNewRepoWorkspacePath(e.target.value)}
+                        style={{ flex: 1 }}
+                      />
                     </>
                   )}
-                </p>
+                </div>
+                {newRepoMode === 'local' && (
+                  <div style={{ marginTop: '0.5rem', display: 'flex', alignItems: 'center', gap: '0.5rem' }}>
+                    <label style={{ fontSize: '0.85rem', color: 'var(--color-text-muted)' }}>Clone:</label>
+                    <select
+                      className="select"
+                      value={sourceCodeManagement}
+                      onChange={(e) => setSourceCodeManager(e.target.value)}
+                      style={{ width: 'auto', minWidth: 'unset', fontSize: '0.85rem', padding: '0.25rem 0.5rem' }}
+                    >
+                      <option value="git-worktree">worktree</option>
+                      <option value="git">full clone</option>
+                    </select>
+                    <span style={{ fontSize: '0.8rem', color: 'var(--color-text-muted)' }}>
+                      {sourceCodeManagement === 'git-worktree'
+                        ? '(shares history, one branch per workspace)'
+                        : '(independent, same branch allowed)'}
+                    </span>
+                  </div>
+                )}
+                <button type="button" className="btn btn--sm btn--primary" onClick={addRepo} style={{ marginTop: '0.5rem' }}>Add</button>
               </div>
 
               {stepErrors[1] && (
@@ -2376,6 +2502,75 @@ export default function ConfigPage() {
                       />
                       <p className="form-group__hint">Target log size after rotation - keeps the tail (default: 1MB)</p>
                     </div>
+                  </div>
+                </div>
+              </div>
+
+              <div className="settings-section">
+                <div className="settings-section__header">
+                  <h3 className="settings-section__title">OnDemand Runner</h3>
+                </div>
+                <div className="settings-section__body">
+                  <p className="form-group__hint" style={{ marginBottom: 'var(--spacing-md)' }}>
+                    Configure how to run sessions on OnDemand repositories (repos with mode &quot;ondemand&quot;).
+                    The connection prefix is prepended to all tmux commands to route them through your remote connection tool.
+                  </p>
+
+                  <div className="form-group">
+                    <label className="form-group__label">Provision Command</label>
+                    <input
+                      type="text"
+                      className="input input--monospace"
+                      placeholder="dev connect -t {{.Flavor}} --no-connect"
+                      value={ondemandRunnerProvision}
+                      onChange={(e) => setOndemandRunnerProvision(e.target.value)}
+                    />
+                    <p className="form-group__hint">
+                      Command to provision a new environment. Template var: <code>{'{{.Flavor}}'}</code>
+                    </p>
+                  </div>
+
+                  <div className="form-group">
+                    <label className="form-group__label">List Environments Command</label>
+                    <input
+                      type="text"
+                      className="input input--monospace"
+                      placeholder="ondemand list"
+                      value={ondemandRunnerListEnvironments}
+                      onChange={(e) => setOndemandRunnerListEnvironments(e.target.value)}
+                    />
+                    <p className="form-group__hint">
+                      Command to list available environments. Output is parsed using hostname regex below.
+                    </p>
+                  </div>
+
+                  <div className="form-group">
+                    <label className="form-group__label">Connection Prefix</label>
+                    <input
+                      type="text"
+                      className="input input--monospace"
+                      placeholder="dev connect -n {{.Hostname}} --"
+                      value={ondemandRunnerConnectionPrefix}
+                      onChange={(e) => setOndemandRunnerConnectionPrefix(e.target.value)}
+                    />
+                    <p className="form-group__hint">
+                      Prefix prepended to tmux commands to route them through the remote connection.
+                      Template var: <code>{'{{.Hostname}}'}</code>. Example: <code>dev connect -n {'{{.Hostname}}'} --</code> or <code>ssh {'{{.Hostname}}'}</code>
+                    </p>
+                  </div>
+
+                  <div className="form-group">
+                    <label className="form-group__label">Hostname Regex</label>
+                    <input
+                      type="text"
+                      className="input"
+                      placeholder="^([0-9]+\.od).*"
+                      value={ondemandRunnerHostnameRegex}
+                      onChange={(e) => setOndemandRunnerHostnameRegex(e.target.value)}
+                    />
+                    <p className="form-group__hint">
+                      Regex to extract hostname from list_environments output. First capture group is used.
+                    </p>
                   </div>
                 </div>
               </div>

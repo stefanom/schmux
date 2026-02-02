@@ -19,9 +19,11 @@ import (
 	"github.com/sergeknystautas/schmux/internal/dashboard"
 	"github.com/sergeknystautas/schmux/internal/detect"
 	"github.com/sergeknystautas/schmux/internal/nudgenik"
+	"github.com/sergeknystautas/schmux/internal/runner"
 	"github.com/sergeknystautas/schmux/internal/session"
 	"github.com/sergeknystautas/schmux/internal/state"
 	"github.com/sergeknystautas/schmux/internal/tmux"
+	"github.com/sergeknystautas/schmux/internal/vcs"
 	"github.com/sergeknystautas/schmux/internal/workspace"
 )
 
@@ -300,9 +302,19 @@ func Run(background bool) error {
 		st.Save()
 	}
 
-	// Create managers
-	wm := workspace.New(cfg, st, statePath)
-	sm := session.New(cfg, st, statePath, wm)
+	// Create managers with configured runner and VCS
+	// Local tmux runner is used by default; ondemand repos use ExternalRunner
+	// which is created per-session in the session manager based on repo config
+	sessionRunner := runner.NewLocalTmuxRunner()
+	fmt.Printf("[daemon] using local tmux session runner\n")
+
+	// Configure version control - always use git for local repos
+	// (ondemand repos bypass VCS entirely via workspace manager)
+	versionControl := vcs.NewGitVCS()
+	fmt.Printf("[daemon] using git version control for local repos\n")
+
+	wm := workspace.New(cfg, st, statePath, versionControl)
+	sm := session.New(cfg, st, statePath, wm, sessionRunner)
 
 	// Ensure overlay directories exist for all repos
 	if err := wm.EnsureOverlayDirs(cfg.GetRepos()); err != nil {
@@ -398,8 +410,11 @@ func Run(background bool) error {
 	gitWatcher := workspace.NewGitWatcher(cfg, wm, server.BroadcastSessions)
 	if gitWatcher != nil {
 		wm.SetGitWatcher(gitWatcher)
-		// Add watches for all existing workspaces
+		// Add watches for all existing workspaces (skip external/ondemand ones)
 		for _, w := range st.GetWorkspaces() {
+			if w.External {
+				continue // Skip external workspaces - they use external VCS, not git
+			}
 			gitWatcher.AddWorkspace(w.ID, w.Path)
 		}
 		gitWatcher.Start()

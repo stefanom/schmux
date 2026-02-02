@@ -13,6 +13,7 @@ import (
 	"github.com/sergeknystautas/schmux/internal/config"
 	"github.com/sergeknystautas/schmux/internal/difftool"
 	"github.com/sergeknystautas/schmux/internal/state"
+	"github.com/sergeknystautas/schmux/internal/vcs"
 )
 
 const (
@@ -25,6 +26,7 @@ const (
 type Manager struct {
 	config               *config.Config
 	state                state.StateStore
+	vcs                  vcs.VersionControl
 	workspaceConfigs     map[string]*contracts.RepoConfig // workspace ID -> workspace config
 	workspaceConfigsMu   sync.RWMutex
 	configStates         map[string]configState // workspace path -> last known config file state
@@ -38,10 +40,15 @@ type Manager struct {
 }
 
 // New creates a new workspace manager.
-func New(cfg *config.Config, st state.StateStore, statePath string) *Manager {
+// If v is nil, a GitVCS is used by default.
+func New(cfg *config.Config, st state.StateStore, statePath string, v vcs.VersionControl) *Manager {
+	if v == nil {
+		v = vcs.NewGitVCS()
+	}
 	m := &Manager{
 		config:           cfg,
 		state:            st,
+		vcs:              v,
 		workspaceConfigs: make(map[string]*contracts.RepoConfig), // cache for .schmux/config.json per workspace
 		configStates:     make(map[string]configState),           // track config file mtime to detect changes
 		repoLocks:        make(map[string]*sync.Mutex),
@@ -58,6 +65,12 @@ func New(cfg *config.Config, st state.StateStore, statePath string) *Manager {
 // SetGitWatcher sets the git watcher for the manager.
 func (m *Manager) SetGitWatcher(gw *GitWatcher) {
 	m.gitWatcher = gw
+}
+
+// IsVCSManaged returns true if version control is managed by Schmux.
+// Returns false when VCS is external (e.g., Meta's internal systems).
+func (m *Manager) IsVCSManaged() bool {
+	return m.vcs.IsManaged()
 }
 
 func (m *Manager) repoLock(repoURL string) *sync.Mutex {
@@ -138,7 +151,14 @@ func (m *Manager) hasActiveSessions(workspaceID string) bool {
 // GetOrCreate finds an existing workspace for the repoURL/branch or creates a new one.
 // Returns a workspace ready for use (fetch/pull/clean already done).
 // For local repositories (URL format "local:{name}"), always creates a fresh workspace.
+// For ondemand repos, creates an external workspace pointing to the configured path.
 func (m *Manager) GetOrCreate(ctx context.Context, repoURL, branch string) (*state.Workspace, error) {
+	// Check if this is an ondemand repo
+	repoConfig, found := m.config.FindRepoByURL(repoURL)
+	if found && repoConfig.IsOnDemand() {
+		return m.getOrCreateOnDemandWorkspace(ctx, repoConfig, branch)
+	}
+
 	if err := ValidateBranchName(branch); err != nil {
 		return nil, fmt.Errorf("failed to get workspace: %w", err)
 	}
@@ -206,6 +226,60 @@ func (m *Manager) GetOrCreate(ctx context.Context, repoURL, branch string) (*sta
 	}
 
 	return w, nil
+}
+
+// getOrCreateOnDemandWorkspace handles workspace creation for ondemand repos.
+// These repos use externally-managed VCS (e.g., sapling) and remote execution environments.
+// No git clone or worktree is created - we just register a workspace pointing to the configured path.
+func (m *Manager) getOrCreateOnDemandWorkspace(ctx context.Context, repo config.Repo, branch string) (*state.Workspace, error) {
+	if repo.OnDemand == nil {
+		return nil, fmt.Errorf("repo %s is marked as ondemand but has no ondemand config", repo.Name)
+	}
+
+	// Expand workspace path (handle ~)
+	workspacePath := repo.OnDemand.WorkspacePath
+	if strings.HasPrefix(workspacePath, "~") {
+		homeDir, err := os.UserHomeDir()
+		if err != nil {
+			return nil, fmt.Errorf("failed to expand workspace path: %w", err)
+		}
+		workspacePath = filepath.Join(homeDir, workspacePath[1:])
+	}
+
+	lock := m.repoLock(repo.URL)
+	lock.Lock()
+	defer lock.Unlock()
+
+	// For ondemand repos, all sessions share the same workspace (external path)
+	// Look for existing workspace
+	for _, w := range m.state.GetWorkspaces() {
+		if w.Repo == repo.URL && w.External {
+			// Reuse existing external workspace (don't prepare - VCS is external)
+			fmt.Printf("[workspace] reusing ondemand workspace: id=%s path=%s\n", w.ID, w.Path)
+			return &w, nil
+		}
+	}
+
+	// Create new external workspace
+	workspaceID := fmt.Sprintf("%s-"+workspaceNumberFormat, repo.Name, 1)
+
+	w := state.Workspace{
+		ID:       workspaceID,
+		Repo:     repo.URL,
+		Branch:   branch, // May not be used for ondemand
+		Path:     workspacePath,
+		External: true,
+	}
+
+	if err := m.state.AddWorkspace(w); err != nil {
+		return nil, fmt.Errorf("failed to add workspace to state: %w", err)
+	}
+	if err := m.state.Save(); err != nil {
+		return nil, fmt.Errorf("failed to save state: %w", err)
+	}
+
+	fmt.Printf("[workspace] created ondemand workspace: id=%s path=%s repo=%s\n", w.ID, w.Path, repo.URL)
+	return &w, nil
 }
 
 // create creates a new workspace directory for the given repoURL using git worktrees.
@@ -525,10 +599,17 @@ func extractWorkspaceNumber(id string) (int, error) {
 
 // UpdateGitStatus refreshes the git status for a single workspace.
 // Returns the updated workspace or an error.
+// For external (ondemand) workspaces, git status is not applicable.
 func (m *Manager) UpdateGitStatus(ctx context.Context, workspaceID string) (*state.Workspace, error) {
 	w, found := m.state.GetWorkspace(workspaceID)
 	if !found {
 		return nil, fmt.Errorf("workspace not found: %s", workspaceID)
+	}
+
+	// Skip git operations for external (ondemand) workspaces
+	// They use external VCS like Sapling, not git
+	if w.External {
+		return &w, nil
 	}
 
 	// Calculate git status (safe to run even with active sessions)

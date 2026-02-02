@@ -69,6 +69,9 @@ type Config struct {
 	Xterm                      *XtermConfig           `json:"xterm,omitempty"`
 	Network                    *NetworkConfig         `json:"network,omitempty"`
 	AccessControl              *AccessControlConfig   `json:"access_control,omitempty"`
+	SessionRunner              *SessionRunnerConfig   `json:"session_runner,omitempty"`  // Deprecated: use OnDemandRunner
+	OnDemandRunner             *SessionRunnerConfig   `json:"ondemand_runner,omitempty"` // Command templates for ondemand repos
+	VersionControl             *VersionControlConfig  `json:"version_control,omitempty"` // Deprecated: VCS is now implied by repo mode
 
 	// path is the file path where this config was loaded from or should be saved to.
 	// Not serialized to JSON.
@@ -140,10 +143,63 @@ type AccessControlConfig struct {
 	SessionTTLMinutes int    `json:"session_ttl_minutes,omitempty"`
 }
 
+// SessionRunnerConfig controls how sessions are executed.
+type SessionRunnerConfig struct {
+	Type             string `json:"type"`                        // "local_tmux" (default) or "external"
+	Provision        string `json:"provision,omitempty"`         // Command to provision environment
+	ListEnvironments string `json:"list_environments,omitempty"` // Command to list environments
+	ConnectionPrefix string `json:"connection_prefix,omitempty"` // Prefix for tmux commands (e.g., "dev connect -n {{.Hostname}} --")
+	HostnameRegex    string `json:"hostname_regex,omitempty"`    // Regex to extract hostname from list output
+}
+
+// VersionControlConfig controls how version control is handled.
+type VersionControlConfig struct {
+	Type string `json:"type"` // "git" (default) or "external"
+}
+
+// Session runner type constants
+const (
+	SessionRunnerTypeLocalTmux = "local_tmux" // default: use local tmux
+	SessionRunnerTypeExternal  = "external"   // use external command templates
+)
+
+// Version control type constants
+const (
+	VersionControlTypeGit      = "git"      // default: use git CLI
+	VersionControlTypeExternal = "external" // VCS managed externally
+)
+
+// Repo mode constants
+const (
+	RepoModeLocal    = "local"    // default: local git clone/worktree
+	RepoModeOnDemand = "ondemand" // remote on-demand environment
+)
+
 // Repo represents a git repository configuration.
 type Repo struct {
-	Name string `json:"name"`
-	URL  string `json:"url"`
+	Name     string          `json:"name"`
+	URL      string          `json:"url"`
+	Mode     string          `json:"mode,omitempty"` // "local" (default) or "ondemand"
+	OnDemand *OnDemandConfig `json:"ondemand,omitempty"`
+}
+
+// GetMode returns the repo mode, defaulting to "local" if not set.
+func (r Repo) GetMode() string {
+	if r.Mode == "" {
+		return RepoModeLocal
+	}
+	return r.Mode
+}
+
+// IsOnDemand returns true if this repo uses on-demand mode.
+func (r Repo) IsOnDemand() bool {
+	return r.GetMode() == RepoModeOnDemand
+}
+
+// OnDemandConfig contains per-repo on-demand settings.
+type OnDemandConfig struct {
+	Flavor        string `json:"flavor"`         // e.g., "xplat_react:omniview"
+	WorkspacePath string `json:"workspace_path"` // e.g., "~/fbsource"
 }
 
 // RunTarget represents a user-supplied run target.
@@ -1019,4 +1075,113 @@ func EnsureModelSecrets(model detect.Model, secrets map[string]string) error {
 		}
 	}
 	return nil
+}
+
+// GetSessionRunnerType returns the configured session runner type.
+// Defaults to "local_tmux" if not set.
+func (c *Config) GetSessionRunnerType() string {
+	if c.SessionRunner == nil || c.SessionRunner.Type == "" {
+		return SessionRunnerTypeLocalTmux
+	}
+	return c.SessionRunner.Type
+}
+
+// GetSessionRunnerHostnameRegex returns the hostname regex for external runner.
+func (c *Config) GetSessionRunnerHostnameRegex() string {
+	if c.SessionRunner == nil {
+		return ""
+	}
+	return c.SessionRunner.HostnameRegex
+}
+
+// GetSessionRunnerConnectionPrefix returns the connection prefix for external runner.
+func (c *Config) GetSessionRunnerConnectionPrefix() string {
+	if c.SessionRunner == nil {
+		return ""
+	}
+	return c.SessionRunner.ConnectionPrefix
+}
+
+// GetVersionControlType returns the configured version control type.
+// Defaults to "git" if not set.
+func (c *Config) GetVersionControlType() string {
+	if c.VersionControl == nil || c.VersionControl.Type == "" {
+		return VersionControlTypeGit
+	}
+	return c.VersionControl.Type
+}
+
+// IsExternalRunner returns true if external session runner is configured.
+func (c *Config) IsExternalRunner() bool {
+	return c.GetSessionRunnerType() == SessionRunnerTypeExternal
+}
+
+// IsExternalVCS returns true if external version control is configured.
+func (c *Config) IsExternalVCS() bool {
+	return c.GetVersionControlType() == VersionControlTypeExternal
+}
+
+// GetOnDemandRunner returns the OnDemandRunner config.
+// Falls back to SessionRunner for backward compatibility.
+func (c *Config) GetOnDemandRunner() *SessionRunnerConfig {
+	if c.OnDemandRunner != nil {
+		return c.OnDemandRunner
+	}
+	return c.SessionRunner
+}
+
+// GetOnDemandRunnerHostnameRegex returns the hostname regex for ondemand runner.
+func (c *Config) GetOnDemandRunnerHostnameRegex() string {
+	runner := c.GetOnDemandRunner()
+	if runner == nil {
+		return ""
+	}
+	return runner.HostnameRegex
+}
+
+// GetOnDemandRunnerConnectionPrefix returns the connection prefix for ondemand runner.
+func (c *Config) GetOnDemandRunnerConnectionPrefix() string {
+	runner := c.GetOnDemandRunner()
+	if runner == nil {
+		return ""
+	}
+	return runner.ConnectionPrefix
+}
+
+// GetOnDemandRunnerProvision returns the provision command for ondemand runner.
+func (c *Config) GetOnDemandRunnerProvision() string {
+	runner := c.GetOnDemandRunner()
+	if runner == nil {
+		return ""
+	}
+	return runner.Provision
+}
+
+// GetOnDemandRunnerListEnvironments returns the list environments command for ondemand runner.
+func (c *Config) GetOnDemandRunnerListEnvironments() string {
+	runner := c.GetOnDemandRunner()
+	if runner == nil {
+		return ""
+	}
+	return runner.ListEnvironments
+}
+
+// HasOnDemandRepos returns true if any repo uses ondemand mode.
+func (c *Config) HasOnDemandRepos() bool {
+	for _, repo := range c.Repos {
+		if repo.IsOnDemand() {
+			return true
+		}
+	}
+	return false
+}
+
+// FindRepoByURL finds a repo by URL.
+func (c *Config) FindRepoByURL(url string) (Repo, bool) {
+	for _, repo := range c.Repos {
+		if repo.URL == url {
+			return repo, true
+		}
+	}
+	return Repo{}, false
 }

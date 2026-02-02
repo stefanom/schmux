@@ -396,7 +396,12 @@ func (s *Server) handleSpawnPost(w http.ResponseWriter, r *http.Request) {
 
 	// Server-side branch conflict check for worktree mode
 	// This catches race conditions where UI check passed but another spawn claimed the branch
-	if req.WorkspaceID == "" && s.config.UseWorktrees() {
+	// Skip this check for ondemand repos since they share a single external workspace
+	repoConfig, isOnDemand := s.config.FindRepoByURL(req.Repo)
+	if isOnDemand {
+		isOnDemand = repoConfig.IsOnDemand()
+	}
+	if req.WorkspaceID == "" && s.config.UseWorktrees() && !isOnDemand {
 		for _, ws := range s.state.GetWorkspaces() {
 			if ws.Repo == req.Repo && ws.Branch == req.Branch {
 				http.Error(w, fmt.Sprintf("branch_conflict: branch %q is already in use by workspace %q", req.Branch, ws.ID), http.StatusConflict)
@@ -933,10 +938,23 @@ func (s *Server) handleConfigGet(w http.ResponseWriter, r *http.Request) {
 	ctx := r.Context()
 	repoResp := make([]contracts.RepoWithConfig, len(repos))
 	for i, repo := range repos {
-		resp := contracts.RepoWithConfig{Name: repo.Name, URL: repo.URL}
-		// Try to get default branch from cache (omit if not detected)
-		if defaultBranch, err := s.workspace.GetDefaultBranch(ctx, repo.URL); err == nil {
-			resp.DefaultBranch = defaultBranch
+		resp := contracts.RepoWithConfig{
+			Name: repo.Name,
+			URL:  repo.URL,
+			Mode: repo.GetMode(),
+		}
+		// Include ondemand config if present
+		if repo.OnDemand != nil {
+			resp.OnDemand = &contracts.OnDemandConfig{
+				Flavor:        repo.OnDemand.Flavor,
+				WorkspacePath: repo.OnDemand.WorkspacePath,
+			}
+		}
+		// Try to get default branch from cache (omit if not detected, and skip for ondemand repos)
+		if !repo.IsOnDemand() {
+			if defaultBranch, err := s.workspace.GetDefaultBranch(ctx, repo.URL); err == nil {
+				resp.DefaultBranch = defaultBranch
+			}
 		}
 		repoResp[i] = resp
 	}
@@ -1036,7 +1054,10 @@ func (s *Server) handleConfigGet(w http.ResponseWriter, r *http.Request) {
 			Provider:          s.config.GetAuthProvider(),
 			SessionTTLMinutes: s.config.GetAuthSessionTTLMinutes(),
 		},
-		NeedsRestart: s.state.GetNeedsRestart(),
+		SessionRunner:  buildSessionRunner(s.config),
+		OnDemandRunner: buildOnDemandRunner(s.config),
+		VersionControl: buildVersionControl(s.config),
+		NeedsRestart:   s.state.GetNeedsRestart(),
 	}
 
 	w.Header().Set("Content-Type", "application/json")
@@ -1062,6 +1083,8 @@ func (s *Server) handleConfigUpdate(w http.ResponseWriter, r *http.Request) {
 	cfg := s.config
 	oldNetwork := cloneNetwork(cfg.Network)
 	oldAccessControl := cloneAccessControl(cfg.AccessControl)
+	oldSessionRunner := cloneSessionRunner(cfg.SessionRunner)
+	oldVersionControl := cloneVersionControl(cfg.VersionControl)
 
 	// Track if repos were updated for overlay dir creation
 	reposUpdated := req.Repos != nil
@@ -1105,10 +1128,28 @@ func (s *Server) handleConfigUpdate(w http.ResponseWriter, r *http.Request) {
 				http.Error(w, fmt.Sprintf("repo URL is required for %s", repo.Name), http.StatusBadRequest)
 				return
 			}
+			// Validate mode if provided
+			if repo.Mode != "" && repo.Mode != config.RepoModeLocal && repo.Mode != config.RepoModeOnDemand {
+				http.Error(w, fmt.Sprintf("repo %s has invalid mode %q (must be %q or %q)",
+					repo.Name, repo.Mode, config.RepoModeLocal, config.RepoModeOnDemand), http.StatusBadRequest)
+				return
+			}
+			// OnDemand repos require ondemand config
+			if repo.Mode == config.RepoModeOnDemand && repo.OnDemand == nil {
+				http.Error(w, fmt.Sprintf("repo %s is marked as ondemand but has no ondemand config", repo.Name), http.StatusBadRequest)
+				return
+			}
 		}
 		cfg.Repos = make([]config.Repo, len(req.Repos))
 		for i, r := range req.Repos {
-			cfg.Repos[i] = config.Repo{Name: r.Name, URL: r.URL}
+			repo := config.Repo{Name: r.Name, URL: r.URL, Mode: r.Mode}
+			if r.OnDemand != nil {
+				repo.OnDemand = &config.OnDemandConfig{
+					Flavor:        r.OnDemand.Flavor,
+					WorkspacePath: r.OnDemand.WorkspacePath,
+				}
+			}
+			cfg.Repos[i] = repo
 		}
 	}
 
@@ -1306,6 +1347,57 @@ func (s *Server) handleConfigUpdate(w http.ResponseWriter, r *http.Request) {
 		}
 	}
 
+	if req.SessionRunner != nil {
+		if cfg.SessionRunner == nil {
+			cfg.SessionRunner = &config.SessionRunnerConfig{}
+		}
+		if req.SessionRunner.Type != nil {
+			cfg.SessionRunner.Type = *req.SessionRunner.Type
+		}
+		if req.SessionRunner.Provision != nil {
+			cfg.SessionRunner.Provision = *req.SessionRunner.Provision
+		}
+		if req.SessionRunner.ListEnvironments != nil {
+			cfg.SessionRunner.ListEnvironments = *req.SessionRunner.ListEnvironments
+		}
+		if req.SessionRunner.ConnectionPrefix != nil {
+			cfg.SessionRunner.ConnectionPrefix = *req.SessionRunner.ConnectionPrefix
+		}
+		if req.SessionRunner.HostnameRegex != nil {
+			cfg.SessionRunner.HostnameRegex = *req.SessionRunner.HostnameRegex
+		}
+	}
+
+	if req.OnDemandRunner != nil {
+		if cfg.OnDemandRunner == nil {
+			cfg.OnDemandRunner = &config.SessionRunnerConfig{}
+		}
+		if req.OnDemandRunner.Type != nil {
+			cfg.OnDemandRunner.Type = *req.OnDemandRunner.Type
+		}
+		if req.OnDemandRunner.Provision != nil {
+			cfg.OnDemandRunner.Provision = *req.OnDemandRunner.Provision
+		}
+		if req.OnDemandRunner.ListEnvironments != nil {
+			cfg.OnDemandRunner.ListEnvironments = *req.OnDemandRunner.ListEnvironments
+		}
+		if req.OnDemandRunner.ConnectionPrefix != nil {
+			cfg.OnDemandRunner.ConnectionPrefix = *req.OnDemandRunner.ConnectionPrefix
+		}
+		if req.OnDemandRunner.HostnameRegex != nil {
+			cfg.OnDemandRunner.HostnameRegex = *req.OnDemandRunner.HostnameRegex
+		}
+	}
+
+	if req.VersionControl != nil {
+		if cfg.VersionControl == nil {
+			cfg.VersionControl = &config.VersionControlConfig{}
+		}
+		if req.VersionControl.Type != nil {
+			cfg.VersionControl.Type = *req.VersionControl.Type
+		}
+	}
+
 	warnings, err := cfg.ValidateForSave()
 	if err != nil {
 		fmt.Printf("[config] validation error: %v\n", err)
@@ -1313,7 +1405,8 @@ func (s *Server) handleConfigUpdate(w http.ResponseWriter, r *http.Request) {
 		return
 	}
 
-	if !reflect.DeepEqual(oldNetwork, cfg.Network) || !reflect.DeepEqual(oldAccessControl, cfg.AccessControl) {
+	if !reflect.DeepEqual(oldNetwork, cfg.Network) || !reflect.DeepEqual(oldAccessControl, cfg.AccessControl) ||
+		!reflect.DeepEqual(oldSessionRunner, cfg.SessionRunner) || !reflect.DeepEqual(oldVersionControl, cfg.VersionControl) {
 		s.state.SetNeedsRestart(true)
 		s.state.Save()
 	}
@@ -1462,6 +1555,34 @@ func buildTLS(cfg *config.Config) *contracts.TLS {
 	}
 }
 
+func buildSessionRunner(cfg *config.Config) contracts.SessionRunner {
+	return contracts.SessionRunner{
+		Type:             cfg.GetSessionRunnerType(),
+		HostnameRegex:    cfg.GetSessionRunnerHostnameRegex(),
+		ConnectionPrefix: cfg.GetSessionRunnerConnectionPrefix(),
+	}
+}
+
+func buildOnDemandRunner(cfg *config.Config) contracts.SessionRunner {
+	runner := cfg.GetOnDemandRunner()
+	if runner == nil {
+		return contracts.SessionRunner{}
+	}
+	return contracts.SessionRunner{
+		Type:             "external", // OnDemand always uses external runner
+		Provision:        runner.Provision,
+		ListEnvironments: runner.ListEnvironments,
+		ConnectionPrefix: runner.ConnectionPrefix,
+		HostnameRegex:    runner.HostnameRegex,
+	}
+}
+
+func buildVersionControl(cfg *config.Config) contracts.VersionControl {
+	return contracts.VersionControl{
+		Type: cfg.GetVersionControlType(),
+	}
+}
+
 func cloneNetwork(src *config.NetworkConfig) *config.NetworkConfig {
 	if src == nil {
 		return nil
@@ -1475,6 +1596,22 @@ func cloneNetwork(src *config.NetworkConfig) *config.NetworkConfig {
 }
 
 func cloneAccessControl(src *config.AccessControlConfig) *config.AccessControlConfig {
+	if src == nil {
+		return nil
+	}
+	cpy := *src
+	return &cpy
+}
+
+func cloneSessionRunner(src *config.SessionRunnerConfig) *config.SessionRunnerConfig {
+	if src == nil {
+		return nil
+	}
+	cpy := *src
+	return &cpy
+}
+
+func cloneVersionControl(src *config.VersionControlConfig) *config.VersionControlConfig {
 	if src == nil {
 		return nil
 	}
