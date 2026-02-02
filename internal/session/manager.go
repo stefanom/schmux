@@ -15,8 +15,8 @@ import (
 	"github.com/google/uuid"
 	"github.com/sergeknystautas/schmux/internal/config"
 	"github.com/sergeknystautas/schmux/internal/detect"
+	"github.com/sergeknystautas/schmux/internal/runner"
 	"github.com/sergeknystautas/schmux/internal/state"
-	"github.com/sergeknystautas/schmux/internal/tmux"
 	"github.com/sergeknystautas/schmux/internal/workspace"
 )
 
@@ -27,13 +27,20 @@ const (
 
 	// processKillGracePeriod is how long to wait for SIGTERM before SIGKILL
 	processKillGracePeriod = 100 * time.Millisecond
+
+	// TargetProvisioning is the target name for provisioning sessions.
+	// These are temporary sessions that run environment provisioning commands.
+	TargetProvisioning = "provisioning"
 )
 
 // Manager manages sessions.
 type Manager struct {
-	config    *config.Config
-	state     state.StateStore
-	workspace workspace.WorkspaceManager
+	config         *config.Config
+	state          state.StateStore
+	workspace      workspace.WorkspaceManager
+	runner         runner.SessionRunner            // Local tmux runner
+	ondemandRunner runner.SessionRunner            // External runner for ondemand repos (lazy-init)
+	runnerByRepo   map[string]runner.SessionRunner // Cached runners per repo (for different flavors)
 }
 
 // ResolvedTarget is a resolved run target with command and env info.
@@ -52,11 +59,17 @@ const (
 )
 
 // New creates a new session manager.
-func New(cfg *config.Config, st state.StateStore, statePath string, wm workspace.WorkspaceManager) *Manager {
+// If runner is nil, a LocalTmuxRunner is used by default.
+func New(cfg *config.Config, st state.StateStore, statePath string, wm workspace.WorkspaceManager, r runner.SessionRunner) *Manager {
+	if r == nil {
+		r = runner.NewLocalTmuxRunner()
+	}
 	return &Manager{
-		config:    cfg,
-		state:     st,
-		workspace: wm,
+		config:       cfg,
+		state:        st,
+		workspace:    wm,
+		runner:       r,
+		runnerByRepo: make(map[string]runner.SessionRunner),
 	}
 }
 
@@ -108,9 +121,23 @@ func (m *Manager) Spawn(ctx context.Context, repoURL, branch, targetName, prompt
 		tmuxSession = sanitizeNickname(uniqueNickname)
 	}
 
+	// Select the appropriate runner based on workspace mode
+	r, envID, err := m.getRunnerForWorkspace(ctx, w)
+	if err != nil {
+		// Check if provisioning is required - create provisioning session instead
+		if provErr, ok := runner.IsProvisioningRequired(err); ok {
+			return m.SpawnProvisioning(ctx, w.ID, provErr.ProvisionCommand, provErr.Flavor)
+		}
+		return nil, fmt.Errorf("failed to get runner for workspace: %w", err)
+	}
+
 	// Create tmux session
-	if err := tmux.CreateSession(ctx, tmuxSession, w.Path, command); err != nil {
-		return nil, fmt.Errorf("failed to create tmux session: %w", err)
+	if err := r.CreateSession(ctx, runner.CreateSessionOpts{
+		SessionID: tmuxSession,
+		WorkDir:   w.Path,
+		Command:   command,
+	}); err != nil {
+		return nil, fmt.Errorf("failed to create session: %w", err)
 	}
 
 	// Set up log file for pipe-pane streaming
@@ -120,33 +147,34 @@ func (m *Manager) Spawn(ctx context.Context, repoURL, branch, targetName, prompt
 	} else {
 		// Force fixed window size for deterministic TUI output
 		width, height := m.config.GetTerminalSize()
-		if err := tmux.SetWindowSizeManual(ctx, tmuxSession); err != nil {
+		if err := r.SetWindowSizeManual(ctx, tmuxSession); err != nil {
 			fmt.Printf("[session] warning: failed to set manual window size: %v\n", err)
 		}
-		if err := tmux.ResizeWindow(ctx, tmuxSession, width, height); err != nil {
+		if err := r.ResizeWindow(ctx, tmuxSession, width, height); err != nil {
 			fmt.Printf("[session] warning: failed to resize window: %v\n", err)
 		}
 		// Start pipe-pane to log file
-		if err := tmux.StartPipePane(ctx, tmuxSession, logPath); err != nil {
+		if err := r.StartPipePane(ctx, tmuxSession, logPath); err != nil {
 			return nil, fmt.Errorf("failed to start pipe-pane (session created): %w", err)
 		}
 	}
 
 	// Get the PID of the agent process from tmux pane
-	pid, err := tmux.GetPanePID(ctx, tmuxSession)
+	pid, err := r.GetPanePID(ctx, tmuxSession)
 	if err != nil {
 		return nil, fmt.Errorf("failed to get pane PID: %w", err)
 	}
 
 	// Create session state with cached PID (no Prompt field)
 	sess := state.Session{
-		ID:          sessionID,
-		WorkspaceID: w.ID,
-		Target:      targetName,
-		Nickname:    uniqueNickname,
-		TmuxSession: tmuxSession,
-		CreatedAt:   time.Now(),
-		Pid:         pid,
+		ID:            sessionID,
+		WorkspaceID:   w.ID,
+		Target:        targetName,
+		Nickname:      uniqueNickname,
+		TmuxSession:   tmuxSession,
+		CreatedAt:     time.Now(),
+		Pid:           pid,
+		EnvironmentID: envID, // Set for ondemand sessions
 	}
 
 	if err := m.state.AddSession(sess); err != nil {
@@ -195,9 +223,23 @@ func (m *Manager) SpawnCommand(ctx context.Context, repoURL, branch, command, ni
 		tmuxSession = sanitizeNickname(uniqueNickname)
 	}
 
+	// Select the appropriate runner based on workspace mode
+	r, envID, err := m.getRunnerForWorkspace(ctx, w)
+	if err != nil {
+		// Check if provisioning is required - create provisioning session instead
+		if provErr, ok := runner.IsProvisioningRequired(err); ok {
+			return m.SpawnProvisioning(ctx, w.ID, provErr.ProvisionCommand, provErr.Flavor)
+		}
+		return nil, fmt.Errorf("failed to get runner for workspace: %w", err)
+	}
+
 	// Create tmux session with the raw command
-	if err := tmux.CreateSession(ctx, tmuxSession, w.Path, command); err != nil {
-		return nil, fmt.Errorf("failed to create tmux session: %w", err)
+	if err := r.CreateSession(ctx, runner.CreateSessionOpts{
+		SessionID: tmuxSession,
+		WorkDir:   w.Path,
+		Command:   command,
+	}); err != nil {
+		return nil, fmt.Errorf("failed to create session: %w", err)
 	}
 
 	// Set up log file for pipe-pane streaming
@@ -207,29 +249,169 @@ func (m *Manager) SpawnCommand(ctx context.Context, repoURL, branch, command, ni
 	} else {
 		// Force fixed window size for deterministic TUI output
 		width, height := m.config.GetTerminalSize()
-		if err := tmux.SetWindowSizeManual(ctx, tmuxSession); err != nil {
+		if err := r.SetWindowSizeManual(ctx, tmuxSession); err != nil {
 			fmt.Printf("[session] warning: failed to set manual window size: %v\n", err)
 		}
-		if err := tmux.ResizeWindow(ctx, tmuxSession, width, height); err != nil {
+		if err := r.ResizeWindow(ctx, tmuxSession, width, height); err != nil {
 			fmt.Printf("[session] warning: failed to resize window: %v\n", err)
 		}
 		// Start pipe-pane to log file
-		if err := tmux.StartPipePane(ctx, tmuxSession, logPath); err != nil {
+		if err := r.StartPipePane(ctx, tmuxSession, logPath); err != nil {
 			return nil, fmt.Errorf("failed to start pipe-pane (session created): %w", err)
 		}
 	}
 
 	// Get the PID of the process from tmux pane
-	pid, err := tmux.GetPanePID(ctx, tmuxSession)
+	pid, err := r.GetPanePID(ctx, tmuxSession)
 	if err != nil {
 		return nil, fmt.Errorf("failed to get pane PID: %w", err)
 	}
 
 	// Create session state (Target uses a stable value for command-based sessions)
 	sess := state.Session{
+		ID:            sessionID,
+		WorkspaceID:   w.ID,
+		Target:        "command",
+		Nickname:      uniqueNickname,
+		TmuxSession:   tmuxSession,
+		CreatedAt:     time.Now(),
+		Pid:           pid,
+		EnvironmentID: envID, // Set for ondemand sessions
+	}
+
+	if err := m.state.AddSession(sess); err != nil {
+		return nil, fmt.Errorf("failed to add session to state: %w", err)
+	}
+	if err := m.state.Save(); err != nil {
+		return nil, fmt.Errorf("failed to save state: %w", err)
+	}
+
+	return &sess, nil
+}
+
+// getRunnerForWorkspace returns the appropriate runner for a workspace.
+// For external (ondemand) workspaces, returns an ExternalRunner configured for that repo.
+// For local workspaces, returns the local tmux runner.
+// Also returns the environment ID (hostname) for ondemand sessions, empty for local.
+func (m *Manager) getRunnerForWorkspace(ctx context.Context, w *state.Workspace) (runner.SessionRunner, string, error) {
+	// For local workspaces, use the local tmux runner
+	if !w.External {
+		return m.runner, "", nil
+	}
+
+	// For external (ondemand) workspaces, get or create an ExternalRunner
+	// Check if we have a cached runner for this repo
+	if r, ok := m.runnerByRepo[w.Repo]; ok {
+		return r, r.GetEnvironmentID(), nil
+	}
+
+	// Look up the repo config to get flavor and other settings
+	repoConfig, found := m.config.FindRepoByURL(w.Repo)
+	if !found {
+		return nil, "", fmt.Errorf("repo config not found for %s", w.Repo)
+	}
+	if !repoConfig.IsOnDemand() {
+		return nil, "", fmt.Errorf("repo %s is not an ondemand repo", repoConfig.Name)
+	}
+	if repoConfig.OnDemand == nil {
+		return nil, "", fmt.Errorf("repo %s has no ondemand config", repoConfig.Name)
+	}
+
+	// Get the ondemand runner config
+	runnerCfg := m.config.GetOnDemandRunner()
+	if runnerCfg == nil || runnerCfg.ConnectionPrefix == "" {
+		return nil, "", fmt.Errorf("ondemand_runner not configured (connection_prefix is required)")
+	}
+
+	// Create the external runner with simplified config
+	extRunner, err := runner.NewExternalRunnerWithFlavor(runner.ExternalRunnerConfig{
+		Provision:        runnerCfg.Provision,
+		ListEnvironments: runnerCfg.ListEnvironments,
+		ConnectionPrefix: runnerCfg.ConnectionPrefix,
+		HostnameRegex:    runnerCfg.HostnameRegex,
+	}, repoConfig.OnDemand.Flavor)
+	if err != nil {
+		return nil, "", fmt.Errorf("failed to create external runner: %w", err)
+	}
+
+	// Provision the environment (may return ErrProvisioningRequired for interactive provisioning)
+	if err := extRunner.ProvisionEnvironment(ctx); err != nil {
+		// Don't wrap ErrProvisioningRequired - let it propagate for special handling
+		if _, ok := runner.IsProvisioningRequired(err); ok {
+			return nil, "", err
+		}
+		return nil, "", fmt.Errorf("failed to provision environment: %w", err)
+	}
+
+	// Cache the runner for future use
+	m.runnerByRepo[w.Repo] = extRunner
+
+	return extRunner, extRunner.GetEnvironmentID(), nil
+}
+
+// SpawnProvisioning creates a local session for interactive environment provisioning.
+// The session runs the provision command and appears in the dashboard for user interaction.
+// Once provisioning completes, the user can spawn actual ondemand sessions.
+func (m *Manager) SpawnProvisioning(ctx context.Context, workspaceID, provisionCommand, flavor string) (*state.Session, error) {
+	// Get the workspace
+	ws, found := m.workspace.GetByID(workspaceID)
+	if !found {
+		return nil, fmt.Errorf("workspace not found: %s", workspaceID)
+	}
+
+	// Create session ID
+	sessionID := fmt.Sprintf("provision-%s-%s", sanitizeNickname(flavor), uuid.New().String()[:8])
+
+	// Create nickname from flavor
+	nickname := fmt.Sprintf("Provisioning: %s", flavor)
+	uniqueNickname := m.generateUniqueNickname(nickname)
+
+	// Use sanitized nickname for tmux session name
+	tmuxSession := sanitizeNickname(uniqueNickname)
+
+	// Wrap the provision command to show status and keep session alive
+	wrappedCmd := fmt.Sprintf("echo 'Provisioning environment (flavor: %s)...'; echo 'Command: %s'; echo '---'; %s; echo '---'; echo 'Provisioning complete. You can dispose this session now.'; exec bash",
+		flavor, provisionCommand, provisionCommand)
+
+	// Create tmux session using local runner
+	if err := m.runner.CreateSession(ctx, runner.CreateSessionOpts{
+		SessionID: tmuxSession,
+		WorkDir:   ws.Path,
+		Command:   wrappedCmd,
+	}); err != nil {
+		return nil, fmt.Errorf("failed to create provisioning session: %w", err)
+	}
+
+	// Set up log file for pipe-pane streaming
+	logPath, err := m.ensureLogFile(sessionID)
+	if err != nil {
+		fmt.Printf("[session] warning: failed to create log file: %v\n", err)
+	} else {
+		// Force fixed window size for deterministic TUI output
+		width, height := m.config.GetTerminalSize()
+		if err := m.runner.SetWindowSizeManual(ctx, tmuxSession); err != nil {
+			fmt.Printf("[session] warning: failed to set manual window size: %v\n", err)
+		}
+		if err := m.runner.ResizeWindow(ctx, tmuxSession, width, height); err != nil {
+			fmt.Printf("[session] warning: failed to resize window: %v\n", err)
+		}
+		// Start pipe-pane to log file
+		if err := m.runner.StartPipePane(ctx, tmuxSession, logPath); err != nil {
+			return nil, fmt.Errorf("failed to start pipe-pane (session created): %w", err)
+		}
+	}
+
+	// Get the PID of the process from tmux pane
+	pid, err := m.runner.GetPanePID(ctx, tmuxSession)
+	if err != nil {
+		return nil, fmt.Errorf("failed to get pane PID: %w", err)
+	}
+
+	// Create session state with Target="provisioning"
+	sess := state.Session{
 		ID:          sessionID,
-		WorkspaceID: w.ID,
-		Target:      "command",
+		WorkspaceID: ws.ID,
+		Target:      TargetProvisioning,
 		Nickname:    uniqueNickname,
 		TmuxSession: tmuxSession,
 		CreatedAt:   time.Now(),
@@ -243,6 +425,7 @@ func (m *Manager) SpawnCommand(ctx context.Context, repoURL, branch, command, ni
 		return nil, fmt.Errorf("failed to save state: %w", err)
 	}
 
+	fmt.Printf("[session] created provisioning session: id=%s flavor=%s\n", sessionID, flavor)
 	return &sess, nil
 }
 
@@ -371,7 +554,7 @@ func (m *Manager) IsRunning(ctx context.Context, sessionID string) bool {
 
 	// If we don't have a PID, check if tmux session exists as fallback
 	if sess.Pid == 0 {
-		return tmux.SessionExists(ctx, sess.TmuxSession)
+		return m.runner.SessionExists(ctx, sess.TmuxSession)
 	}
 
 	// Check if the process is still running
@@ -526,7 +709,7 @@ func (m *Manager) Dispose(ctx context.Context, sessionID string) error {
 	}
 
 	// Step 3: Kill tmux session (ignore error if already gone - that's success)
-	if err := tmux.KillSession(ctx, sess.TmuxSession); err == nil {
+	if err := m.runner.KillSession(ctx, sess.TmuxSession); err == nil {
 		tmuxKilled = true
 	}
 
@@ -571,7 +754,7 @@ func (m *Manager) GetAttachCommand(sessionID string) (string, error) {
 		return "", fmt.Errorf("session not found: %s", sessionID)
 	}
 
-	return tmux.GetAttachCommand(sess.TmuxSession), nil
+	return m.runner.GetAttachCommand(sess.TmuxSession), nil
 }
 
 // GetOutput returns the current terminal output for a session.
@@ -581,7 +764,7 @@ func (m *Manager) GetOutput(ctx context.Context, sessionID string) (string, erro
 		return "", fmt.Errorf("session not found: %s", sessionID)
 	}
 
-	return tmux.CaptureOutput(ctx, sess.TmuxSession)
+	return m.runner.CaptureOutput(ctx, sess.TmuxSession)
 }
 
 // GetAllSessions returns all sessions.
@@ -619,8 +802,8 @@ func (m *Manager) RenameSession(ctx context.Context, sessionID, newNickname stri
 	}
 
 	// Rename the tmux session
-	if err := tmux.RenameSession(ctx, oldTmuxName, newTmuxName); err != nil {
-		return fmt.Errorf("failed to rename tmux session: %w", err)
+	if err := m.runner.RenameSession(ctx, oldTmuxName, newTmuxName); err != nil {
+		return fmt.Errorf("failed to rename session: %w", err)
 	}
 
 	// Update session state
@@ -725,7 +908,7 @@ func (m *Manager) EnsurePipePane(ctx context.Context, sessionID string) error {
 		return fmt.Errorf("session not found: %s", sessionID)
 	}
 	// Check if pipe-pane is already active
-	if tmux.IsPipePaneActive(ctx, sess.TmuxSession) {
+	if m.runner.IsPipePaneActive(ctx, sess.TmuxSession) {
 		return nil
 	}
 	// Ensure log file exists
@@ -735,13 +918,13 @@ func (m *Manager) EnsurePipePane(ctx context.Context, sessionID string) error {
 	}
 	// Set window size and start pipe-pane
 	width, height := m.config.GetTerminalSize()
-	if err := tmux.SetWindowSizeManual(ctx, sess.TmuxSession); err != nil {
+	if err := m.runner.SetWindowSizeManual(ctx, sess.TmuxSession); err != nil {
 		fmt.Printf("[session] warning: failed to set manual window size: %v\n", err)
 	}
-	if err := tmux.ResizeWindow(ctx, sess.TmuxSession, width, height); err != nil {
+	if err := m.runner.ResizeWindow(ctx, sess.TmuxSession, width, height); err != nil {
 		fmt.Printf("[session] warning: failed to resize window: %v\n", err)
 	}
-	if err := tmux.StartPipePane(ctx, sess.TmuxSession, logPath); err != nil {
+	if err := m.runner.StartPipePane(ctx, sess.TmuxSession, logPath); err != nil {
 		return fmt.Errorf("failed to start pipe-pane: %w", err)
 	}
 	return nil

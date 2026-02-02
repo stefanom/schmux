@@ -60,6 +60,17 @@ const DEFAULT_CONFIG: ConfigResponse = {
     provider: 'github',
     session_ttl_minutes: 1440,
   },
+  session_runner: {
+    type: 'local_tmux',
+    hostname_regex: '',
+  },
+  ondemand_runner: {
+    type: 'external',
+    hostname_regex: '',
+  },
+  version_control: {
+    type: 'git',
+  },
   needs_restart: false,
 };
 

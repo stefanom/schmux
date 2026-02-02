@@ -2,8 +2,16 @@ package contracts
 
 // Repo represents a git repository configuration.
 type Repo struct {
-	Name string `json:"name"`
-	URL  string `json:"url"`
+	Name     string          `json:"name"`
+	URL      string          `json:"url"`
+	Mode     string          `json:"mode,omitempty"` // "local" (default) or "ondemand"
+	OnDemand *OnDemandConfig `json:"ondemand,omitempty"`
+}
+
+// OnDemandConfig contains per-repo on-demand settings.
+type OnDemandConfig struct {
+	Flavor        string `json:"flavor"`         // e.g., "xplat_react:omniview"
+	WorkspacePath string `json:"workspace_path"` // e.g., "~/fbsource"
 }
 
 // RepoConfig represents repository-specific configuration from .schmux/config.json.
@@ -13,10 +21,12 @@ type RepoConfig struct {
 
 // RepoWithConfig represents a repository with its loaded configuration.
 type RepoWithConfig struct {
-	Name          string      `json:"name"`
-	URL           string      `json:"url"`
-	DefaultBranch string      `json:"default_branch,omitempty"` // Omitted if not detected
-	Config        *RepoConfig `json:"config,omitempty"`
+	Name          string          `json:"name"`
+	URL           string          `json:"url"`
+	Mode          string          `json:"mode,omitempty"`           // "local" (default) or "ondemand"
+	OnDemand      *OnDemandConfig `json:"ondemand,omitempty"`       // OnDemand settings (only if mode=ondemand)
+	DefaultBranch string          `json:"default_branch,omitempty"` // Omitted if not detected
+	Config        *RepoConfig     `json:"config,omitempty"`
 }
 
 // RunTarget represents a user-supplied run target.
@@ -135,6 +145,9 @@ type ConfigResponse struct {
 	Xterm                      Xterm                 `json:"xterm"`
 	Network                    Network               `json:"network"`
 	AccessControl              AccessControl         `json:"access_control"`
+	SessionRunner              SessionRunner         `json:"session_runner"`  // Deprecated: use OnDemandRunner
+	OnDemandRunner             SessionRunner         `json:"ondemand_runner"` // Command templates for ondemand repos
+	VersionControl             VersionControl        `json:"version_control"` // Deprecated: VCS is now implied by repo mode
 	NeedsRestart               bool                  `json:"needs_restart"`
 }
 
@@ -201,6 +214,35 @@ type AccessControlUpdate struct {
 	SessionTTLMinutes *int    `json:"session_ttl_minutes,omitempty"`
 }
 
+// SessionRunner represents session runner configuration.
+// Deprecated: Use OnDemandRunner for new configs.
+type SessionRunner struct {
+	Type             string `json:"type"`                        // "local_tmux" (default) or "external"
+	Provision        string `json:"provision,omitempty"`         // Command to provision environment
+	ListEnvironments string `json:"list_environments,omitempty"` // Command to list environments
+	ConnectionPrefix string `json:"connection_prefix,omitempty"` // Prefix for tmux commands (e.g., "dev connect -n {{.Hostname}} --")
+	HostnameRegex    string `json:"hostname_regex,omitempty"`    // Regex to extract hostname from list output
+}
+
+// SessionRunnerUpdate represents partial session runner updates.
+type SessionRunnerUpdate struct {
+	Type             *string `json:"type,omitempty"`
+	Provision        *string `json:"provision,omitempty"`
+	ListEnvironments *string `json:"list_environments,omitempty"`
+	ConnectionPrefix *string `json:"connection_prefix,omitempty"`
+	HostnameRegex    *string `json:"hostname_regex,omitempty"`
+}
+
+// VersionControl represents version control configuration.
+type VersionControl struct {
+	Type string `json:"type"` // "git" (default) or "external"
+}
+
+// VersionControlUpdate represents partial version control updates.
+type VersionControlUpdate struct {
+	Type *string `json:"type,omitempty"`
+}
+
 // ConfigUpdateRequest represents the API request for POST/PUT /api/config.
 type ConfigUpdateRequest struct {
 	WorkspacePath              *string                `json:"workspace_path,omitempty"`
@@ -218,4 +260,7 @@ type ConfigUpdateRequest struct {
 	Xterm                      *XtermUpdate           `json:"xterm,omitempty"`
 	Network                    *NetworkUpdate         `json:"network,omitempty"`
 	AccessControl              *AccessControlUpdate   `json:"access_control,omitempty"`
+	SessionRunner              *SessionRunnerUpdate   `json:"session_runner,omitempty"`  // Deprecated: use OnDemandRunner
+	OnDemandRunner             *SessionRunnerUpdate   `json:"ondemand_runner,omitempty"` // Command templates for ondemand repos
+	VersionControl             *VersionControlUpdate  `json:"version_control,omitempty"` // Deprecated
 }

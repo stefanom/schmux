@@ -20,8 +20,8 @@ func TestHandleHasNudgenik(t *testing.T) {
 		cfg := &config.Config{WorkspacePath: "/tmp/workspaces"}
 		st := state.New("")
 		statePath := t.TempDir() + "/state.json"
-		wm := workspace.New(cfg, st, statePath)
-		sm := session.New(cfg, st, statePath, wm)
+		wm := workspace.New(cfg, st, statePath, nil)
+		sm := session.New(cfg, st, statePath, wm, nil)
 		server := NewServer(cfg, st, statePath, sm, wm, nil)
 
 		req, _ := http.NewRequest("GET", "/api/hasNudgenik", nil)
@@ -50,8 +50,8 @@ func TestHandleHasNudgenik(t *testing.T) {
 		}
 		st := state.New("")
 		statePath := t.TempDir() + "/state.json"
-		wm := workspace.New(cfg, st, statePath)
-		sm := session.New(cfg, st, statePath, wm)
+		wm := workspace.New(cfg, st, statePath, nil)
+		sm := session.New(cfg, st, statePath, wm, nil)
 		server := NewServer(cfg, st, statePath, sm, wm, nil)
 
 		req, _ := http.NewRequest("GET", "/api/hasNudgenik", nil)
@@ -78,8 +78,8 @@ func TestHandleAskNudgenik(t *testing.T) {
 	cfg := &config.Config{WorkspacePath: "/tmp/workspaces"}
 	st := state.New("")
 	statePath := t.TempDir() + "/state.json"
-	wm := workspace.New(cfg, st, statePath)
-	sm := session.New(cfg, st, statePath, wm)
+	wm := workspace.New(cfg, st, statePath, nil)
+	sm := session.New(cfg, st, statePath, wm, nil)
 	server := NewServer(cfg, st, statePath, sm, wm, nil)
 
 	// Add a test session
@@ -148,8 +148,8 @@ func TestResolveQuickLaunchByName(t *testing.T) {
 	}
 	statePath := filepath.Join(t.TempDir(), "state.json")
 	st := state.New(statePath)
-	wm := workspace.New(cfg, st, statePath)
-	sm := session.New(cfg, st, statePath, wm)
+	wm := workspace.New(cfg, st, statePath, nil)
+	sm := session.New(cfg, st, statePath, wm, nil)
 	server := NewServer(cfg, st, statePath, sm, wm, nil)
 
 	ws := state.Workspace{
@@ -220,8 +220,8 @@ func TestHandleSuggestBranch(t *testing.T) {
 		cfg := &config.Config{WorkspacePath: "/tmp/workspaces"}
 		st := state.New("")
 		statePath := t.TempDir() + "/state.json"
-		wm := workspace.New(cfg, st, statePath)
-		sm := session.New(cfg, st, statePath, wm)
+		wm := workspace.New(cfg, st, statePath, nil)
+		sm := session.New(cfg, st, statePath, wm, nil)
 		server := NewServer(cfg, st, statePath, sm, wm, nil)
 
 		body := bytes.NewReader([]byte(`{"prompt":"test prompt"}`))
@@ -240,8 +240,8 @@ func TestHandleBuiltinQuickLaunchCookbook(t *testing.T) {
 	cfg := &config.Config{WorkspacePath: "/tmp/workspaces"}
 	st := state.New("")
 	statePath := t.TempDir() + "/state.json"
-	wm := workspace.New(cfg, st, statePath)
-	sm := session.New(cfg, st, statePath, wm)
+	wm := workspace.New(cfg, st, statePath, nil)
+	sm := session.New(cfg, st, statePath, wm, nil)
 	server := NewServer(cfg, st, statePath, sm, wm, nil)
 
 	t.Run("GET request returns presets", func(t *testing.T) {
@@ -326,8 +326,8 @@ func TestHandleHealthz(t *testing.T) {
 	cfg := &config.Config{WorkspacePath: "/tmp/workspaces"}
 	st := state.New("")
 	statePath := t.TempDir() + "/state.json"
-	wm := workspace.New(cfg, st, statePath)
-	sm := session.New(cfg, st, statePath, wm)
+	wm := workspace.New(cfg, st, statePath, nil)
+	sm := session.New(cfg, st, statePath, wm, nil)
 	server := NewServer(cfg, st, statePath, sm, wm, nil)
 
 	// Start version check to populate version info
@@ -373,8 +373,8 @@ func TestHandleUpdate(t *testing.T) {
 	cfg := &config.Config{WorkspacePath: "/tmp/workspaces"}
 	st := state.New("")
 	statePath := t.TempDir() + "/state.json"
-	wm := workspace.New(cfg, st, statePath)
-	sm := session.New(cfg, st, statePath, wm)
+	wm := workspace.New(cfg, st, statePath, nil)
+	sm := session.New(cfg, st, statePath, wm, nil)
 	server := NewServer(cfg, st, statePath, sm, wm, nil)
 
 	t.Run("POST method accepted, GET rejected", func(t *testing.T) {

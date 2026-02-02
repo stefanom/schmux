@@ -37,6 +37,9 @@ export interface ConfigResponse {
   xterm: Xterm;
   network: Network;
   access_control: AccessControl;
+  session_runner: SessionRunner;
+  ondemand_runner: SessionRunner;
+  version_control: VersionControl;
   needs_restart: boolean;
 }
 
@@ -56,6 +59,9 @@ export interface ConfigUpdateRequest {
   xterm?: XtermUpdate;
   network?: NetworkUpdate;
   access_control?: AccessControlUpdate;
+  session_runner?: SessionRunnerUpdate;
+  ondemand_runner?: SessionRunnerUpdate;
+  version_control?: VersionControlUpdate;
 }
 
 export interface ConflictResolve {
@@ -139,6 +145,11 @@ export interface NudgenikUpdate {
   seen_interval_ms?: number;
 }
 
+export interface OnDemandConfig {
+  flavor: string;
+  workspace_path: string;
+}
+
 export interface QuickLaunch {
   name: string;
   command?: string;
@@ -149,6 +160,8 @@ export interface QuickLaunch {
 export interface Repo {
   name: string;
   url: string;
+  mode?: string;
+  ondemand?: OnDemandConfig;
 }
 
 export interface RepoConfig {
@@ -158,6 +171,8 @@ export interface RepoConfig {
 export interface RepoWithConfig {
   name: string;
   url: string;
+  mode?: string;
+  ondemand?: OnDemandConfig;
   default_branch?: string;
   config?: RepoConfig;
 }
@@ -167,6 +182,22 @@ export interface RunTarget {
   type: string;
   command: string;
   source?: string;
+}
+
+export interface SessionRunner {
+  type: string;
+  provision?: string;
+  list_environments?: string;
+  connection_prefix?: string;
+  hostname_regex?: string;
+}
+
+export interface SessionRunnerUpdate {
+  type?: string;
+  provision?: string;
+  list_environments?: string;
+  connection_prefix?: string;
+  hostname_regex?: string;
 }
 
 export interface Sessions {
@@ -205,6 +236,14 @@ export interface TerminalUpdate {
   height?: number;
   seed_lines?: number;
   bootstrap_lines?: number;
+}
+
+export interface VersionControl {
+  type: string;
+}
+
+export interface VersionControlUpdate {
+  type?: string;
 }
 
 export interface Xterm {

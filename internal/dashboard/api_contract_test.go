@@ -31,8 +31,8 @@ func newTestServer(t *testing.T) (*Server, *config.Config, *state.State) {
 	}
 	statePath := filepath.Join(t.TempDir(), "state.json")
 	st := state.New(statePath)
-	wm := workspace.New(cfg, st, statePath)
-	sm := session.New(cfg, st, statePath, wm)
+	wm := workspace.New(cfg, st, statePath, nil)
+	sm := session.New(cfg, st, statePath, wm, nil)
 	server := NewServer(cfg, st, statePath, sm, wm, nil)
 	return server, cfg, st
 }
@@ -250,8 +250,8 @@ func TestAPIContract_SessionsQuickLaunchNamesOnly(t *testing.T) {
 	}
 	statePath := filepath.Join(t.TempDir(), "state.json")
 	st := state.New(statePath)
-	wm := workspace.New(cfg, st, statePath)
-	sm := session.New(cfg, st, statePath, wm)
+	wm := workspace.New(cfg, st, statePath, nil)
+	sm := session.New(cfg, st, statePath, wm, nil)
 	server := NewServer(cfg, st, statePath, sm, wm, nil)
 
 	ws := state.Workspace{

@@ -35,9 +35,16 @@ export interface SessionWithWorkspace extends SessionResponse {
   branch: string;
 }
 
+export interface OnDemandConfig {
+  flavor: string;
+  workspace_path: string;
+}
+
 export interface RepoResponse {
   name: string;
   url: string;
+  mode?: string;           // "local" (default) or "ondemand"
+  ondemand?: OnDemandConfig;
   default_branch?: string;  // Detected default branch (main, master, etc.), omitted if not yet detected
 }
 

@@ -35,7 +35,7 @@ func TestGetOrCreate_BranchReuse_Success(t *testing.T) {
 			{Name: "test", URL: repoDir},
 		},
 	}
-	manager := New(cfg, st, statePath)
+	manager := New(cfg, st, statePath, nil)
 
 	// Create workspace on "main"
 	ws1, err := manager.GetOrCreate(context.Background(), repoDir, "main")
@@ -84,7 +84,7 @@ func TestGetOrCreate_PerRepoMutexBlocks(t *testing.T) {
 			{Name: "test", URL: repoDir},
 		},
 	}
-	manager := New(cfg, st, statePath)
+	manager := New(cfg, st, statePath, nil)
 
 	lock := manager.repoLock(repoDir)
 	lock.Lock()
@@ -133,7 +133,7 @@ func TestGetOrCreate_UniqueBranchOnWorktreeConflict(t *testing.T) {
 			{Name: "test", URL: repoDir},
 		},
 	}
-	manager := New(cfg, st, statePath)
+	manager := New(cfg, st, statePath, nil)
 
 	ctx := context.Background()
 	ws1, err := manager.GetOrCreate(ctx, repoDir, "feature-1")
@@ -196,7 +196,7 @@ func TestGetOrCreate_FullCloneDoesNotUniquifyBranch(t *testing.T) {
 			{Name: "test", URL: repoDir},
 		},
 	}
-	manager := New(cfg, st, statePath)
+	manager := New(cfg, st, statePath, nil)
 
 	ctx := context.Background()
 	ws1, err := manager.GetOrCreate(ctx, repoDir, "feature-1")
