@@ -66,6 +66,9 @@ export default function SessionTabs({ sessions, currentSessionId, workspace, act
   const filesChanged = workspace?.git_files_changed ?? 0;
   const hasChanges = filesChanged > 0 || linesAdded > 0 || linesRemoved > 0;
 
+  // External workspaces (ondemand) don't have git status/graph
+  const isExternal = workspace?.external ?? false;
+
   // Calculate spawn menu position
   useEffect(() => {
     if (spawnMenuOpen && spawnButtonRef.current) {
@@ -399,11 +402,11 @@ export default function SessionTabs({ sessions, currentSessionId, workspace, act
     <div className="session-tabs">
       {sessions.map((sess) => renderSessionTab(sess))}
 
-      {/* Diff tab — always shown */}
-      {renderDiffTab()}
+      {/* Diff tab — hidden for external workspaces */}
+      {!isExternal && renderDiffTab()}
 
-      {/* Git tab — always shown */}
-      {renderGitTab()}
+      {/* Git tab — hidden for external workspaces */}
+      {!isExternal && renderGitTab()}
 
       {/* Add button */}
       {showAddButton && renderAddButton()}

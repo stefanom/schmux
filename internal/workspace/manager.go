@@ -236,15 +236,9 @@ func (m *Manager) getOrCreateOnDemandWorkspace(ctx context.Context, repo config.
 		return nil, fmt.Errorf("repo %s is marked as ondemand but has no ondemand config", repo.Name)
 	}
 
-	// Expand workspace path (handle ~)
+	// For ondemand workspaces, keep the path as-is (including ~).
+	// The ~ should expand on the remote system, not locally.
 	workspacePath := repo.OnDemand.WorkspacePath
-	if strings.HasPrefix(workspacePath, "~") {
-		homeDir, err := os.UserHomeDir()
-		if err != nil {
-			return nil, fmt.Errorf("failed to expand workspace path: %w", err)
-		}
-		workspacePath = filepath.Join(homeDir, workspacePath[1:])
-	}
 
 	lock := m.repoLock(repo.URL)
 	lock.Lock()
@@ -679,6 +673,20 @@ func (m *Manager) Dispose(workspaceID string) error {
 	// Check if workspace has active sessions
 	if m.hasActiveSessions(workspaceID) {
 		return fmt.Errorf("workspace has active sessions: %s", workspaceID)
+	}
+
+	// For external workspaces (ondemand), skip git checks and directory operations.
+	// The workspace path points to a remote location - we just remove from state.
+	if w.External {
+		fmt.Printf("[workspace] external workspace, skipping git/filesystem cleanup\n")
+		if err := m.state.RemoveWorkspace(workspaceID); err != nil {
+			return fmt.Errorf("failed to remove workspace from state: %w", err)
+		}
+		if err := m.state.Save(); err != nil {
+			return fmt.Errorf("failed to save state: %w", err)
+		}
+		fmt.Printf("[workspace] disposed: id=%s\n", workspaceID)
+		return nil
 	}
 
 	ctx := context.Background()

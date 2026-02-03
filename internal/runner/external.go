@@ -12,10 +12,10 @@ import (
 )
 
 // ErrProvisioningRequired indicates that no environment is available and provisioning is needed.
-// Contains the command to run for provisioning, which should be spawned as an interactive session.
+// Contains the provision prefix to use for creating the remote session directly.
 type ErrProvisioningRequired struct {
-	ProvisionCommand string // The command to run for provisioning (e.g., "dev connect -t flavor --no-connect")
-	Flavor           string // The flavor being provisioned
+	ProvisionPrefix string // Prefix for provisioning commands (e.g., "dev connect -t flavor --")
+	Flavor          string // The flavor being provisioned
 }
 
 func (e *ErrProvisioningRequired) Error() string {
@@ -35,20 +35,16 @@ func IsProvisioningRequired(err error) (*ErrProvisioningRequired, bool) {
 // This enables remote session execution via tools like SSH or dev connect.
 // Only the connection method is configured - tmux commands are built-in.
 type ExternalRunner struct {
-	provision        string         // Command to provision environment (e.g., "dev connect -t {{.Flavor}} --no-connect")
-	listEnvironments string         // Command to list environments (e.g., "ondemand list")
-	connectionPrefix string         // Prefix for tmux commands (e.g., "dev connect -n {{.Hostname}} --")
-	hostnameRegex    *regexp.Regexp // Regex to extract hostname from list output
-	hostname         string         // Cached after provisioning
-	flavor           string         // Flavor for provisioning (e.g., "xplat_react:omniview")
+	provisionPrefix string         // Prefix for provisioning+command (e.g., "dev connect -t {{.Flavor}} --")
+	hostnameRegex   *regexp.Regexp // Regex to extract hostname from provisioning log output
+	hostname        string         // Cached hostname after parsing from log
+	flavor          string         // Flavor for provisioning (e.g., "xplat_react:omniview")
 }
 
 // ExternalRunnerConfig is the simplified configuration for ExternalRunner.
 type ExternalRunnerConfig struct {
-	Provision        string `json:"provision"`         // Command to provision environment
-	ListEnvironments string `json:"list_environments"` // Command to list environments
-	ConnectionPrefix string `json:"connection_prefix"` // Prefix for tmux commands (e.g., "dev connect -n {{.Hostname}} --")
-	HostnameRegex    string `json:"hostname_regex"`    // Regex to extract hostname from list output
+	ProvisionPrefix string `json:"provision_prefix"` // Prefix for provisioning+command (e.g., "dev connect -t {{.Flavor}} --")
+	HostnameRegex   string `json:"hostname_regex"`   // Regex to extract hostname from provisioning log output
 }
 
 // NewExternalRunner creates a new ExternalRunner with the given configuration.
@@ -63,10 +59,8 @@ func NewExternalRunner(cfg ExternalRunnerConfig) (*ExternalRunner, error) {
 	}
 
 	return &ExternalRunner{
-		provision:        cfg.Provision,
-		listEnvironments: cfg.ListEnvironments,
-		connectionPrefix: cfg.ConnectionPrefix,
-		hostnameRegex:    hostnameRegex,
+		provisionPrefix: cfg.ProvisionPrefix,
+		hostnameRegex:   hostnameRegex,
 	}, nil
 }
 
@@ -83,50 +77,33 @@ func NewExternalRunnerWithFlavor(cfg ExternalRunnerConfig, flavor string) (*Exte
 	}
 
 	return &ExternalRunner{
-		provision:        cfg.Provision,
-		listEnvironments: cfg.ListEnvironments,
-		connectionPrefix: cfg.ConnectionPrefix,
-		hostnameRegex:    hostnameRegex,
-		flavor:           flavor,
+		provisionPrefix: cfg.ProvisionPrefix,
+		hostnameRegex:   hostnameRegex,
+		flavor:          flavor,
 	}, nil
 }
 
-// ProvisionEnvironment ensures the remote environment is ready.
-// First checks for existing environment, then returns ErrProvisioningRequired if provisioning is needed.
-// The caller should create an interactive session running the ProvisionCommand from the error.
+// ProvisionEnvironment checks if provisioning is needed.
+// For ondemand repos, each session needs its own OD instance to avoid Sapling conflicts,
+// so we always return ErrProvisioningRequired to trigger provisioning.
 func (r *ExternalRunner) ProvisionEnvironment(ctx context.Context) error {
-	// First check for existing environment
-	if r.listEnvironments != "" {
-		output, err := r.runCommand(ctx, r.listEnvironments, map[string]any{
-			"Flavor": r.flavor,
-		})
-		if err == nil {
-			hostname := r.parseHostname(output)
-			if hostname != "" {
-				r.hostname = hostname
-				fmt.Printf("[runner] found existing environment: %s\n", hostname)
-				return nil
-			}
-		}
+	// Each session needs its own OD - always provision a new one
+	if r.provisionPrefix == "" {
+		return fmt.Errorf("no provision_prefix configured")
 	}
 
-	// No existing environment - provisioning is required
-	if r.provision == "" {
-		return fmt.Errorf("no provision command configured")
-	}
-
-	// Build the provision command
-	provisionCmd, err := r.executeTemplate(r.provision, map[string]any{
+	// Build the provision prefix with flavor substituted
+	prefix, err := r.executeTemplate(r.provisionPrefix, map[string]any{
 		"Flavor": r.flavor,
 	})
 	if err != nil {
-		return fmt.Errorf("failed to build provision command: %w", err)
+		return fmt.Errorf("failed to build provision prefix: %w", err)
 	}
 
-	fmt.Printf("[runner] provisioning required for flavor %s\n", r.flavor)
+	fmt.Printf("[runner] provisioning new OD for flavor %s\n", r.flavor)
 	return &ErrProvisioningRequired{
-		ProvisionCommand: provisionCmd,
-		Flavor:           r.flavor,
+		ProvisionPrefix: prefix,
+		Flavor:          r.flavor,
 	}
 }
 
@@ -276,14 +253,9 @@ func (r *ExternalRunner) ListSessions(ctx context.Context) ([]string, error) {
 }
 
 // GetAttachCommand returns the command to attach to a session.
+// Note: For ondemand sessions, the local tmux session IS the session - just attach to it directly.
 func (r *ExternalRunner) GetAttachCommand(sessionID string) string {
-	prefix, err := r.executeTemplate(r.connectionPrefix, map[string]any{
-		"Hostname": r.hostname,
-	})
-	if err != nil {
-		return fmt.Sprintf("# error generating attach command: %v", err)
-	}
-	return fmt.Sprintf("%s tmux attach -t %s", prefix, ShellQuote(sessionID))
+	return fmt.Sprintf("tmux attach -t %s", ShellQuote(sessionID))
 }
 
 // GetEnvironmentID returns the environment identifier (e.g., OD hostname).
@@ -291,22 +263,27 @@ func (r *ExternalRunner) GetEnvironmentID() string {
 	return r.hostname
 }
 
-// runTmuxCommand executes a tmux command via the connection prefix.
+// SetHostname sets the hostname for this runner (used after parsing from log).
+func (r *ExternalRunner) SetHostname(hostname string) {
+	r.hostname = hostname
+}
+
+// ParseHostnameFromLog extracts the hostname from log content using the configured regex.
+// Returns empty string if no match found.
+func (r *ExternalRunner) ParseHostnameFromLog(logContent string) string {
+	return r.parseHostname(logContent)
+}
+
+// GetHostnameRegex returns the compiled hostname regex pattern.
+func (r *ExternalRunner) GetHostnameRegex() *regexp.Regexp {
+	return r.hostnameRegex
+}
+
+// runTmuxCommand executes a tmux command locally.
+// Note: For ondemand sessions, the local tmux session tunnels through dev connect,
+// so all tmux operations are done locally.
 func (r *ExternalRunner) runTmuxCommand(ctx context.Context, tmuxCmd string) (string, error) {
-	if r.connectionPrefix == "" {
-		return "", fmt.Errorf("connection_prefix not configured")
-	}
-
-	// Build the full command: prefix + tmux command
-	prefix, err := r.executeTemplate(r.connectionPrefix, map[string]any{
-		"Hostname": r.hostname,
-	})
-	if err != nil {
-		return "", err
-	}
-
-	fullCmd := prefix + " " + tmuxCmd
-	cmd := exec.CommandContext(ctx, "bash", "-c", fullCmd)
+	cmd := exec.CommandContext(ctx, "bash", "-c", tmuxCmd)
 	output, err := cmd.CombinedOutput()
 	if err != nil {
 		return "", fmt.Errorf("command failed: %w: %s", err, strings.TrimSpace(string(output)))
@@ -375,10 +352,25 @@ func ShellQuote(s string) string {
 	return "'" + strings.ReplaceAll(s, "'", "'\\''") + "'"
 }
 
+// ParseHostnameWithRegex extracts a hostname from log content using a regex pattern.
+// Returns empty string if no match found or regex is nil.
+func ParseHostnameWithRegex(logContent string, hostnameRegex *regexp.Regexp) string {
+	if hostnameRegex == nil {
+		return ""
+	}
+	matches := hostnameRegex.FindStringSubmatch(logContent)
+	if len(matches) > 1 {
+		return matches[1] // First capture group
+	}
+	if len(matches) > 0 {
+		return matches[0] // Full match
+	}
+	return ""
+}
+
 // CommandTemplates is kept for backward compatibility with old configs.
 // New configs should use ExternalRunnerConfig directly.
 type CommandTemplates struct {
-	Provision        string `json:"provision"`
-	ListEnvironments string `json:"list_environments"`
+	ProvisionPrefix  string `json:"provision_prefix"`
 	ConnectionPrefix string `json:"connection_prefix"`
 }

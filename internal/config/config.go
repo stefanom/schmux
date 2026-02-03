@@ -145,11 +145,10 @@ type AccessControlConfig struct {
 
 // SessionRunnerConfig controls how sessions are executed.
 type SessionRunnerConfig struct {
-	Type             string `json:"type"`                        // "local_tmux" (default) or "external"
-	Provision        string `json:"provision,omitempty"`         // Command to provision environment
-	ListEnvironments string `json:"list_environments,omitempty"` // Command to list environments
-	ConnectionPrefix string `json:"connection_prefix,omitempty"` // Prefix for tmux commands (e.g., "dev connect -n {{.Hostname}} --")
-	HostnameRegex    string `json:"hostname_regex,omitempty"`    // Regex to extract hostname from list output
+	Type            string `json:"type"`                        // "local_tmux" (default) or "external"
+	ProvisionPrefix string `json:"provision_prefix,omitempty"`  // Prefix for provisioning+command (e.g., "dev connect -t {{.Flavor}} --")
+	HostnameRegex   string `json:"hostname_regex,omitempty"`    // Regex to extract hostname from provisioning log output
+	OpenVSCode      string `json:"open_vscode,omitempty"`       // Command to open VSCode on remote (e.g., "code-fb --remote fb-remote+{{.Hostname}} {{.Path}}")
 }
 
 // VersionControlConfig controls how version control is handled.
@@ -1094,14 +1093,6 @@ func (c *Config) GetSessionRunnerHostnameRegex() string {
 	return c.SessionRunner.HostnameRegex
 }
 
-// GetSessionRunnerConnectionPrefix returns the connection prefix for external runner.
-func (c *Config) GetSessionRunnerConnectionPrefix() string {
-	if c.SessionRunner == nil {
-		return ""
-	}
-	return c.SessionRunner.ConnectionPrefix
-}
-
 // GetVersionControlType returns the configured version control type.
 // Defaults to "git" if not set.
 func (c *Config) GetVersionControlType() string {
@@ -1139,31 +1130,22 @@ func (c *Config) GetOnDemandRunnerHostnameRegex() string {
 	return runner.HostnameRegex
 }
 
-// GetOnDemandRunnerConnectionPrefix returns the connection prefix for ondemand runner.
-func (c *Config) GetOnDemandRunnerConnectionPrefix() string {
+// GetOnDemandRunnerProvisionPrefix returns the provision prefix for ondemand runner.
+func (c *Config) GetOnDemandRunnerProvisionPrefix() string {
 	runner := c.GetOnDemandRunner()
 	if runner == nil {
 		return ""
 	}
-	return runner.ConnectionPrefix
+	return runner.ProvisionPrefix
 }
 
-// GetOnDemandRunnerProvision returns the provision command for ondemand runner.
-func (c *Config) GetOnDemandRunnerProvision() string {
+// GetOnDemandRunnerOpenVSCode returns the open_vscode command for ondemand runner.
+func (c *Config) GetOnDemandRunnerOpenVSCode() string {
 	runner := c.GetOnDemandRunner()
 	if runner == nil {
 		return ""
 	}
-	return runner.Provision
-}
-
-// GetOnDemandRunnerListEnvironments returns the list environments command for ondemand runner.
-func (c *Config) GetOnDemandRunnerListEnvironments() string {
-	runner := c.GetOnDemandRunner()
-	if runner == nil {
-		return ""
-	}
-	return runner.ListEnvironments
+	return runner.OpenVSCode
 }
 
 // HasOnDemandRepos returns true if any repo uses ondemand mode.

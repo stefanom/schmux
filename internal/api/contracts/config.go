@@ -217,20 +217,18 @@ type AccessControlUpdate struct {
 // SessionRunner represents session runner configuration.
 // Deprecated: Use OnDemandRunner for new configs.
 type SessionRunner struct {
-	Type             string `json:"type"`                        // "local_tmux" (default) or "external"
-	Provision        string `json:"provision,omitempty"`         // Command to provision environment
-	ListEnvironments string `json:"list_environments,omitempty"` // Command to list environments
-	ConnectionPrefix string `json:"connection_prefix,omitempty"` // Prefix for tmux commands (e.g., "dev connect -n {{.Hostname}} --")
-	HostnameRegex    string `json:"hostname_regex,omitempty"`    // Regex to extract hostname from list output
+	Type            string `json:"type"`                       // "local_tmux" (default) or "external"
+	ProvisionPrefix string `json:"provision_prefix,omitempty"` // Prefix for provisioning+command (e.g., "dev connect -t {{.Flavor}} --")
+	HostnameRegex   string `json:"hostname_regex,omitempty"`   // Regex to extract hostname from provisioning log output
+	OpenVSCode      string `json:"open_vscode,omitempty"`      // Command to open VSCode on remote (e.g., "code-fb --remote fb-remote+{{.Hostname}} {{.Path}}")
 }
 
 // SessionRunnerUpdate represents partial session runner updates.
 type SessionRunnerUpdate struct {
-	Type             *string `json:"type,omitempty"`
-	Provision        *string `json:"provision,omitempty"`
-	ListEnvironments *string `json:"list_environments,omitempty"`
-	ConnectionPrefix *string `json:"connection_prefix,omitempty"`
-	HostnameRegex    *string `json:"hostname_regex,omitempty"`
+	Type            *string `json:"type,omitempty"`
+	ProvisionPrefix *string `json:"provision_prefix,omitempty"`
+	HostnameRegex   *string `json:"hostname_regex,omitempty"`
+	OpenVSCode      *string `json:"open_vscode,omitempty"`
 }
 
 // VersionControl represents version control configuration.
