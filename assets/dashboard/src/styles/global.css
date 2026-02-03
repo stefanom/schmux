@@ -980,7 +980,7 @@ body {
     display: flex;
     align-items: center;
     justify-content: space-between;
-    padding: var(--spacing-sm) 0;
+    padding: 0 0 var(--spacing-sm) 0;
     background: var(--color-surface-alt);
     border-radius: var(--radius-md);
     margin-bottom: var(--spacing-sm);
@@ -1076,7 +1076,6 @@ body {
     transition: all var(--duration-fast) var(--easing);
     min-width: 140px;
     max-width: 220px;
-    min-height: 44px;
     font-size: 0.75rem;
 }
 
@@ -1460,7 +1459,7 @@ body {
     display: grid;
     grid-template-columns: 1fr 300px;
     min-height: 0;
-    height: calc(100vh - 180px);
+    height: calc(100vh - 120px);
     transition: grid-template-columns 0.2s ease;
 }
 
