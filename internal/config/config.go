@@ -146,9 +146,9 @@ type AccessControlConfig struct {
 // SessionRunnerConfig controls how sessions are executed.
 type SessionRunnerConfig struct {
 	Type            string `json:"type"`                        // "local_tmux" (default) or "external"
-	ProvisionPrefix string `json:"provision_prefix,omitempty"`  // Prefix for provisioning+command (e.g., "dev connect -t {{.Flavor}} --")
+	ProvisionPrefix string `json:"provision_prefix,omitempty"`  // Prefix for provisioning+command (e.g., "ssh {{.Flavor}} --")
 	HostnameRegex   string `json:"hostname_regex,omitempty"`    // Regex to extract hostname from provisioning log output
-	OpenVSCode      string `json:"open_vscode,omitempty"`       // Command to open VSCode on remote (e.g., "code-fb --remote fb-remote+{{.Hostname}} {{.Path}}")
+	OpenVSCode      string `json:"open_vscode,omitempty"`       // Command to open VSCode on remote (e.g., "code --remote ssh-remote+{{.Hostname}} {{.Path}}")
 }
 
 // VersionControlConfig controls how version control is handled.
@@ -197,8 +197,8 @@ func (r Repo) IsOnDemand() bool {
 
 // OnDemandConfig contains per-repo on-demand settings.
 type OnDemandConfig struct {
-	Flavor        string `json:"flavor"`         // e.g., "xplat_react:omniview"
-	WorkspacePath string `json:"workspace_path"` // e.g., "~/fbsource"
+	Flavor        string `json:"flavor"`         // e.g., "gpu-large"
+	WorkspacePath string `json:"workspace_path"` // e.g., "~/projects/myrepo"
 }
 
 // RunTarget represents a user-supplied run target.

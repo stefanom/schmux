@@ -343,7 +343,7 @@ func (m *Manager) getRunnerForWorkspace(ctx context.Context, w *state.Workspace)
 	return extRunner, extRunner.GetEnvironmentID(), nil
 }
 
-// SpawnWithProvisioning creates a local tmux session that runs the agent command via dev connect.
+// SpawnWithProvisioning creates a local tmux session that runs the agent command via the provisioning tool.
 // The local session stays connected to the remote, forwarding I/O, so the dashboard can monitor it.
 // This eliminates the need for a remote tmux layer - the local tmux session IS the session.
 func (m *Manager) SpawnWithProvisioning(ctx context.Context, w *state.Workspace, provisionPrefix, flavor, sessionID, tmuxSession, command, nickname, target string) (*state.Session, error) {
@@ -374,7 +374,7 @@ func (m *Manager) SpawnWithProvisioning(ctx context.Context, w *state.Workspace,
 		homeDir = "/"
 	}
 
-	// Create local tmux session that runs the agent via dev connect
+	// Create local tmux session that runs the agent via the provisioning tool
 	if err := m.runner.CreateSession(ctx, runner.CreateSessionOpts{
 		SessionID: tmuxSession,
 		WorkDir:   homeDir,

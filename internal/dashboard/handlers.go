@@ -2210,18 +2210,6 @@ func (s *Server) handleOpenVSCodeExternal(w http.ResponseWriter, ws state.Worksp
 							}
 						}
 					}
-
-					// If still no match, try a generic OD hostname pattern
-					if hostname == "" {
-						// Look for patterns like "12345.od.something" anywhere in the text
-						genericODRegex := regexp.MustCompile(`\b([0-9]+\.od\.[^\s]+)\b`)
-						matches := genericODRegex.FindStringSubmatch(logContent)
-						if len(matches) > 1 {
-							hostname = matches[1]
-						} else if len(matches) > 0 {
-							hostname = matches[0]
-						}
-					}
 				}
 			}
 		}

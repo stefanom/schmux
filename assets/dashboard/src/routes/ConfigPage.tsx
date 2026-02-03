@@ -23,10 +23,10 @@ const TABS = ['Workspaces', 'Sessions', 'Quick Launch', 'Code Review', 'Advanced
 // Map step number to URL slug
 const TAB_SLUGS = ['workspaces', 'sessions', 'quicklaunch', 'codereview', 'advanced'];
 
-// Default OnDemand runner configuration
-const DEFAULT_ONDEMAND_HOSTNAME_REGEX = '([0-9]+\\.od\\.[^\\s]+)';
-const DEFAULT_ONDEMAND_PROVISION_PREFIX = 'dev connect -t {{.Flavor}} --';
-const DEFAULT_ONDEMAND_OPEN_VSCODE = 'code-fb --remote fb-remote+{{.Hostname}} {{.Path}}';
+// Default OnDemand runner configuration - empty, user must configure
+const DEFAULT_ONDEMAND_HOSTNAME_REGEX = '';
+const DEFAULT_ONDEMAND_PROVISION_PREFIX = '';
+const DEFAULT_ONDEMAND_OPEN_VSCODE = '';
 
 // Helper: step number -> slug
 const stepToSlug = (step: number) => TAB_SLUGS[step - 1];
@@ -2512,7 +2512,7 @@ export default function ConfigPage() {
                     <input
                       type="text"
                       className="input input--monospace"
-                      placeholder="dev connect -t {{.Flavor}} --"
+                      placeholder="ssh {{.Flavor}} --"
                       value={ondemandRunnerProvisionPrefix}
                       onChange={(e) => setOndemandRunnerProvisionPrefix(e.target.value)}
                     />
@@ -2526,7 +2526,7 @@ export default function ConfigPage() {
                     <input
                       type="text"
                       className="input"
-                      placeholder="^([0-9]+\.od).*"
+                      placeholder="([a-zA-Z0-9.-]+)"
                       value={ondemandRunnerHostnameRegex}
                       onChange={(e) => setOndemandRunnerHostnameRegex(e.target.value)}
                     />
@@ -2540,12 +2540,12 @@ export default function ConfigPage() {
                     <input
                       type="text"
                       className="input input--monospace"
-                      placeholder='code-fb --remote fb-remote+{{.Hostname}} {{.Path}}'
+                      placeholder='code --remote ssh-remote+{{.Hostname}} {{.Path}}'
                       value={ondemandRunnerOpenVSCode}
                       onChange={(e) => setOndemandRunnerOpenVSCode(e.target.value)}
                     />
                     <p className="form-group__hint">
-                      Command to open VSCode on a remote workspace. Template vars: <code>{'{{.Hostname}}'}</code> (OD host), <code>{'{{.Path}}'}</code> (workspace path).
+                      Command to open VSCode on a remote workspace. Template vars: <code>{'{{.Hostname}}'}</code> (remote host), <code>{'{{.Path}}'}</code> (workspace path).
                       Leave empty to disable the VSCode button for remote workspaces.
                     </p>
                   </div>

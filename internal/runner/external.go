@@ -14,7 +14,7 @@ import (
 // ErrProvisioningRequired indicates that no environment is available and provisioning is needed.
 // Contains the provision prefix to use for creating the remote session directly.
 type ErrProvisioningRequired struct {
-	ProvisionPrefix string // Prefix for provisioning commands (e.g., "dev connect -t flavor --")
+	ProvisionPrefix string // Prefix for provisioning commands (e.g., "ssh user@host --")
 	Flavor          string // The flavor being provisioned
 }
 
@@ -32,18 +32,18 @@ func IsProvisioningRequired(err error) (*ErrProvisioningRequired, bool) {
 }
 
 // ExternalRunner executes tmux commands via a configurable connection prefix.
-// This enables remote session execution via tools like SSH or dev connect.
+// This enables remote session execution via tools like SSH or custom provisioning tools.
 // Only the connection method is configured - tmux commands are built-in.
 type ExternalRunner struct {
-	provisionPrefix string         // Prefix for provisioning+command (e.g., "dev connect -t {{.Flavor}} --")
+	provisionPrefix string         // Prefix for provisioning+command (e.g., "ssh {{.Flavor}} --")
 	hostnameRegex   *regexp.Regexp // Regex to extract hostname from provisioning log output
 	hostname        string         // Cached hostname after parsing from log
-	flavor          string         // Flavor for provisioning (e.g., "xplat_react:omniview")
+	flavor          string         // Flavor for provisioning (e.g., "gpu-large")
 }
 
 // ExternalRunnerConfig is the simplified configuration for ExternalRunner.
 type ExternalRunnerConfig struct {
-	ProvisionPrefix string `json:"provision_prefix"` // Prefix for provisioning+command (e.g., "dev connect -t {{.Flavor}} --")
+	ProvisionPrefix string `json:"provision_prefix"` // Prefix for provisioning+command (e.g., "ssh {{.Flavor}} --")
 	HostnameRegex   string `json:"hostname_regex"`   // Regex to extract hostname from provisioning log output
 }
 
@@ -258,7 +258,7 @@ func (r *ExternalRunner) GetAttachCommand(sessionID string) string {
 	return fmt.Sprintf("tmux attach -t %s", ShellQuote(sessionID))
 }
 
-// GetEnvironmentID returns the environment identifier (e.g., OD hostname).
+// GetEnvironmentID returns the environment identifier (e.g., remote hostname).
 func (r *ExternalRunner) GetEnvironmentID() string {
 	return r.hostname
 }
@@ -280,7 +280,7 @@ func (r *ExternalRunner) GetHostnameRegex() *regexp.Regexp {
 }
 
 // runTmuxCommand executes a tmux command locally.
-// Note: For ondemand sessions, the local tmux session tunnels through dev connect,
+// Note: For ondemand sessions, the local tmux session tunnels through the provisioning tool,
 // so all tmux operations are done locally.
 func (r *ExternalRunner) runTmuxCommand(ctx context.Context, tmuxCmd string) (string, error) {
 	cmd := exec.CommandContext(ctx, "bash", "-c", tmuxCmd)
