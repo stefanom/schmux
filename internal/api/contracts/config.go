@@ -2,14 +2,14 @@ package contracts
 
 // Repo represents a git repository configuration.
 type Repo struct {
-	Name     string          `json:"name"`
-	URL      string          `json:"url"`
-	Mode     string          `json:"mode,omitempty"` // "local" (default) or "ondemand"
-	OnDemand *OnDemandConfig `json:"ondemand,omitempty"`
+	Name   string        `json:"name"`
+	URL    string        `json:"url"`
+	Mode   string        `json:"mode,omitempty"` // "local" (default) or "remote"
+	Remote *RemoteConfig `json:"remote,omitempty"`
 }
 
-// OnDemandConfig contains per-repo on-demand settings.
-type OnDemandConfig struct {
+// RemoteConfig contains per-repo remote settings.
+type RemoteConfig struct {
 	Flavor        string `json:"flavor"`         // e.g., "gpu-large"
 	WorkspacePath string `json:"workspace_path"` // e.g., "~/projects/myrepo"
 }
@@ -21,12 +21,12 @@ type RepoConfig struct {
 
 // RepoWithConfig represents a repository with its loaded configuration.
 type RepoWithConfig struct {
-	Name          string          `json:"name"`
-	URL           string          `json:"url"`
-	Mode          string          `json:"mode,omitempty"`           // "local" (default) or "ondemand"
-	OnDemand      *OnDemandConfig `json:"ondemand,omitempty"`       // OnDemand settings (only if mode=ondemand)
-	DefaultBranch string          `json:"default_branch,omitempty"` // Omitted if not detected
-	Config        *RepoConfig     `json:"config,omitempty"`
+	Name          string        `json:"name"`
+	URL           string        `json:"url"`
+	Mode          string        `json:"mode,omitempty"`           // "local" (default) or "remote"
+	Remote        *RemoteConfig `json:"remote,omitempty"`         // Remote settings (only if mode=remote)
+	DefaultBranch string        `json:"default_branch,omitempty"` // Omitted if not detected
+	Config        *RepoConfig   `json:"config,omitempty"`
 }
 
 // RunTarget represents a user-supplied run target.
@@ -145,9 +145,9 @@ type ConfigResponse struct {
 	Xterm                      Xterm                 `json:"xterm"`
 	Network                    Network               `json:"network"`
 	AccessControl              AccessControl         `json:"access_control"`
-	SessionRunner              SessionRunner         `json:"session_runner"`  // Deprecated: use OnDemandRunner
-	OnDemandRunner             SessionRunner         `json:"ondemand_runner"` // Command templates for ondemand repos
-	VersionControl             VersionControl        `json:"version_control"` // Deprecated: VCS is now implied by repo mode
+	SessionRunner  SessionRunner  `json:"session_runner"`  // Deprecated: use RemoteRunner
+	RemoteRunner   SessionRunner  `json:"remote_runner"`   // Command templates for remote repos
+	VersionControl VersionControl `json:"version_control"` // Deprecated: VCS is now implied by repo mode
 	NeedsRestart               bool                  `json:"needs_restart"`
 }
 
@@ -215,7 +215,7 @@ type AccessControlUpdate struct {
 }
 
 // SessionRunner represents session runner configuration.
-// Deprecated: Use OnDemandRunner for new configs.
+// Deprecated: Use RemoteRunner for new configs.
 type SessionRunner struct {
 	Type            string `json:"type"`                       // "local_tmux" (default) or "external"
 	ProvisionPrefix string `json:"provision_prefix,omitempty"` // Prefix for provisioning+command (e.g., "ssh {{.Flavor}} --")
@@ -258,7 +258,7 @@ type ConfigUpdateRequest struct {
 	Xterm                      *XtermUpdate           `json:"xterm,omitempty"`
 	Network                    *NetworkUpdate         `json:"network,omitempty"`
 	AccessControl              *AccessControlUpdate   `json:"access_control,omitempty"`
-	SessionRunner              *SessionRunnerUpdate   `json:"session_runner,omitempty"`  // Deprecated: use OnDemandRunner
-	OnDemandRunner             *SessionRunnerUpdate   `json:"ondemand_runner,omitempty"` // Command templates for ondemand repos
-	VersionControl             *VersionControlUpdate  `json:"version_control,omitempty"` // Deprecated
+	SessionRunner  *SessionRunnerUpdate  `json:"session_runner,omitempty"`  // Deprecated: use RemoteRunner
+	RemoteRunner   *SessionRunnerUpdate  `json:"remote_runner,omitempty"`   // Command templates for remote repos
+	VersionControl *VersionControlUpdate `json:"version_control,omitempty"` // Deprecated
 }

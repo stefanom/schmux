@@ -66,7 +66,7 @@ export default function SessionTabs({ sessions, currentSessionId, workspace, act
   const filesChanged = workspace?.git_files_changed ?? 0;
   const hasChanges = filesChanged > 0 || linesAdded > 0 || linesRemoved > 0;
 
-  // External workspaces (ondemand) don't have git status/graph
+  // External workspaces (remote) don't have git status/graph
   const isExternal = workspace?.external ?? false;
 
   // Calculate spawn menu position

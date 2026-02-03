@@ -23,10 +23,10 @@ const TABS = ['Workspaces', 'Sessions', 'Quick Launch', 'Code Review', 'Advanced
 // Map step number to URL slug
 const TAB_SLUGS = ['workspaces', 'sessions', 'quicklaunch', 'codereview', 'advanced'];
 
-// Default OnDemand runner configuration - empty, user must configure
-const DEFAULT_ONDEMAND_HOSTNAME_REGEX = '';
-const DEFAULT_ONDEMAND_PROVISION_PREFIX = '';
-const DEFAULT_ONDEMAND_OPEN_VSCODE = '';
+// Default Remote runner configuration - empty, user must configure
+const DEFAULT_REMOTE_HOSTNAME_REGEX = '';
+const DEFAULT_REMOTE_PROVISION_PREFIX = '';
+const DEFAULT_REMOTE_OPEN_VSCODE = '';
 
 // Helper: step number -> slug
 const stepToSlug = (step: number) => TAB_SLUGS[step - 1];
@@ -79,9 +79,9 @@ type ConfigSnapshot = {
   authSessionTTLMinutes: number;
   authTlsCertPath: string;
   authTlsKeyPath: string;
-  ondemandRunnerHostnameRegex: string;
-  ondemandRunnerProvisionPrefix: string;
-  ondemandRunnerOpenVSCode: string;
+  remoteRunnerHostnameRegex: string;
+  remoteRunnerProvisionPrefix: string;
+  remoteRunnerOpenVSCode: string;
 };
 
 type ModelModalState = {
@@ -194,10 +194,10 @@ export default function ConfigPage() {
   const [authWarnings, setAuthWarnings] = useState<string[]>([]);
   const [apiNeedsRestart, setApiNeedsRestart] = useState(false);
 
-  // OnDemand Runner state (for repos with mode=ondemand)
-  const [ondemandRunnerHostnameRegex, setOndemandRunnerHostnameRegex] = useState(DEFAULT_ONDEMAND_HOSTNAME_REGEX);
-  const [ondemandRunnerProvisionPrefix, setOndemandRunnerProvisionPrefix] = useState(DEFAULT_ONDEMAND_PROVISION_PREFIX);
-  const [ondemandRunnerOpenVSCode, setOndemandRunnerOpenVSCode] = useState(DEFAULT_ONDEMAND_OPEN_VSCODE);
+  // Remote Runner state (for repos with mode=remote)
+  const [remoteRunnerHostnameRegex, setRemoteRunnerHostnameRegex] = useState(DEFAULT_REMOTE_HOSTNAME_REGEX);
+  const [remoteRunnerProvisionPrefix, setRemoteRunnerProvisionPrefix] = useState(DEFAULT_REMOTE_PROVISION_PREFIX);
+  const [remoteRunnerOpenVSCode, setRemoteRunnerOpenVSCode] = useState(DEFAULT_REMOTE_OPEN_VSCODE);
 
   // Overlays state
   const [overlays, setOverlays] = useState<OverlayInfo[]>([]);
@@ -245,9 +245,9 @@ export default function ConfigPage() {
       authSessionTTLMinutes,
       authTlsCertPath,
       authTlsKeyPath,
-      ondemandRunnerHostnameRegex,
-      ondemandRunnerProvisionPrefix,
-      ondemandRunnerOpenVSCode,
+      remoteRunnerHostnameRegex,
+      remoteRunnerProvisionPrefix,
+      remoteRunnerOpenVSCode,
     };
 
     // Deep comparison for arrays
@@ -289,16 +289,16 @@ export default function ConfigPage() {
       current.authSessionTTLMinutes !== originalConfig.authSessionTTLMinutes ||
       current.authTlsCertPath !== originalConfig.authTlsCertPath ||
       current.authTlsKeyPath !== originalConfig.authTlsKeyPath ||
-      current.ondemandRunnerHostnameRegex !== originalConfig.ondemandRunnerHostnameRegex ||
-      current.ondemandRunnerProvisionPrefix !== originalConfig.ondemandRunnerProvisionPrefix ||
-      current.ondemandRunnerOpenVSCode !== originalConfig.ondemandRunnerOpenVSCode
+      current.remoteRunnerHostnameRegex !== originalConfig.remoteRunnerHostnameRegex ||
+      current.remoteRunnerProvisionPrefix !== originalConfig.remoteRunnerProvisionPrefix ||
+      current.remoteRunnerOpenVSCode !== originalConfig.remoteRunnerOpenVSCode
     );
   };
 
   // Input states for new items
   const [newRepoName, setNewRepoName] = useState('');
   const [newRepoUrl, setNewRepoUrl] = useState('');
-  const [newRepoMode, setNewRepoMode] = useState<'local' | 'ondemand'>('local');
+  const [newRepoMode, setNewRepoMode] = useState<'local' | 'remote'>('local');
   const [newRepoFlavor, setNewRepoFlavor] = useState('');
   const [newRepoWorkspacePath, setNewRepoWorkspacePath] = useState('');
   const [newPromptableName, setNewPromptableName] = useState('');
@@ -394,10 +394,10 @@ export default function ConfigPage() {
         setAuthWarnings([]);
         setApiNeedsRestart(data.needs_restart || false);
 
-        // OnDemand runner configuration (use defaults if not set)
-        setOndemandRunnerHostnameRegex(data.ondemand_runner?.hostname_regex || DEFAULT_ONDEMAND_HOSTNAME_REGEX);
-        setOndemandRunnerProvisionPrefix(data.ondemand_runner?.provision_prefix || DEFAULT_ONDEMAND_PROVISION_PREFIX);
-        setOndemandRunnerOpenVSCode(data.ondemand_runner?.open_vscode || DEFAULT_ONDEMAND_OPEN_VSCODE);
+        // Remote runner configuration (use defaults if not set)
+        setRemoteRunnerHostnameRegex(data.remote_runner?.hostname_regex || DEFAULT_REMOTE_HOSTNAME_REGEX);
+        setRemoteRunnerProvisionPrefix(data.remote_runner?.provision_prefix || DEFAULT_REMOTE_PROVISION_PREFIX);
+        setRemoteRunnerOpenVSCode(data.remote_runner?.open_vscode || DEFAULT_REMOTE_OPEN_VSCODE);
 
         // Set original config for change detection (non-wizard mode)
         if (!isFirstRun) {
@@ -435,9 +435,9 @@ export default function ConfigPage() {
             authSessionTTLMinutes: data.access_control?.session_ttl_minutes || 1440,
             authTlsCertPath: data.network?.tls?.cert_path || '',
             authTlsKeyPath: data.network?.tls?.key_path || '',
-            ondemandRunnerHostnameRegex: data.ondemand_runner?.hostname_regex || DEFAULT_ONDEMAND_HOSTNAME_REGEX,
-            ondemandRunnerProvisionPrefix: data.ondemand_runner?.provision_prefix || DEFAULT_ONDEMAND_PROVISION_PREFIX,
-            ondemandRunnerOpenVSCode: data.ondemand_runner?.open_vscode || DEFAULT_ONDEMAND_OPEN_VSCODE,
+            remoteRunnerHostnameRegex: data.remote_runner?.hostname_regex || DEFAULT_REMOTE_HOSTNAME_REGEX,
+            remoteRunnerProvisionPrefix: data.remote_runner?.provision_prefix || DEFAULT_REMOTE_PROVISION_PREFIX,
+            remoteRunnerOpenVSCode: data.remote_runner?.open_vscode || DEFAULT_REMOTE_OPEN_VSCODE,
           });
         }
 
@@ -613,11 +613,11 @@ export default function ConfigPage() {
           provider: authProvider,
           session_ttl_minutes: authSessionTTLMinutes,
         },
-        ondemand_runner: {
+        remote_runner: {
           type: 'external',
-          hostname_regex: ondemandRunnerHostnameRegex,
-          provision_prefix: ondemandRunnerProvisionPrefix,
-          open_vscode: ondemandRunnerOpenVSCode,
+          hostname_regex: remoteRunnerHostnameRegex,
+          provision_prefix: remoteRunnerProvisionPrefix,
+          open_vscode: remoteRunnerOpenVSCode,
         },
       };
 
@@ -667,9 +667,9 @@ export default function ConfigPage() {
           authSessionTTLMinutes,
           authTlsCertPath,
           authTlsKeyPath,
-          ondemandRunnerHostnameRegex,
-          ondemandRunnerProvisionPrefix,
-          ondemandRunnerOpenVSCode,
+          remoteRunnerHostnameRegex,
+          remoteRunnerProvisionPrefix,
+          remoteRunnerOpenVSCode,
         });
       }
 
@@ -721,23 +721,23 @@ export default function ConfigPage() {
         return;
       }
     }
-    if (newRepoMode === 'ondemand') {
+    if (newRepoMode === 'remote') {
       if (!newRepoFlavor.trim()) {
-        toastError('Flavor is required for ondemand repos');
+        toastError('Flavor is required for remote repos');
         return;
       }
       if (!newRepoWorkspacePath.trim()) {
-        toastError('Workspace path is required for ondemand repos');
+        toastError('Workspace path is required for remote repos');
         return;
       }
     }
     const newRepo: RepoResponse = {
       name: newRepoName,
-      url: newRepoMode === 'ondemand' ? `local:${newRepoName}` : newRepoUrl,
+      url: newRepoMode === 'remote' ? `local:${newRepoName}` : newRepoUrl,
       mode: newRepoMode,
     };
-    if (newRepoMode === 'ondemand') {
-      newRepo.ondemand = {
+    if (newRepoMode === 'remote') {
+      newRepo.remote = {
         flavor: newRepoFlavor,
         workspace_path: newRepoWorkspacePath,
       };
@@ -1304,7 +1304,7 @@ export default function ConfigPage() {
                     const overlay = overlays.find(o => o.repo_name === repo.name);
                     const overlayPath = overlay?.path || `~/.schmux/overlays/${repo.name}`;
                     const fileCount = overlay?.exists ? overlay.file_count : 0;
-                    const isOnDemand = repo.mode === 'ondemand';
+                    const isRemote = repo.mode === 'remote';
 
                     return (
                       <div className="item-list__item" key={repo.name}>
@@ -1315,22 +1315,22 @@ export default function ConfigPage() {
                               fontSize: '0.7rem',
                               padding: '0.15rem 0.5rem',
                               borderRadius: '4px',
-                              backgroundColor: isOnDemand ? 'var(--color-warning-bg, #fef3c7)' : 'var(--color-info-bg, #dbeafe)',
-                              color: isOnDemand ? 'var(--color-warning, #d97706)' : 'var(--color-info, #2563eb)',
+                              backgroundColor: isRemote ? 'var(--color-warning-bg, #fef3c7)' : 'var(--color-info-bg, #dbeafe)',
+                              color: isRemote ? 'var(--color-warning, #d97706)' : 'var(--color-info, #2563eb)',
                               fontWeight: 500,
                               textTransform: 'uppercase',
                               letterSpacing: '0.05em',
                             }}>
-                              {isOnDemand ? 'ondemand' : 'local'}
+                              {isRemote ? 'remote' : 'local'}
                             </span>
                           </div>
-                          {isOnDemand && repo.ondemand ? (
+                          {isRemote && repo.remote ? (
                             <>
                               <span className="item-list__item-detail">
-                                Flavor: <code style={{ backgroundColor: 'var(--color-bg-secondary)', padding: '0.1rem 0.3rem', borderRadius: '3px' }}>{repo.ondemand.flavor}</code>
+                                Flavor: <code style={{ backgroundColor: 'var(--color-bg-secondary)', padding: '0.1rem 0.3rem', borderRadius: '3px' }}>{repo.remote.flavor}</code>
                               </span>
                               <span className="item-list__item-detail">
-                                Path: <code style={{ backgroundColor: 'var(--color-bg-secondary)', padding: '0.1rem 0.3rem', borderRadius: '3px' }}>{repo.ondemand.workspace_path}</code>
+                                Path: <code style={{ backgroundColor: 'var(--color-bg-secondary)', padding: '0.1rem 0.3rem', borderRadius: '3px' }}>{repo.remote.workspace_path}</code>
                               </span>
                             </>
                           ) : (
@@ -1372,11 +1372,11 @@ export default function ConfigPage() {
                   <select
                     className="select"
                     value={newRepoMode}
-                    onChange={(e) => setNewRepoMode(e.target.value as 'local' | 'ondemand')}
+                    onChange={(e) => setNewRepoMode(e.target.value as 'local' | 'remote')}
                     style={{ width: 'auto', minWidth: 'unset' }}
                   >
                     <option value="local">Local</option>
-                    <option value="ondemand">OnDemand</option>
+                    <option value="remote">Remote</option>
                   </select>
                   {newRepoMode === 'local' && (
                     <input
@@ -1389,7 +1389,7 @@ export default function ConfigPage() {
                       style={{ flex: 3 }}
                     />
                   )}
-                  {newRepoMode === 'ondemand' && (
+                  {newRepoMode === 'remote' && (
                     <>
                       <input
                         type="text"
@@ -2499,11 +2499,11 @@ export default function ConfigPage() {
 
               <div className="settings-section">
                 <div className="settings-section__header">
-                  <h3 className="settings-section__title">OnDemand Runner</h3>
+                  <h3 className="settings-section__title">Remote Runner</h3>
                 </div>
                 <div className="settings-section__body">
                   <p className="form-group__hint" style={{ marginBottom: 'var(--spacing-md)' }}>
-                    Configure how to run sessions on OnDemand repositories (repos with mode &quot;ondemand&quot;).
+                    Configure how to run sessions on Remote repositories (repos with mode &quot;remote&quot;).
                     The connection prefix is prepended to all tmux commands to route them through your remote connection tool.
                   </p>
 
@@ -2513,8 +2513,8 @@ export default function ConfigPage() {
                       type="text"
                       className="input input--monospace"
                       placeholder="ssh {{.Flavor}} --"
-                      value={ondemandRunnerProvisionPrefix}
-                      onChange={(e) => setOndemandRunnerProvisionPrefix(e.target.value)}
+                      value={remoteRunnerProvisionPrefix}
+                      onChange={(e) => setRemoteRunnerProvisionPrefix(e.target.value)}
                     />
                     <p className="form-group__hint">
                       Prefix for provisioning commands. Appended with tmux session creation. Template var: <code>{'{{.Flavor}}'}</code>
@@ -2527,8 +2527,8 @@ export default function ConfigPage() {
                       type="text"
                       className="input"
                       placeholder="([a-zA-Z0-9.-]+)"
-                      value={ondemandRunnerHostnameRegex}
-                      onChange={(e) => setOndemandRunnerHostnameRegex(e.target.value)}
+                      value={remoteRunnerHostnameRegex}
+                      onChange={(e) => setRemoteRunnerHostnameRegex(e.target.value)}
                     />
                     <p className="form-group__hint">
                       Regex to extract hostname from provisioning log output. First capture group is used.
@@ -2541,8 +2541,8 @@ export default function ConfigPage() {
                       type="text"
                       className="input input--monospace"
                       placeholder='code --remote ssh-remote+{{.Hostname}} {{.Path}}'
-                      value={ondemandRunnerOpenVSCode}
-                      onChange={(e) => setOndemandRunnerOpenVSCode(e.target.value)}
+                      value={remoteRunnerOpenVSCode}
+                      onChange={(e) => setRemoteRunnerOpenVSCode(e.target.value)}
                     />
                     <p className="form-group__hint">
                       Command to open VSCode on a remote workspace. Template vars: <code>{'{{.Hostname}}'}</code> (remote host), <code>{'{{.Path}}'}</code> (workspace path).

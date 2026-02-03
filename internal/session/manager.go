@@ -35,7 +35,7 @@ type Manager struct {
 	state          state.StateStore
 	workspace      workspace.WorkspaceManager
 	runner         runner.SessionRunner            // Local tmux runner
-	ondemandRunner runner.SessionRunner            // External runner for ondemand repos (lazy-init)
+	remoteRunner runner.SessionRunner            // External runner for remote repos (lazy-init)
 	runnerByRepo   map[string]runner.SessionRunner // Cached runners per repo (for different flavors)
 }
 
@@ -170,7 +170,7 @@ func (m *Manager) Spawn(ctx context.Context, repoURL, branch, targetName, prompt
 		TmuxSession:   tmuxSession,
 		CreatedAt:     time.Now(),
 		Pid:           pid,
-		EnvironmentID: envID, // Set for ondemand sessions
+		EnvironmentID: envID, // Set for remote sessions
 	}
 
 	if err := m.state.AddSession(sess); err != nil {
@@ -272,7 +272,7 @@ func (m *Manager) SpawnCommand(ctx context.Context, repoURL, branch, command, ni
 		TmuxSession:   tmuxSession,
 		CreatedAt:     time.Now(),
 		Pid:           pid,
-		EnvironmentID: envID, // Set for ondemand sessions
+		EnvironmentID: envID, // Set for remote sessions
 	}
 
 	if err := m.state.AddSession(sess); err != nil {
@@ -286,16 +286,16 @@ func (m *Manager) SpawnCommand(ctx context.Context, repoURL, branch, command, ni
 }
 
 // getRunnerForWorkspace returns the appropriate runner for a workspace.
-// For external (ondemand) workspaces, returns an ExternalRunner configured for that repo.
+// For external (remote) workspaces, returns an ExternalRunner configured for that repo.
 // For local workspaces, returns the local tmux runner.
-// Also returns the environment ID (hostname) for ondemand sessions, empty for local.
+// Also returns the environment ID (hostname) for remote sessions, empty for local.
 func (m *Manager) getRunnerForWorkspace(ctx context.Context, w *state.Workspace) (runner.SessionRunner, string, error) {
 	// For local workspaces, use the local tmux runner
 	if !w.External {
 		return m.runner, "", nil
 	}
 
-	// For external (ondemand) workspaces, get or create an ExternalRunner
+	// For external (remote) workspaces, get or create an ExternalRunner
 	// Check if we have a cached runner for this repo
 	if r, ok := m.runnerByRepo[w.Repo]; ok {
 		return r, r.GetEnvironmentID(), nil
@@ -306,24 +306,24 @@ func (m *Manager) getRunnerForWorkspace(ctx context.Context, w *state.Workspace)
 	if !found {
 		return nil, "", fmt.Errorf("repo config not found for %s", w.Repo)
 	}
-	if !repoConfig.IsOnDemand() {
-		return nil, "", fmt.Errorf("repo %s is not an ondemand repo", repoConfig.Name)
+	if !repoConfig.IsRemote() {
+		return nil, "", fmt.Errorf("repo %s is not an remote repo", repoConfig.Name)
 	}
-	if repoConfig.OnDemand == nil {
-		return nil, "", fmt.Errorf("repo %s has no ondemand config", repoConfig.Name)
+	if repoConfig.Remote == nil {
+		return nil, "", fmt.Errorf("repo %s has no remote config", repoConfig.Name)
 	}
 
-	// Get the ondemand runner config
-	runnerCfg := m.config.GetOnDemandRunner()
+	// Get the remote runner config
+	runnerCfg := m.config.GetRemoteRunner()
 	if runnerCfg == nil || runnerCfg.ProvisionPrefix == "" {
-		return nil, "", fmt.Errorf("ondemand_runner not configured (provision_prefix is required)")
+		return nil, "", fmt.Errorf("remote_runner not configured (provision_prefix is required)")
 	}
 
 	// Create the external runner with simplified config
 	extRunner, err := runner.NewExternalRunnerWithFlavor(runner.ExternalRunnerConfig{
 		ProvisionPrefix: runnerCfg.ProvisionPrefix,
 		HostnameRegex:   runnerCfg.HostnameRegex,
-	}, repoConfig.OnDemand.Flavor)
+	}, repoConfig.Remote.Flavor)
 	if err != nil {
 		return nil, "", fmt.Errorf("failed to create external runner: %w", err)
 	}
@@ -359,7 +359,7 @@ func (m *Manager) SpawnWithProvisioning(ctx context.Context, w *state.Workspace,
 	fullCmd := fmt.Sprintf("%s bash -c %s", provisionPrefix, runner.ShellQuote(remoteCmd))
 
 	// Log the provisioning details to main log
-	fmt.Printf("[session] === ONDEMAND SESSION ===\n")
+	fmt.Printf("[session] === REMOTE SESSION ===\n")
 	fmt.Printf("[session] Flavor: %s\n", flavor)
 	fmt.Printf("[session] Remote workspace path: %s\n", w.Path)
 	fmt.Printf("[session] Agent command: %s\n", command)
@@ -380,7 +380,7 @@ func (m *Manager) SpawnWithProvisioning(ctx context.Context, w *state.Workspace,
 		WorkDir:   homeDir,
 		Command:   fullCmd,
 	}); err != nil {
-		return nil, fmt.Errorf("failed to create ondemand session: %w", err)
+		return nil, fmt.Errorf("failed to create remote session: %w", err)
 	}
 
 	// Set up log file for pipe-pane streaming
@@ -426,7 +426,7 @@ func (m *Manager) SpawnWithProvisioning(ctx context.Context, w *state.Workspace,
 		return nil, fmt.Errorf("failed to save state: %w", err)
 	}
 
-	fmt.Printf("[session] created ondemand session: id=%s flavor=%s\n", sessionID, flavor)
+	fmt.Printf("[session] created remote session: id=%s flavor=%s\n", sessionID, flavor)
 	return &sess, nil
 }
 
