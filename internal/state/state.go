@@ -50,7 +50,7 @@ type Session struct {
 	TmuxSession   string    `json:"tmux_session"`
 	CreatedAt     time.Time `json:"created_at"`
 	Pid           int       `json:"pid"`                      // PID of the target process from tmux pane
-	EnvironmentID string    `json:"environment_id,omitempty"` // Remote environment ID (e.g., OD hostname)
+	EnvironmentID string    `json:"environment_id,omitempty"` // Remote environment ID (e.g., hostname)
 	LastOutputAt  time.Time `json:"-"`                        // Last time terminal had new output (in-memory only, not persisted)
 	Nudge         string    `json:"nudge,omitempty"`          // NudgeNik consultation result
 }

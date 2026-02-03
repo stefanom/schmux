@@ -87,16 +87,16 @@ func resolveViaShell(ctx context.Context, cmd string) (string, bool) {
 			continue
 		}
 
-		// Handle alias definitions like "alias code=code-fb" or "code: aliased to code-fb"
+		// Handle alias definitions like "alias code=code-insiders" or "code: aliased to code-insiders"
 		// Extract the target command from the alias
 		path := result
 		if strings.HasPrefix(result, "alias ") {
-			// Format: "alias code=code-fb" or "alias code='code-fb'"
+			// Format: "alias code=code-insiders" or "alias code='code-insiders'"
 			if idx := strings.Index(result, "="); idx != -1 {
 				path = strings.Trim(result[idx+1:], "'\"")
 			}
 		} else if strings.Contains(result, ": aliased to ") {
-			// Format: "code: aliased to code-fb"
+			// Format: "code: aliased to code-insiders"
 			parts := strings.SplitN(result, ": aliased to ", 2)
 			if len(parts) == 2 {
 				path = strings.TrimSpace(parts[1])

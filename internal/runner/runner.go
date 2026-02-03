@@ -1,6 +1,6 @@
 // Package runner provides abstractions for session execution environments.
 // Implementations include LocalTmuxRunner (local tmux) and ExternalRunner
-// (config-driven external commands like dev connect).
+// (config-driven external commands for remote provisioning).
 package runner
 
 import "context"
@@ -64,7 +64,7 @@ type SessionRunner interface {
 	// GetAttachCommand returns the command to attach to a session.
 	GetAttachCommand(sessionID string) string
 
-	// GetEnvironmentID returns the environment identifier (e.g., OD hostname).
+	// GetEnvironmentID returns the environment identifier (e.g., remote hostname).
 	// Returns empty string for local runners.
 	GetEnvironmentID() string
 }
