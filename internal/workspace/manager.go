@@ -151,12 +151,12 @@ func (m *Manager) hasActiveSessions(workspaceID string) bool {
 // GetOrCreate finds an existing workspace for the repoURL/branch or creates a new one.
 // Returns a workspace ready for use (fetch/pull/clean already done).
 // For local repositories (URL format "local:{name}"), always creates a fresh workspace.
-// For ondemand repos, creates an external workspace pointing to the configured path.
+// For remote repos, creates an external workspace pointing to the configured path.
 func (m *Manager) GetOrCreate(ctx context.Context, repoURL, branch string) (*state.Workspace, error) {
-	// Check if this is an ondemand repo
+	// Check if this is an remote repo
 	repoConfig, found := m.config.FindRepoByURL(repoURL)
-	if found && repoConfig.IsOnDemand() {
-		return m.getOrCreateOnDemandWorkspace(ctx, repoConfig, branch)
+	if found && repoConfig.IsRemote() {
+		return m.getOrCreateRemoteWorkspace(ctx, repoConfig, branch)
 	}
 
 	if err := ValidateBranchName(branch); err != nil {
@@ -228,28 +228,28 @@ func (m *Manager) GetOrCreate(ctx context.Context, repoURL, branch string) (*sta
 	return w, nil
 }
 
-// getOrCreateOnDemandWorkspace handles workspace creation for ondemand repos.
+// getOrCreateRemoteWorkspace handles workspace creation for remote repos.
 // These repos use externally-managed VCS (e.g., sapling) and remote execution environments.
 // No git clone or worktree is created - we just register a workspace pointing to the configured path.
-func (m *Manager) getOrCreateOnDemandWorkspace(ctx context.Context, repo config.Repo, branch string) (*state.Workspace, error) {
-	if repo.OnDemand == nil {
-		return nil, fmt.Errorf("repo %s is marked as ondemand but has no ondemand config", repo.Name)
+func (m *Manager) getOrCreateRemoteWorkspace(ctx context.Context, repo config.Repo, branch string) (*state.Workspace, error) {
+	if repo.Remote == nil {
+		return nil, fmt.Errorf("repo %s is marked as remote but has no remote config", repo.Name)
 	}
 
-	// For ondemand workspaces, keep the path as-is (including ~).
+	// For remote workspaces, keep the path as-is (including ~).
 	// The ~ should expand on the remote system, not locally.
-	workspacePath := repo.OnDemand.WorkspacePath
+	workspacePath := repo.Remote.WorkspacePath
 
 	lock := m.repoLock(repo.URL)
 	lock.Lock()
 	defer lock.Unlock()
 
-	// For ondemand repos, all sessions share the same workspace (external path)
+	// For remote repos, all sessions share the same workspace (external path)
 	// Look for existing workspace
 	for _, w := range m.state.GetWorkspaces() {
 		if w.Repo == repo.URL && w.External {
 			// Reuse existing external workspace (don't prepare - VCS is external)
-			fmt.Printf("[workspace] reusing ondemand workspace: id=%s path=%s\n", w.ID, w.Path)
+			fmt.Printf("[workspace] reusing remote workspace: id=%s path=%s\n", w.ID, w.Path)
 			return &w, nil
 		}
 	}
@@ -260,7 +260,7 @@ func (m *Manager) getOrCreateOnDemandWorkspace(ctx context.Context, repo config.
 	w := state.Workspace{
 		ID:       workspaceID,
 		Repo:     repo.URL,
-		Branch:   branch, // May not be used for ondemand
+		Branch:   branch, // May not be used for remote
 		Path:     workspacePath,
 		External: true,
 	}
@@ -272,7 +272,7 @@ func (m *Manager) getOrCreateOnDemandWorkspace(ctx context.Context, repo config.
 		return nil, fmt.Errorf("failed to save state: %w", err)
 	}
 
-	fmt.Printf("[workspace] created ondemand workspace: id=%s path=%s repo=%s\n", w.ID, w.Path, repo.URL)
+	fmt.Printf("[workspace] created remote workspace: id=%s path=%s repo=%s\n", w.ID, w.Path, repo.URL)
 	return &w, nil
 }
 
@@ -593,14 +593,14 @@ func extractWorkspaceNumber(id string) (int, error) {
 
 // UpdateGitStatus refreshes the git status for a single workspace.
 // Returns the updated workspace or an error.
-// For external (ondemand) workspaces, git status is not applicable.
+// For external (remote) workspaces, git status is not applicable.
 func (m *Manager) UpdateGitStatus(ctx context.Context, workspaceID string) (*state.Workspace, error) {
 	w, found := m.state.GetWorkspace(workspaceID)
 	if !found {
 		return nil, fmt.Errorf("workspace not found: %s", workspaceID)
 	}
 
-	// Skip git operations for external (ondemand) workspaces
+	// Skip git operations for external (remote) workspaces
 	// They use external VCS like Sapling, not git
 	if w.External {
 		return &w, nil
@@ -675,7 +675,7 @@ func (m *Manager) Dispose(workspaceID string) error {
 		return fmt.Errorf("workspace has active sessions: %s", workspaceID)
 	}
 
-	// For external workspaces (ondemand), skip git checks and directory operations.
+	// For external workspaces (remote), skip git checks and directory operations.
 	// The workspace path points to a remote location - we just remove from state.
 	if w.External {
 		fmt.Printf("[workspace] external workspace, skipping git/filesystem cleanup\n")

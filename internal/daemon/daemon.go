@@ -303,13 +303,13 @@ func Run(background bool) error {
 	}
 
 	// Create managers with configured runner and VCS
-	// Local tmux runner is used by default; ondemand repos use ExternalRunner
+	// Local tmux runner is used by default; remote repos use ExternalRunner
 	// which is created per-session in the session manager based on repo config
 	sessionRunner := runner.NewLocalTmuxRunner()
 	fmt.Printf("[daemon] using local tmux session runner\n")
 
 	// Configure version control - always use git for local repos
-	// (ondemand repos bypass VCS entirely via workspace manager)
+	// (remote repos bypass VCS entirely via workspace manager)
 	versionControl := vcs.NewGitVCS()
 	fmt.Printf("[daemon] using git version control for local repos\n")
 
@@ -410,7 +410,7 @@ func Run(background bool) error {
 	gitWatcher := workspace.NewGitWatcher(cfg, wm, server.BroadcastSessions)
 	if gitWatcher != nil {
 		wm.SetGitWatcher(gitWatcher)
-		// Add watches for all existing workspaces (skip external/ondemand ones)
+		// Add watches for all existing workspaces (skip external/remote ones)
 		for _, w := range st.GetWorkspaces() {
 			if w.External {
 				continue // Skip external workspaces - they use external VCS, not git

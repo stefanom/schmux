@@ -401,12 +401,12 @@ func (s *Server) handleSpawnPost(w http.ResponseWriter, r *http.Request) {
 
 	// Server-side branch conflict check for worktree mode
 	// This catches race conditions where UI check passed but another spawn claimed the branch
-	// Skip this check for ondemand repos since they share a single external workspace
-	repoConfig, isOnDemand := s.config.FindRepoByURL(req.Repo)
-	if isOnDemand {
-		isOnDemand = repoConfig.IsOnDemand()
+	// Skip this check for remote repos since they share a single external workspace
+	repoConfig, isRemote := s.config.FindRepoByURL(req.Repo)
+	if isRemote {
+		isRemote = repoConfig.IsRemote()
 	}
-	if req.WorkspaceID == "" && s.config.UseWorktrees() && !isOnDemand {
+	if req.WorkspaceID == "" && s.config.UseWorktrees() && !isRemote {
 		for _, ws := range s.state.GetWorkspaces() {
 			if ws.Repo == req.Repo && ws.Branch == req.Branch {
 				http.Error(w, fmt.Sprintf("branch_conflict: branch %q is already in use by workspace %q", req.Branch, ws.ID), http.StatusConflict)
@@ -948,15 +948,15 @@ func (s *Server) handleConfigGet(w http.ResponseWriter, r *http.Request) {
 			URL:  repo.URL,
 			Mode: repo.GetMode(),
 		}
-		// Include ondemand config if present
-		if repo.OnDemand != nil {
-			resp.OnDemand = &contracts.OnDemandConfig{
-				Flavor:        repo.OnDemand.Flavor,
-				WorkspacePath: repo.OnDemand.WorkspacePath,
+		// Include remote config if present
+		if repo.Remote != nil {
+			resp.Remote = &contracts.RemoteConfig{
+				Flavor:        repo.Remote.Flavor,
+				WorkspacePath: repo.Remote.WorkspacePath,
 			}
 		}
-		// Try to get default branch from cache (omit if not detected, and skip for ondemand repos)
-		if !repo.IsOnDemand() {
+		// Try to get default branch from cache (omit if not detected, and skip for remote repos)
+		if !repo.IsRemote() {
 			if defaultBranch, err := s.workspace.GetDefaultBranch(ctx, repo.URL); err == nil {
 				resp.DefaultBranch = defaultBranch
 			}
@@ -1060,7 +1060,7 @@ func (s *Server) handleConfigGet(w http.ResponseWriter, r *http.Request) {
 			SessionTTLMinutes: s.config.GetAuthSessionTTLMinutes(),
 		},
 		SessionRunner:  buildSessionRunner(s.config),
-		OnDemandRunner: buildOnDemandRunner(s.config),
+		RemoteRunner: buildRemoteRunner(s.config),
 		VersionControl: buildVersionControl(s.config),
 		NeedsRestart:   s.state.GetNeedsRestart(),
 	}
@@ -1134,24 +1134,24 @@ func (s *Server) handleConfigUpdate(w http.ResponseWriter, r *http.Request) {
 				return
 			}
 			// Validate mode if provided
-			if repo.Mode != "" && repo.Mode != config.RepoModeLocal && repo.Mode != config.RepoModeOnDemand {
+			if repo.Mode != "" && repo.Mode != config.RepoModeLocal && repo.Mode != config.RepoModeRemote {
 				http.Error(w, fmt.Sprintf("repo %s has invalid mode %q (must be %q or %q)",
-					repo.Name, repo.Mode, config.RepoModeLocal, config.RepoModeOnDemand), http.StatusBadRequest)
+					repo.Name, repo.Mode, config.RepoModeLocal, config.RepoModeRemote), http.StatusBadRequest)
 				return
 			}
-			// OnDemand repos require ondemand config
-			if repo.Mode == config.RepoModeOnDemand && repo.OnDemand == nil {
-				http.Error(w, fmt.Sprintf("repo %s is marked as ondemand but has no ondemand config", repo.Name), http.StatusBadRequest)
+			// Remote repos require remote config
+			if repo.Mode == config.RepoModeRemote && repo.Remote == nil {
+				http.Error(w, fmt.Sprintf("repo %s is marked as remote but has no remote config", repo.Name), http.StatusBadRequest)
 				return
 			}
 		}
 		cfg.Repos = make([]config.Repo, len(req.Repos))
 		for i, r := range req.Repos {
 			repo := config.Repo{Name: r.Name, URL: r.URL, Mode: r.Mode}
-			if r.OnDemand != nil {
-				repo.OnDemand = &config.OnDemandConfig{
-					Flavor:        r.OnDemand.Flavor,
-					WorkspacePath: r.OnDemand.WorkspacePath,
+			if r.Remote != nil {
+				repo.Remote = &config.RemoteConfig{
+					Flavor:        r.Remote.Flavor,
+					WorkspacePath: r.Remote.WorkspacePath,
 				}
 			}
 			cfg.Repos[i] = repo
@@ -1370,21 +1370,21 @@ func (s *Server) handleConfigUpdate(w http.ResponseWriter, r *http.Request) {
 		}
 	}
 
-	if req.OnDemandRunner != nil {
-		if cfg.OnDemandRunner == nil {
-			cfg.OnDemandRunner = &config.SessionRunnerConfig{}
+	if req.RemoteRunner != nil {
+		if cfg.RemoteRunner == nil {
+			cfg.RemoteRunner = &config.SessionRunnerConfig{}
 		}
-		if req.OnDemandRunner.Type != nil {
-			cfg.OnDemandRunner.Type = *req.OnDemandRunner.Type
+		if req.RemoteRunner.Type != nil {
+			cfg.RemoteRunner.Type = *req.RemoteRunner.Type
 		}
-		if req.OnDemandRunner.ProvisionPrefix != nil {
-			cfg.OnDemandRunner.ProvisionPrefix = *req.OnDemandRunner.ProvisionPrefix
+		if req.RemoteRunner.ProvisionPrefix != nil {
+			cfg.RemoteRunner.ProvisionPrefix = *req.RemoteRunner.ProvisionPrefix
 		}
-		if req.OnDemandRunner.HostnameRegex != nil {
-			cfg.OnDemandRunner.HostnameRegex = *req.OnDemandRunner.HostnameRegex
+		if req.RemoteRunner.HostnameRegex != nil {
+			cfg.RemoteRunner.HostnameRegex = *req.RemoteRunner.HostnameRegex
 		}
-		if req.OnDemandRunner.OpenVSCode != nil {
-			cfg.OnDemandRunner.OpenVSCode = *req.OnDemandRunner.OpenVSCode
+		if req.RemoteRunner.OpenVSCode != nil {
+			cfg.RemoteRunner.OpenVSCode = *req.RemoteRunner.OpenVSCode
 		}
 	}
 
@@ -1567,13 +1567,13 @@ func buildSessionRunner(cfg *config.Config) contracts.SessionRunner {
 	}
 }
 
-func buildOnDemandRunner(cfg *config.Config) contracts.SessionRunner {
-	runner := cfg.GetOnDemandRunner()
+func buildRemoteRunner(cfg *config.Config) contracts.SessionRunner {
+	runner := cfg.GetRemoteRunner()
 	if runner == nil {
 		return contracts.SessionRunner{}
 	}
 	return contracts.SessionRunner{
-		Type:            "external", // OnDemand always uses external runner
+		Type:            "external", // Remote always uses external runner
 		ProvisionPrefix: runner.ProvisionPrefix,
 		HostnameRegex:   runner.HostnameRegex,
 		OpenVSCode:      runner.OpenVSCode,
@@ -2125,7 +2125,7 @@ func (s *Server) handleOpenVSCode(w http.ResponseWriter, r *http.Request) {
 	})
 }
 
-// handleOpenVSCodeExternal handles opening VS Code for external (ondemand) workspaces.
+// handleOpenVSCodeExternal handles opening VS Code for external (remote) workspaces.
 func (s *Server) handleOpenVSCodeExternal(w http.ResponseWriter, ws state.Workspace) {
 	type OpenVSCodeResponse struct {
 		Success bool   `json:"success"`
@@ -2133,13 +2133,13 @@ func (s *Server) handleOpenVSCodeExternal(w http.ResponseWriter, ws state.Worksp
 	}
 
 	// Get the open_vscode command template from config
-	openVSCodeTemplate := s.config.GetOnDemandRunnerOpenVSCode()
+	openVSCodeTemplate := s.config.GetRemoteRunnerOpenVSCode()
 	if openVSCodeTemplate == "" {
 		w.Header().Set("Content-Type", "application/json")
 		w.WriteHeader(http.StatusNotImplemented)
 		json.NewEncoder(w).Encode(OpenVSCodeResponse{
 			Success: false,
-			Message: "VS Code for remote workspaces is not configured.\n\nSet ondemand_runner.open_vscode in your config.\nExample: \"code --folder-uri vscode-remote://fb-remote+{{.Hostname}}{{.Path}}\"",
+			Message: "VS Code for remote workspaces is not configured.\n\nSet remote_runner.open_vscode in your config.\nExample: \"code --folder-uri vscode-remote://fb-remote+{{.Hostname}}{{.Path}}\"",
 		})
 		return
 	}
@@ -2170,7 +2170,7 @@ func (s *Server) handleOpenVSCodeExternal(w http.ResponseWriter, ws state.Worksp
 
 	// If not set, try to parse it from the log file
 	if hostname == "" {
-		hostnameRegexStr := s.config.GetOnDemandRunnerHostnameRegex()
+		hostnameRegexStr := s.config.GetRemoteRunnerHostnameRegex()
 		if hostnameRegexStr != "" {
 			// Read the entire log file
 			logPath, err := s.session.GetLogPath(targetSession.ID)

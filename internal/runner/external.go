@@ -84,7 +84,7 @@ func NewExternalRunnerWithFlavor(cfg ExternalRunnerConfig, flavor string) (*Exte
 }
 
 // ProvisionEnvironment checks if provisioning is needed.
-// For ondemand repos, each session needs its own OD instance to avoid Sapling conflicts,
+// For remote repos, each session needs its own OD instance to avoid Sapling conflicts,
 // so we always return ErrProvisioningRequired to trigger provisioning.
 func (r *ExternalRunner) ProvisionEnvironment(ctx context.Context) error {
 	// Each session needs its own OD - always provision a new one
@@ -253,7 +253,7 @@ func (r *ExternalRunner) ListSessions(ctx context.Context) ([]string, error) {
 }
 
 // GetAttachCommand returns the command to attach to a session.
-// Note: For ondemand sessions, the local tmux session IS the session - just attach to it directly.
+// Note: For remote sessions, the local tmux session IS the session - just attach to it directly.
 func (r *ExternalRunner) GetAttachCommand(sessionID string) string {
 	return fmt.Sprintf("tmux attach -t %s", ShellQuote(sessionID))
 }
@@ -280,7 +280,7 @@ func (r *ExternalRunner) GetHostnameRegex() *regexp.Regexp {
 }
 
 // runTmuxCommand executes a tmux command locally.
-// Note: For ondemand sessions, the local tmux session tunnels through the provisioning tool,
+// Note: For remote sessions, the local tmux session tunnels through the provisioning tool,
 // so all tmux operations are done locally.
 func (r *ExternalRunner) runTmuxCommand(ctx context.Context, tmuxCmd string) (string, error) {
 	cmd := exec.CommandContext(ctx, "bash", "-c", tmuxCmd)

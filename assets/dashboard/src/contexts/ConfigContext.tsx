@@ -64,7 +64,7 @@ const DEFAULT_CONFIG: ConfigResponse = {
     type: 'local_tmux',
     hostname_regex: '',
   },
-  ondemand_runner: {
+  remote_runner: {
     type: 'external',
     hostname_regex: '',
   },

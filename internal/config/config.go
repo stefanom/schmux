@@ -69,8 +69,8 @@ type Config struct {
 	Xterm                      *XtermConfig           `json:"xterm,omitempty"`
 	Network                    *NetworkConfig         `json:"network,omitempty"`
 	AccessControl              *AccessControlConfig   `json:"access_control,omitempty"`
-	SessionRunner              *SessionRunnerConfig   `json:"session_runner,omitempty"`  // Deprecated: use OnDemandRunner
-	OnDemandRunner             *SessionRunnerConfig   `json:"ondemand_runner,omitempty"` // Command templates for ondemand repos
+	SessionRunner  *SessionRunnerConfig `json:"session_runner,omitempty"`  // Deprecated: use RemoteRunner
+	RemoteRunner   *SessionRunnerConfig `json:"remote_runner,omitempty"`   // Command templates for remote repos
 	VersionControl             *VersionControlConfig  `json:"version_control,omitempty"` // Deprecated: VCS is now implied by repo mode
 
 	// path is the file path where this config was loaded from or should be saved to.
@@ -171,15 +171,15 @@ const (
 // Repo mode constants
 const (
 	RepoModeLocal    = "local"    // default: local git clone/worktree
-	RepoModeOnDemand = "ondemand" // remote on-demand environment
+	RepoModeRemote = "remote" // remote environment
 )
 
 // Repo represents a git repository configuration.
 type Repo struct {
 	Name     string          `json:"name"`
 	URL      string          `json:"url"`
-	Mode     string          `json:"mode,omitempty"` // "local" (default) or "ondemand"
-	OnDemand *OnDemandConfig `json:"ondemand,omitempty"`
+	Mode   string        `json:"mode,omitempty"` // "local" (default) or "remote"
+	Remote *RemoteConfig `json:"remote,omitempty"`
 }
 
 // GetMode returns the repo mode, defaulting to "local" if not set.
@@ -190,13 +190,13 @@ func (r Repo) GetMode() string {
 	return r.Mode
 }
 
-// IsOnDemand returns true if this repo uses on-demand mode.
-func (r Repo) IsOnDemand() bool {
-	return r.GetMode() == RepoModeOnDemand
+// IsRemote returns true if this repo uses remote mode.
+func (r Repo) IsRemote() bool {
+	return r.GetMode() == RepoModeRemote
 }
 
-// OnDemandConfig contains per-repo on-demand settings.
-type OnDemandConfig struct {
+// RemoteConfig contains per-repo remote settings.
+type RemoteConfig struct {
 	Flavor        string `json:"flavor"`         // e.g., "gpu-large"
 	WorkspacePath string `json:"workspace_path"` // e.g., "~/projects/myrepo"
 }
@@ -1112,46 +1112,46 @@ func (c *Config) IsExternalVCS() bool {
 	return c.GetVersionControlType() == VersionControlTypeExternal
 }
 
-// GetOnDemandRunner returns the OnDemandRunner config.
+// GetRemoteRunner returns the RemoteRunner config.
 // Falls back to SessionRunner for backward compatibility.
-func (c *Config) GetOnDemandRunner() *SessionRunnerConfig {
-	if c.OnDemandRunner != nil {
-		return c.OnDemandRunner
+func (c *Config) GetRemoteRunner() *SessionRunnerConfig {
+	if c.RemoteRunner != nil {
+		return c.RemoteRunner
 	}
 	return c.SessionRunner
 }
 
-// GetOnDemandRunnerHostnameRegex returns the hostname regex for ondemand runner.
-func (c *Config) GetOnDemandRunnerHostnameRegex() string {
-	runner := c.GetOnDemandRunner()
+// GetRemoteRunnerHostnameRegex returns the hostname regex for remote runner.
+func (c *Config) GetRemoteRunnerHostnameRegex() string {
+	runner := c.GetRemoteRunner()
 	if runner == nil {
 		return ""
 	}
 	return runner.HostnameRegex
 }
 
-// GetOnDemandRunnerProvisionPrefix returns the provision prefix for ondemand runner.
-func (c *Config) GetOnDemandRunnerProvisionPrefix() string {
-	runner := c.GetOnDemandRunner()
+// GetRemoteRunnerProvisionPrefix returns the provision prefix for remote runner.
+func (c *Config) GetRemoteRunnerProvisionPrefix() string {
+	runner := c.GetRemoteRunner()
 	if runner == nil {
 		return ""
 	}
 	return runner.ProvisionPrefix
 }
 
-// GetOnDemandRunnerOpenVSCode returns the open_vscode command for ondemand runner.
-func (c *Config) GetOnDemandRunnerOpenVSCode() string {
-	runner := c.GetOnDemandRunner()
+// GetRemoteRunnerOpenVSCode returns the open_vscode command for remote runner.
+func (c *Config) GetRemoteRunnerOpenVSCode() string {
+	runner := c.GetRemoteRunner()
 	if runner == nil {
 		return ""
 	}
 	return runner.OpenVSCode
 }
 
-// HasOnDemandRepos returns true if any repo uses ondemand mode.
-func (c *Config) HasOnDemandRepos() bool {
+// HasRemoteRepos returns true if any repo uses remote mode.
+func (c *Config) HasRemoteRepos() bool {
 	for _, repo := range c.Repos {
-		if repo.IsOnDemand() {
+		if repo.IsRemote() {
 			return true
 		}
 	}

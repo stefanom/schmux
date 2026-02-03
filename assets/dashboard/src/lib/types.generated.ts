@@ -38,7 +38,7 @@ export interface ConfigResponse {
   network: Network;
   access_control: AccessControl;
   session_runner: SessionRunner;
-  ondemand_runner: SessionRunner;
+  remote_runner: SessionRunner;
   version_control: VersionControl;
   needs_restart: boolean;
 }
@@ -60,7 +60,7 @@ export interface ConfigUpdateRequest {
   network?: NetworkUpdate;
   access_control?: AccessControlUpdate;
   session_runner?: SessionRunnerUpdate;
-  ondemand_runner?: SessionRunnerUpdate;
+  remote_runner?: SessionRunnerUpdate;
   version_control?: VersionControlUpdate;
 }
 
@@ -145,11 +145,6 @@ export interface NudgenikUpdate {
   seen_interval_ms?: number;
 }
 
-export interface OnDemandConfig {
-  flavor: string;
-  workspace_path: string;
-}
-
 export interface QuickLaunch {
   name: string;
   command?: string;
@@ -157,11 +152,16 @@ export interface QuickLaunch {
   prompt?: string;
 }
 
+export interface RemoteConfig {
+  flavor: string;
+  workspace_path: string;
+}
+
 export interface Repo {
   name: string;
   url: string;
   mode?: string;
-  ondemand?: OnDemandConfig;
+  remote?: RemoteConfig;
 }
 
 export interface RepoConfig {
@@ -172,7 +172,7 @@ export interface RepoWithConfig {
   name: string;
   url: string;
   mode?: string;
-  ondemand?: OnDemandConfig;
+  remote?: RemoteConfig;
   default_branch?: string;
   config?: RepoConfig;
 }
