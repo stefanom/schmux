@@ -1459,7 +1459,7 @@ body {
     display: grid;
     grid-template-columns: 1fr 300px;
     min-height: 0;
-    height: calc(100vh - 120px);
+    height: calc(100vh - 135px);
     transition: grid-template-columns 0.2s ease;
 }
 
