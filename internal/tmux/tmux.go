@@ -41,13 +41,26 @@ var ansiRegex = regexp.MustCompile(`\x1b\[[0-9;]*[a-zA-Z]|\x1b\][^\x07\x1b]*\x07
 
 // CreateSession creates a new tmux session with the given name, directory, and command.
 func CreateSession(ctx context.Context, name, dir, command string) error {
-	// tmux new-session -d -s <name> -c <dir> <command>
-	args := []string{
-		"new-session",
-		"-d",       // detached
-		"-s", name, // session name
-		"-c", dir, // working directory
-		command, // command to run
+	// For complex commands (containing semicolons, pipes, etc.), wrap in bash -c
+	// This ensures the shell properly interprets the command.
+	var args []string
+	if strings.ContainsAny(command, ";|&") {
+		args = []string{
+			"new-session",
+			"-d",       // detached
+			"-s", name, // session name
+			"-c", dir, // working directory
+			"bash", "-c", command,
+		}
+	} else {
+		// Simple command - pass directly
+		args = []string{
+			"new-session",
+			"-d",       // detached
+			"-s", name, // session name
+			"-c", dir, // working directory
+			command, // command to run
+		}
 	}
 
 	cmd := exec.CommandContext(ctx, "tmux", args...)

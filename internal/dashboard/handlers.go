@@ -12,10 +12,12 @@ import (
 	"path"
 	"path/filepath"
 	"reflect"
+	"regexp"
 	"runtime"
 	"sort"
 	"strconv"
 	"strings"
+	"text/template"
 	"time"
 
 	"github.com/sergeknystautas/schmux/internal/api/contracts"
@@ -24,6 +26,7 @@ import (
 	"github.com/sergeknystautas/schmux/internal/detect"
 	"github.com/sergeknystautas/schmux/internal/difftool"
 	"github.com/sergeknystautas/schmux/internal/nudgenik"
+	"github.com/sergeknystautas/schmux/internal/state"
 	"github.com/sergeknystautas/schmux/internal/update"
 	"github.com/sergeknystautas/schmux/internal/workspace"
 )
@@ -102,6 +105,7 @@ type WorkspaceResponseItem struct {
 	Branch          string                `json:"branch"`
 	BranchURL       string                `json:"branch_url,omitempty"`
 	Path            string                `json:"path"`
+	External        bool                  `json:"external,omitempty"`
 	SessionCount    int                   `json:"session_count"`
 	Sessions        []SessionResponseItem `json:"sessions"`
 	QuickLaunch     []string              `json:"quick_launch,omitempty"`
@@ -145,6 +149,7 @@ func (s *Server) buildSessionsResponse() []WorkspaceResponseItem {
 			Branch:          ws.Branch,
 			BranchURL:       branchURL,
 			Path:            ws.Path,
+			External:        ws.External,
 			SessionCount:    0,
 			Sessions:        []SessionResponseItem{},
 			QuickLaunch:     quickLaunchNames,
@@ -1354,17 +1359,14 @@ func (s *Server) handleConfigUpdate(w http.ResponseWriter, r *http.Request) {
 		if req.SessionRunner.Type != nil {
 			cfg.SessionRunner.Type = *req.SessionRunner.Type
 		}
-		if req.SessionRunner.Provision != nil {
-			cfg.SessionRunner.Provision = *req.SessionRunner.Provision
-		}
-		if req.SessionRunner.ListEnvironments != nil {
-			cfg.SessionRunner.ListEnvironments = *req.SessionRunner.ListEnvironments
-		}
-		if req.SessionRunner.ConnectionPrefix != nil {
-			cfg.SessionRunner.ConnectionPrefix = *req.SessionRunner.ConnectionPrefix
+		if req.SessionRunner.ProvisionPrefix != nil {
+			cfg.SessionRunner.ProvisionPrefix = *req.SessionRunner.ProvisionPrefix
 		}
 		if req.SessionRunner.HostnameRegex != nil {
 			cfg.SessionRunner.HostnameRegex = *req.SessionRunner.HostnameRegex
+		}
+		if req.SessionRunner.OpenVSCode != nil {
+			cfg.SessionRunner.OpenVSCode = *req.SessionRunner.OpenVSCode
 		}
 	}
 
@@ -1375,17 +1377,14 @@ func (s *Server) handleConfigUpdate(w http.ResponseWriter, r *http.Request) {
 		if req.OnDemandRunner.Type != nil {
 			cfg.OnDemandRunner.Type = *req.OnDemandRunner.Type
 		}
-		if req.OnDemandRunner.Provision != nil {
-			cfg.OnDemandRunner.Provision = *req.OnDemandRunner.Provision
-		}
-		if req.OnDemandRunner.ListEnvironments != nil {
-			cfg.OnDemandRunner.ListEnvironments = *req.OnDemandRunner.ListEnvironments
-		}
-		if req.OnDemandRunner.ConnectionPrefix != nil {
-			cfg.OnDemandRunner.ConnectionPrefix = *req.OnDemandRunner.ConnectionPrefix
+		if req.OnDemandRunner.ProvisionPrefix != nil {
+			cfg.OnDemandRunner.ProvisionPrefix = *req.OnDemandRunner.ProvisionPrefix
 		}
 		if req.OnDemandRunner.HostnameRegex != nil {
 			cfg.OnDemandRunner.HostnameRegex = *req.OnDemandRunner.HostnameRegex
+		}
+		if req.OnDemandRunner.OpenVSCode != nil {
+			cfg.OnDemandRunner.OpenVSCode = *req.OnDemandRunner.OpenVSCode
 		}
 	}
 
@@ -1556,10 +1555,15 @@ func buildTLS(cfg *config.Config) *contracts.TLS {
 }
 
 func buildSessionRunner(cfg *config.Config) contracts.SessionRunner {
+	runner := cfg.SessionRunner
+	openVSCode := ""
+	if runner != nil {
+		openVSCode = runner.OpenVSCode
+	}
 	return contracts.SessionRunner{
-		Type:             cfg.GetSessionRunnerType(),
-		HostnameRegex:    cfg.GetSessionRunnerHostnameRegex(),
-		ConnectionPrefix: cfg.GetSessionRunnerConnectionPrefix(),
+		Type:          cfg.GetSessionRunnerType(),
+		HostnameRegex: cfg.GetSessionRunnerHostnameRegex(),
+		OpenVSCode:    openVSCode,
 	}
 }
 
@@ -1569,11 +1573,10 @@ func buildOnDemandRunner(cfg *config.Config) contracts.SessionRunner {
 		return contracts.SessionRunner{}
 	}
 	return contracts.SessionRunner{
-		Type:             "external", // OnDemand always uses external runner
-		Provision:        runner.Provision,
-		ListEnvironments: runner.ListEnvironments,
-		ConnectionPrefix: runner.ConnectionPrefix,
-		HostnameRegex:    runner.HostnameRegex,
+		Type:            "external", // OnDemand always uses external runner
+		ProvisionPrefix: runner.ProvisionPrefix,
+		HostnameRegex:   runner.HostnameRegex,
+		OpenVSCode:      runner.OpenVSCode,
 	}
 }
 
@@ -2057,7 +2060,13 @@ func (s *Server) handleOpenVSCode(w http.ResponseWriter, r *http.Request) {
 		return
 	}
 
-	// Check if workspace directory exists
+	// Handle external workspaces differently
+	if ws.External {
+		s.handleOpenVSCodeExternal(w, ws)
+		return
+	}
+
+	// Local workspace: check if directory exists
 	if _, err := os.Stat(ws.Path); os.IsNotExist(err) {
 		w.Header().Set("Content-Type", "application/json")
 		w.WriteHeader(http.StatusNotFound)
@@ -2113,6 +2122,180 @@ func (s *Server) handleOpenVSCode(w http.ResponseWriter, r *http.Request) {
 	json.NewEncoder(w).Encode(OpenVSCodeResponse{
 		Success: true,
 		Message: "You can now switch to VS Code.",
+	})
+}
+
+// handleOpenVSCodeExternal handles opening VS Code for external (ondemand) workspaces.
+func (s *Server) handleOpenVSCodeExternal(w http.ResponseWriter, ws state.Workspace) {
+	type OpenVSCodeResponse struct {
+		Success bool   `json:"success"`
+		Message string `json:"message"`
+	}
+
+	// Get the open_vscode command template from config
+	openVSCodeTemplate := s.config.GetOnDemandRunnerOpenVSCode()
+	if openVSCodeTemplate == "" {
+		w.Header().Set("Content-Type", "application/json")
+		w.WriteHeader(http.StatusNotImplemented)
+		json.NewEncoder(w).Encode(OpenVSCodeResponse{
+			Success: false,
+			Message: "VS Code for remote workspaces is not configured.\n\nSet ondemand_runner.open_vscode in your config.\nExample: \"code --folder-uri vscode-remote://fb-remote+{{.Hostname}}{{.Path}}\"",
+		})
+		return
+	}
+
+	// Find a session for this workspace
+	sessions := s.state.GetSessions()
+	var targetSession *state.Session
+	for _, sess := range sessions {
+		if sess.WorkspaceID == ws.ID {
+			sessCopy := sess
+			targetSession = &sessCopy
+			break
+		}
+	}
+
+	if targetSession == nil {
+		w.Header().Set("Content-Type", "application/json")
+		w.WriteHeader(http.StatusPreconditionFailed)
+		json.NewEncoder(w).Encode(OpenVSCodeResponse{
+			Success: false,
+			Message: "No session found for this workspace.\n\nSpawn a session first to provision the remote environment, then try again.",
+		})
+		return
+	}
+
+	// Try to get hostname from session's EnvironmentID first
+	hostname := targetSession.EnvironmentID
+
+	// If not set, try to parse it from the log file
+	if hostname == "" {
+		hostnameRegexStr := s.config.GetOnDemandRunnerHostnameRegex()
+		if hostnameRegexStr != "" {
+			// Read the entire log file
+			logPath, err := s.session.GetLogPath(targetSession.ID)
+			if err == nil {
+				logBytes, err := os.ReadFile(logPath)
+				if err == nil {
+					logContent := string(logBytes)
+					// Strip ANSI escape codes before matching
+					ansiRegex := regexp.MustCompile(`\x1b\[[0-9;]*[a-zA-Z]|\x1b\][^\x07]*\x07`)
+					logContent = ansiRegex.ReplaceAllString(logContent, "")
+
+					// Try matching with multiline flag if regex uses ^ anchor
+					regexToTry := hostnameRegexStr
+					if strings.HasPrefix(regexToTry, "^") && !strings.HasPrefix(regexToTry, "(?m)") {
+						regexToTry = "(?m)" + regexToTry
+					}
+					hostnameRegex, err := regexp.Compile(regexToTry)
+					if err == nil {
+						matches := hostnameRegex.FindStringSubmatch(logContent)
+						if len(matches) > 1 {
+							hostname = matches[1]
+						} else if len(matches) > 0 {
+							hostname = matches[0]
+						}
+					}
+
+					// If no match and regex starts with ^, try without the anchor
+					if hostname == "" && strings.HasPrefix(hostnameRegexStr, "^") {
+						regexWithoutAnchor := strings.TrimPrefix(hostnameRegexStr, "^")
+						hostnameRegex, err := regexp.Compile(regexWithoutAnchor)
+						if err == nil {
+							matches := hostnameRegex.FindStringSubmatch(logContent)
+							if len(matches) > 1 {
+								hostname = matches[1]
+							} else if len(matches) > 0 {
+								hostname = matches[0]
+							}
+						}
+					}
+
+					// If still no match, try a generic OD hostname pattern
+					if hostname == "" {
+						// Look for patterns like "12345.od.something" anywhere in the text
+						genericODRegex := regexp.MustCompile(`\b([0-9]+\.od\.[^\s]+)\b`)
+						matches := genericODRegex.FindStringSubmatch(logContent)
+						if len(matches) > 1 {
+							hostname = matches[1]
+						} else if len(matches) > 0 {
+							hostname = matches[0]
+						}
+					}
+				}
+			}
+		}
+	}
+
+	if hostname != "" {
+		fmt.Printf("[open-vscode] found hostname: %s\n", hostname)
+	}
+
+	if hostname == "" {
+		w.Header().Set("Content-Type", "application/json")
+		w.WriteHeader(http.StatusPreconditionFailed)
+		json.NewEncoder(w).Encode(OpenVSCodeResponse{
+			Success: false,
+			Message: "Could not determine remote hostname.\n\nThe session may still be provisioning. Wait a moment and try again.",
+		})
+		return
+	}
+
+	// Build template data
+	data := map[string]string{
+		"Hostname": hostname,
+		"Path":     ws.Path,
+	}
+
+	// Parse and execute the template
+	tmpl, err := template.New("open_vscode").Parse(openVSCodeTemplate)
+	if err != nil {
+		w.Header().Set("Content-Type", "application/json")
+		w.WriteHeader(http.StatusInternalServerError)
+		json.NewEncoder(w).Encode(OpenVSCodeResponse{
+			Success: false,
+			Message: fmt.Sprintf("invalid open_vscode template: %v", err),
+		})
+		return
+	}
+
+	var cmdBuf strings.Builder
+	if err := tmpl.Execute(&cmdBuf, data); err != nil {
+		w.Header().Set("Content-Type", "application/json")
+		w.WriteHeader(http.StatusInternalServerError)
+		json.NewEncoder(w).Encode(OpenVSCodeResponse{
+			Success: false,
+			Message: fmt.Sprintf("failed to execute template: %v", err),
+		})
+		return
+	}
+
+	fullCmd := cmdBuf.String()
+	fmt.Printf("[session] open-vscode external: %s\n", fullCmd)
+
+	// Execute the command via login shell (so user's profile/PATH is loaded)
+	ctx, cancel := context.WithTimeout(context.Background(), 10*time.Second)
+	defer cancel()
+
+	cmd := exec.CommandContext(ctx, "bash", "-l", "-c", fullCmd)
+	output, err := cmd.CombinedOutput()
+	if err != nil {
+		fmt.Printf("[session] open-vscode external: command failed: %v, output: %s\n", err, string(output))
+		w.Header().Set("Content-Type", "application/json")
+		w.WriteHeader(http.StatusInternalServerError)
+		json.NewEncoder(w).Encode(OpenVSCodeResponse{
+			Success: false,
+			Message: fmt.Sprintf("failed to launch VS Code: %v\n%s", err, string(output)),
+		})
+		return
+	}
+	fmt.Printf("[session] open-vscode external: success, output: %s\n", string(output))
+
+	// Success response
+	w.Header().Set("Content-Type", "application/json")
+	json.NewEncoder(w).Encode(OpenVSCodeResponse{
+		Success: true,
+		Message: "Opening VS Code on remote environment...",
 	})
 }
 

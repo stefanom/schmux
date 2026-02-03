@@ -186,18 +186,16 @@ export interface RunTarget {
 
 export interface SessionRunner {
   type: string;
-  provision?: string;
-  list_environments?: string;
-  connection_prefix?: string;
+  provision_prefix?: string;
   hostname_regex?: string;
+  open_vscode?: string;
 }
 
 export interface SessionRunnerUpdate {
   type?: string;
-  provision?: string;
-  list_environments?: string;
-  connection_prefix?: string;
+  provision_prefix?: string;
   hostname_regex?: string;
+  open_vscode?: string;
 }
 
 export interface Sessions {

@@ -27,10 +27,6 @@ const (
 
 	// processKillGracePeriod is how long to wait for SIGTERM before SIGKILL
 	processKillGracePeriod = 100 * time.Millisecond
-
-	// TargetProvisioning is the target name for provisioning sessions.
-	// These are temporary sessions that run environment provisioning commands.
-	TargetProvisioning = "provisioning"
 )
 
 // Manager manages sessions.
@@ -124,9 +120,9 @@ func (m *Manager) Spawn(ctx context.Context, repoURL, branch, targetName, prompt
 	// Select the appropriate runner based on workspace mode
 	r, envID, err := m.getRunnerForWorkspace(ctx, w)
 	if err != nil {
-		// Check if provisioning is required - create provisioning session instead
+		// Check if provisioning is required - create session via provisioning
 		if provErr, ok := runner.IsProvisioningRequired(err); ok {
-			return m.SpawnProvisioning(ctx, w.ID, provErr.ProvisionCommand, provErr.Flavor)
+			return m.SpawnWithProvisioning(ctx, w, provErr.ProvisionPrefix, provErr.Flavor, sessionID, tmuxSession, command, uniqueNickname, targetName)
 		}
 		return nil, fmt.Errorf("failed to get runner for workspace: %w", err)
 	}
@@ -226,9 +222,9 @@ func (m *Manager) SpawnCommand(ctx context.Context, repoURL, branch, command, ni
 	// Select the appropriate runner based on workspace mode
 	r, envID, err := m.getRunnerForWorkspace(ctx, w)
 	if err != nil {
-		// Check if provisioning is required - create provisioning session instead
+		// Check if provisioning is required - create session via provisioning
 		if provErr, ok := runner.IsProvisioningRequired(err); ok {
-			return m.SpawnProvisioning(ctx, w.ID, provErr.ProvisionCommand, provErr.Flavor)
+			return m.SpawnWithProvisioning(ctx, w, provErr.ProvisionPrefix, provErr.Flavor, sessionID, tmuxSession, command, uniqueNickname, "command")
 		}
 		return nil, fmt.Errorf("failed to get runner for workspace: %w", err)
 	}
@@ -319,16 +315,14 @@ func (m *Manager) getRunnerForWorkspace(ctx context.Context, w *state.Workspace)
 
 	// Get the ondemand runner config
 	runnerCfg := m.config.GetOnDemandRunner()
-	if runnerCfg == nil || runnerCfg.ConnectionPrefix == "" {
-		return nil, "", fmt.Errorf("ondemand_runner not configured (connection_prefix is required)")
+	if runnerCfg == nil || runnerCfg.ProvisionPrefix == "" {
+		return nil, "", fmt.Errorf("ondemand_runner not configured (provision_prefix is required)")
 	}
 
 	// Create the external runner with simplified config
 	extRunner, err := runner.NewExternalRunnerWithFlavor(runner.ExternalRunnerConfig{
-		Provision:        runnerCfg.Provision,
-		ListEnvironments: runnerCfg.ListEnvironments,
-		ConnectionPrefix: runnerCfg.ConnectionPrefix,
-		HostnameRegex:    runnerCfg.HostnameRegex,
+		ProvisionPrefix: runnerCfg.ProvisionPrefix,
+		HostnameRegex:   runnerCfg.HostnameRegex,
 	}, repoConfig.OnDemand.Flavor)
 	if err != nil {
 		return nil, "", fmt.Errorf("failed to create external runner: %w", err)
@@ -349,37 +343,44 @@ func (m *Manager) getRunnerForWorkspace(ctx context.Context, w *state.Workspace)
 	return extRunner, extRunner.GetEnvironmentID(), nil
 }
 
-// SpawnProvisioning creates a local session for interactive environment provisioning.
-// The session runs the provision command and appears in the dashboard for user interaction.
-// Once provisioning completes, the user can spawn actual ondemand sessions.
-func (m *Manager) SpawnProvisioning(ctx context.Context, workspaceID, provisionCommand, flavor string) (*state.Session, error) {
-	// Get the workspace
-	ws, found := m.workspace.GetByID(workspaceID)
-	if !found {
-		return nil, fmt.Errorf("workspace not found: %s", workspaceID)
+// SpawnWithProvisioning creates a local tmux session that runs the agent command via dev connect.
+// The local session stays connected to the remote, forwarding I/O, so the dashboard can monitor it.
+// This eliminates the need for a remote tmux layer - the local tmux session IS the session.
+func (m *Manager) SpawnWithProvisioning(ctx context.Context, w *state.Workspace, provisionPrefix, flavor, sessionID, tmuxSession, command, nickname, target string) (*state.Session, error) {
+	// Use the workspace path as-is (including ~ if present)
+	workspacePath := w.Path
+
+	// Build the remote command: cd to workspace and run the agent
+	// When bash -c receives 'cd ~/path && cmd', it parses the string and expands ~
+	remoteCmd := fmt.Sprintf("cd %s && %s", workspacePath, command)
+
+	// Build the full command using single quotes passed to bash -c
+	// bash -c will expand ~ when it parses the command string
+	fullCmd := fmt.Sprintf("%s bash -c %s", provisionPrefix, runner.ShellQuote(remoteCmd))
+
+	// Log the provisioning details to main log
+	fmt.Printf("[session] === ONDEMAND SESSION ===\n")
+	fmt.Printf("[session] Flavor: %s\n", flavor)
+	fmt.Printf("[session] Remote workspace path: %s\n", w.Path)
+	fmt.Printf("[session] Agent command: %s\n", command)
+	fmt.Printf("[session] Provision prefix: %s\n", provisionPrefix)
+	fmt.Printf("[session] Full command:\n")
+	fmt.Printf("[session]   %s\n", fullCmd)
+	fmt.Printf("[session] =========================\n")
+
+	// Use user's home directory for the local tmux session working directory
+	homeDir, err := os.UserHomeDir()
+	if err != nil {
+		homeDir = "/"
 	}
 
-	// Create session ID
-	sessionID := fmt.Sprintf("provision-%s-%s", sanitizeNickname(flavor), uuid.New().String()[:8])
-
-	// Create nickname from flavor
-	nickname := fmt.Sprintf("Provisioning: %s", flavor)
-	uniqueNickname := m.generateUniqueNickname(nickname)
-
-	// Use sanitized nickname for tmux session name
-	tmuxSession := sanitizeNickname(uniqueNickname)
-
-	// Wrap the provision command to show status and keep session alive
-	wrappedCmd := fmt.Sprintf("echo 'Provisioning environment (flavor: %s)...'; echo 'Command: %s'; echo '---'; %s; echo '---'; echo 'Provisioning complete. You can dispose this session now.'; exec bash",
-		flavor, provisionCommand, provisionCommand)
-
-	// Create tmux session using local runner
+	// Create local tmux session that runs the agent via dev connect
 	if err := m.runner.CreateSession(ctx, runner.CreateSessionOpts{
 		SessionID: tmuxSession,
-		WorkDir:   ws.Path,
-		Command:   wrappedCmd,
+		WorkDir:   homeDir,
+		Command:   fullCmd,
 	}); err != nil {
-		return nil, fmt.Errorf("failed to create provisioning session: %w", err)
+		return nil, fmt.Errorf("failed to create ondemand session: %w", err)
 	}
 
 	// Set up log file for pipe-pane streaming
@@ -397,7 +398,7 @@ func (m *Manager) SpawnProvisioning(ctx context.Context, workspaceID, provisionC
 		}
 		// Start pipe-pane to log file
 		if err := m.runner.StartPipePane(ctx, tmuxSession, logPath); err != nil {
-			return nil, fmt.Errorf("failed to start pipe-pane (session created): %w", err)
+			return nil, fmt.Errorf("failed to start pipe-pane: %w", err)
 		}
 	}
 
@@ -407,12 +408,12 @@ func (m *Manager) SpawnProvisioning(ctx context.Context, workspaceID, provisionC
 		return nil, fmt.Errorf("failed to get pane PID: %w", err)
 	}
 
-	// Create session state with Target="provisioning"
+	// Create session state - this IS the actual agent session
 	sess := state.Session{
 		ID:          sessionID,
-		WorkspaceID: ws.ID,
-		Target:      TargetProvisioning,
-		Nickname:    uniqueNickname,
+		WorkspaceID: w.ID,
+		Target:      target,
+		Nickname:    nickname,
 		TmuxSession: tmuxSession,
 		CreatedAt:   time.Now(),
 		Pid:         pid,
@@ -425,7 +426,7 @@ func (m *Manager) SpawnProvisioning(ctx context.Context, workspaceID, provisionC
 		return nil, fmt.Errorf("failed to save state: %w", err)
 	}
 
-	fmt.Printf("[session] created provisioning session: id=%s flavor=%s\n", sessionID, flavor)
+	fmt.Printf("[session] created ondemand session: id=%s flavor=%s\n", sessionID, flavor)
 	return &sess, nil
 }
 

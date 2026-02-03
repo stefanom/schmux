@@ -24,10 +24,9 @@ const TABS = ['Workspaces', 'Sessions', 'Quick Launch', 'Code Review', 'Advanced
 const TAB_SLUGS = ['workspaces', 'sessions', 'quicklaunch', 'codereview', 'advanced'];
 
 // Default OnDemand runner configuration
-const DEFAULT_ONDEMAND_HOSTNAME_REGEX = '^([0-9]+\\.od).*';
-const DEFAULT_ONDEMAND_PROVISION = 'dev connect -t {{.Flavor}} --no-connect';
-const DEFAULT_ONDEMAND_LIST_ENVIRONMENTS = 'ondemand list';
-const DEFAULT_ONDEMAND_CONNECTION_PREFIX = 'dev connect -n {{.Hostname}} --';
+const DEFAULT_ONDEMAND_HOSTNAME_REGEX = '([0-9]+\\.od\\.[^\\s]+)';
+const DEFAULT_ONDEMAND_PROVISION_PREFIX = 'dev connect -t {{.Flavor}} --';
+const DEFAULT_ONDEMAND_OPEN_VSCODE = 'code-fb --remote fb-remote+{{.Hostname}} {{.Path}}';
 
 // Helper: step number -> slug
 const stepToSlug = (step: number) => TAB_SLUGS[step - 1];
@@ -81,9 +80,8 @@ type ConfigSnapshot = {
   authTlsCertPath: string;
   authTlsKeyPath: string;
   ondemandRunnerHostnameRegex: string;
-  ondemandRunnerProvision: string;
-  ondemandRunnerListEnvironments: string;
-  ondemandRunnerConnectionPrefix: string;
+  ondemandRunnerProvisionPrefix: string;
+  ondemandRunnerOpenVSCode: string;
 };
 
 type ModelModalState = {
@@ -198,9 +196,8 @@ export default function ConfigPage() {
 
   // OnDemand Runner state (for repos with mode=ondemand)
   const [ondemandRunnerHostnameRegex, setOndemandRunnerHostnameRegex] = useState(DEFAULT_ONDEMAND_HOSTNAME_REGEX);
-  const [ondemandRunnerProvision, setOndemandRunnerProvision] = useState(DEFAULT_ONDEMAND_PROVISION);
-  const [ondemandRunnerListEnvironments, setOndemandRunnerListEnvironments] = useState(DEFAULT_ONDEMAND_LIST_ENVIRONMENTS);
-  const [ondemandRunnerConnectionPrefix, setOndemandRunnerConnectionPrefix] = useState(DEFAULT_ONDEMAND_CONNECTION_PREFIX);
+  const [ondemandRunnerProvisionPrefix, setOndemandRunnerProvisionPrefix] = useState(DEFAULT_ONDEMAND_PROVISION_PREFIX);
+  const [ondemandRunnerOpenVSCode, setOndemandRunnerOpenVSCode] = useState(DEFAULT_ONDEMAND_OPEN_VSCODE);
 
   // Overlays state
   const [overlays, setOverlays] = useState<OverlayInfo[]>([]);
@@ -249,9 +246,8 @@ export default function ConfigPage() {
       authTlsCertPath,
       authTlsKeyPath,
       ondemandRunnerHostnameRegex,
-      ondemandRunnerProvision,
-      ondemandRunnerListEnvironments,
-      ondemandRunnerConnectionPrefix,
+      ondemandRunnerProvisionPrefix,
+      ondemandRunnerOpenVSCode,
     };
 
     // Deep comparison for arrays
@@ -294,9 +290,8 @@ export default function ConfigPage() {
       current.authTlsCertPath !== originalConfig.authTlsCertPath ||
       current.authTlsKeyPath !== originalConfig.authTlsKeyPath ||
       current.ondemandRunnerHostnameRegex !== originalConfig.ondemandRunnerHostnameRegex ||
-      current.ondemandRunnerProvision !== originalConfig.ondemandRunnerProvision ||
-      current.ondemandRunnerListEnvironments !== originalConfig.ondemandRunnerListEnvironments ||
-      current.ondemandRunnerConnectionPrefix !== originalConfig.ondemandRunnerConnectionPrefix
+      current.ondemandRunnerProvisionPrefix !== originalConfig.ondemandRunnerProvisionPrefix ||
+      current.ondemandRunnerOpenVSCode !== originalConfig.ondemandRunnerOpenVSCode
     );
   };
 
@@ -401,9 +396,8 @@ export default function ConfigPage() {
 
         // OnDemand runner configuration (use defaults if not set)
         setOndemandRunnerHostnameRegex(data.ondemand_runner?.hostname_regex || DEFAULT_ONDEMAND_HOSTNAME_REGEX);
-        setOndemandRunnerProvision(data.ondemand_runner?.provision || DEFAULT_ONDEMAND_PROVISION);
-        setOndemandRunnerListEnvironments(data.ondemand_runner?.list_environments || DEFAULT_ONDEMAND_LIST_ENVIRONMENTS);
-        setOndemandRunnerConnectionPrefix(data.ondemand_runner?.connection_prefix || DEFAULT_ONDEMAND_CONNECTION_PREFIX);
+        setOndemandRunnerProvisionPrefix(data.ondemand_runner?.provision_prefix || DEFAULT_ONDEMAND_PROVISION_PREFIX);
+        setOndemandRunnerOpenVSCode(data.ondemand_runner?.open_vscode || DEFAULT_ONDEMAND_OPEN_VSCODE);
 
         // Set original config for change detection (non-wizard mode)
         if (!isFirstRun) {
@@ -442,9 +436,8 @@ export default function ConfigPage() {
             authTlsCertPath: data.network?.tls?.cert_path || '',
             authTlsKeyPath: data.network?.tls?.key_path || '',
             ondemandRunnerHostnameRegex: data.ondemand_runner?.hostname_regex || DEFAULT_ONDEMAND_HOSTNAME_REGEX,
-            ondemandRunnerProvision: data.ondemand_runner?.provision || DEFAULT_ONDEMAND_PROVISION,
-            ondemandRunnerListEnvironments: data.ondemand_runner?.list_environments || DEFAULT_ONDEMAND_LIST_ENVIRONMENTS,
-            ondemandRunnerConnectionPrefix: data.ondemand_runner?.connection_prefix || DEFAULT_ONDEMAND_CONNECTION_PREFIX,
+            ondemandRunnerProvisionPrefix: data.ondemand_runner?.provision_prefix || DEFAULT_ONDEMAND_PROVISION_PREFIX,
+            ondemandRunnerOpenVSCode: data.ondemand_runner?.open_vscode || DEFAULT_ONDEMAND_OPEN_VSCODE,
           });
         }
 
@@ -623,9 +616,8 @@ export default function ConfigPage() {
         ondemand_runner: {
           type: 'external',
           hostname_regex: ondemandRunnerHostnameRegex,
-          provision: ondemandRunnerProvision,
-          list_environments: ondemandRunnerListEnvironments,
-          connection_prefix: ondemandRunnerConnectionPrefix,
+          provision_prefix: ondemandRunnerProvisionPrefix,
+          open_vscode: ondemandRunnerOpenVSCode,
         },
       };
 
@@ -676,9 +668,8 @@ export default function ConfigPage() {
           authTlsCertPath,
           authTlsKeyPath,
           ondemandRunnerHostnameRegex,
-          ondemandRunnerProvision,
-          ondemandRunnerListEnvironments,
-          ondemandRunnerConnectionPrefix,
+          ondemandRunnerProvisionPrefix,
+          ondemandRunnerOpenVSCode,
         });
       }
 
@@ -2517,45 +2508,16 @@ export default function ConfigPage() {
                   </p>
 
                   <div className="form-group">
-                    <label className="form-group__label">Provision Command</label>
+                    <label className="form-group__label">Provision Prefix</label>
                     <input
                       type="text"
                       className="input input--monospace"
-                      placeholder="dev connect -t {{.Flavor}} --no-connect"
-                      value={ondemandRunnerProvision}
-                      onChange={(e) => setOndemandRunnerProvision(e.target.value)}
+                      placeholder="dev connect -t {{.Flavor}} --"
+                      value={ondemandRunnerProvisionPrefix}
+                      onChange={(e) => setOndemandRunnerProvisionPrefix(e.target.value)}
                     />
                     <p className="form-group__hint">
-                      Command to provision a new environment. Template var: <code>{'{{.Flavor}}'}</code>
-                    </p>
-                  </div>
-
-                  <div className="form-group">
-                    <label className="form-group__label">List Environments Command</label>
-                    <input
-                      type="text"
-                      className="input input--monospace"
-                      placeholder="ondemand list"
-                      value={ondemandRunnerListEnvironments}
-                      onChange={(e) => setOndemandRunnerListEnvironments(e.target.value)}
-                    />
-                    <p className="form-group__hint">
-                      Command to list available environments. Output is parsed using hostname regex below.
-                    </p>
-                  </div>
-
-                  <div className="form-group">
-                    <label className="form-group__label">Connection Prefix</label>
-                    <input
-                      type="text"
-                      className="input input--monospace"
-                      placeholder="dev connect -n {{.Hostname}} --"
-                      value={ondemandRunnerConnectionPrefix}
-                      onChange={(e) => setOndemandRunnerConnectionPrefix(e.target.value)}
-                    />
-                    <p className="form-group__hint">
-                      Prefix prepended to tmux commands to route them through the remote connection.
-                      Template var: <code>{'{{.Hostname}}'}</code>. Example: <code>dev connect -n {'{{.Hostname}}'} --</code> or <code>ssh {'{{.Hostname}}'}</code>
+                      Prefix for provisioning commands. Appended with tmux session creation. Template var: <code>{'{{.Flavor}}'}</code>
                     </p>
                   </div>
 
@@ -2569,7 +2531,22 @@ export default function ConfigPage() {
                       onChange={(e) => setOndemandRunnerHostnameRegex(e.target.value)}
                     />
                     <p className="form-group__hint">
-                      Regex to extract hostname from list_environments output. First capture group is used.
+                      Regex to extract hostname from provisioning log output. First capture group is used.
+                    </p>
+                  </div>
+
+                  <div className="form-group">
+                    <label className="form-group__label">Open VSCode Command</label>
+                    <input
+                      type="text"
+                      className="input input--monospace"
+                      placeholder='code-fb --remote fb-remote+{{.Hostname}} {{.Path}}'
+                      value={ondemandRunnerOpenVSCode}
+                      onChange={(e) => setOndemandRunnerOpenVSCode(e.target.value)}
+                    />
+                    <p className="form-group__hint">
+                      Command to open VSCode on a remote workspace. Template vars: <code>{'{{.Hostname}}'}</code> (OD host), <code>{'{{.Path}}'}</code> (workspace path).
+                      Leave empty to disable the VSCode button for remote workspaces.
                     </p>
                   </div>
                 </div>
