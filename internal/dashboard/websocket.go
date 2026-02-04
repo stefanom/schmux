@@ -373,6 +373,14 @@ func (s *Server) handleTerminalWebSocket(w http.ResponseWriter, r *http.Request)
 		return
 	}
 
+	// For remote sessions sharing a connection, switch to this session's window
+	// This ensures clicking on a session tab shows that session's content
+	switchCtx, switchCancel := context.WithTimeout(context.Background(), 2*time.Second)
+	if err := s.session.SwitchToSessionWindow(switchCtx, sessionID); err != nil {
+		fmt.Printf("[ws %s] warning: failed to switch to session window: %v\n", sessionID[:8], err)
+	}
+	switchCancel()
+
 	// Ensure log file exists (create empty if it was wiped)
 	if _, err := os.Stat(logPath); os.IsNotExist(err) {
 		// Create empty log file so session can still connect

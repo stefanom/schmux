@@ -349,83 +349,115 @@ func (m *Manager) getRunnerForWorkspace(ctx context.Context, w *state.Workspace)
 //   - {sessionID}: runs the agent command (visible to user)
 //   - helper: for running sl/git commands without disturbing the agent (shared)
 //
-// If the workspace already has a RemoteHost set (from a previous session), reuses that OD
-// by connecting to it and creating a new window instead of provisioning a new OD.
+// If the workspace already has a RemoteHost set (from a previous session), reuses that remote
+// by connecting to it and creating a new window instead of provisioning a new remote environment.
 func (m *Manager) SpawnWithProvisioning(ctx context.Context, w *state.Workspace, provisionPrefix, flavor, sessionID, tmuxSession, command, nickname, target string) (*state.Session, error) {
 	// Use the workspace path as-is (including ~ if present)
 	workspacePath := w.Path
 	remoteTmuxSession := "schmux"
 
+	// Re-fetch workspace from state to get latest RemoteHost and LocalTmuxSession values
+	// (they may have been updated by hostname detection since Spawn() started)
+	freshWorkspace, found := m.state.GetWorkspace(w.ID)
+	if found {
+		if freshWorkspace.RemoteHost != "" {
+			w.RemoteHost = freshWorkspace.RemoteHost
+		}
+		if freshWorkspace.LocalTmuxSession != "" {
+			w.LocalTmuxSession = freshWorkspace.LocalTmuxSession
+		}
+	}
+
+	fmt.Printf("[session] SpawnWithProvisioning: workspace=%s RemoteHost=%q LocalTmuxSession=%q\n",
+		w.ID, w.RemoteHost, w.LocalTmuxSession)
+
 	// Use session-specific window name (short version for tmux compatibility)
-	// Extract just the last part of sessionID for shorter names
 	windowName := sessionID
 	if len(windowName) > 20 {
 		windowName = windowName[len(windowName)-20:]
 	}
 
-	var fullCmd string
-	var connectionPrefix string
+	// Check if we can reuse an existing local tmux session (existing devconnect connection)
+	if w.LocalTmuxSession != "" && m.runner.SessionExists(ctx, w.LocalTmuxSession) {
+		// Reuse existing devconnect connection by sending commands through it
+		fmt.Printf("[session] === REMOTE SESSION (REUSE EXISTING CONNECTION) ===\n")
+		fmt.Printf("[session] Using existing local tmux: %s\n", w.LocalTmuxSession)
+		fmt.Printf("[session] Creating new remote window: %s\n", windowName)
 
-	// Check if workspace already has a provisioned OD we can reuse
-	if w.RemoteHost != "" {
-		// Reuse existing OD - need to use connection_prefix instead of provision_prefix
-		connectionPrefixTemplate := m.config.GetSessionRunnerConnectionPrefix()
-		if connectionPrefixTemplate == "" {
-			// Fallback: if no connection_prefix configured, can't reuse - provision new OD
-			fmt.Printf("[session] warning: no connection_prefix configured, cannot reuse OD %s\n", w.RemoteHost)
-			w.RemoteHost = "" // Clear it so we provision new
-		} else {
-			// Build connection prefix with hostname substituted
-			connectionPrefix = strings.ReplaceAll(connectionPrefixTemplate, "{{.Hostname}}", w.RemoteHost)
-			fmt.Printf("[session] reusing existing OD: %s for workspace %s\n", w.RemoteHost, w.ID)
+		// Create new window in remote tmux via the existing local tmux session
+		// Use C-b : to send tmux commands through the nested connection
+		createWindowCmd := fmt.Sprintf("new-window -t %s -n %s -c %s", remoteTmuxSession, windowName, workspacePath)
+		if err := m.sendTmuxCommand(ctx, w.LocalTmuxSession, createWindowCmd); err != nil {
+			return nil, fmt.Errorf("failed to create remote window: %w", err)
 		}
+
+		time.Sleep(200 * time.Millisecond)
+
+		// Send the agent command to the new window
+		sendKeysCmd := fmt.Sprintf("send-keys -t %s:%s %s Enter", remoteTmuxSession, windowName, runner.ShellQuote(command))
+		if err := m.sendTmuxCommand(ctx, w.LocalTmuxSession, sendKeysCmd); err != nil {
+			return nil, fmt.Errorf("failed to send command to remote window: %w", err)
+		}
+
+		// Get PID (will be 0 for now since we're sharing the connection)
+		pid := 0
+
+		// Create session state
+		// Note: This session shares the local tmux with the first session but has its own remote window
+		sess := state.Session{
+			ID:           sessionID,
+			WorkspaceID:  w.ID,
+			Target:       target,
+			Nickname:     nickname,
+			TmuxSession:  w.LocalTmuxSession, // Share the local tmux session
+			CreatedAt:    time.Now(),
+			Pid:          pid,
+			RemoteWindow: windowName,
+		}
+
+		if err := m.state.AddSession(sess); err != nil {
+			return nil, fmt.Errorf("failed to add session to state: %w", err)
+		}
+		if err := m.state.Save(); err != nil {
+			return nil, fmt.Errorf("failed to save state: %w", err)
+		}
+
+		fmt.Printf("[session] created remote session (reused connection): id=%s window=%s\n", sessionID, windowName)
+		fmt.Printf("[session] =========================\n")
+		return &sess, nil
 	}
 
-	if w.RemoteHost != "" && connectionPrefix != "" {
-		// Reuse existing OD - create a new window in the existing remote tmux
-		// Build command to connect to existing OD and add new window
-		// First check if remote tmux exists, if not create it
-		remoteTmuxSetup := fmt.Sprintf(
-			"tmux has-session -t %s 2>/dev/null || { "+
-				"tmux new-session -d -s %s -n helper -c %s; "+
-				"}; "+
-				"tmux new-window -t %s -n %s -c %s; "+
-				"tmux send-keys -t %s:%s %s Enter; "+
-				"exec tmux attach -t %s:%s",
-			remoteTmuxSession,
-			remoteTmuxSession, workspacePath,
-			remoteTmuxSession, windowName, workspacePath,
-			remoteTmuxSession, windowName, runner.ShellQuote(command),
-			remoteTmuxSession, windowName,
-		)
-		fullCmd = fmt.Sprintf("%s bash -c %s", connectionPrefix, runner.ShellQuote(remoteTmuxSetup))
+	// First session for this workspace - provision new remote environment and create remote tmux
+	fmt.Printf("[session] === REMOTE SESSION (NEW PROVISION) ===\n")
 
-		fmt.Printf("[session] === REMOTE SESSION (REUSE OD) ===\n")
-		fmt.Printf("[session] Reusing OD: %s\n", w.RemoteHost)
-		fmt.Printf("[session] Connection prefix: %s\n", connectionPrefix)
-	} else {
-		// First session for this workspace - provision new OD and create remote tmux
-		// Build the remote tmux session setup script
-		// This creates a remote tmux session with:
-		// - {windowName}: runs the agent command
-		// - helper: for VCS commands (sl status, sl log, etc.)
-		remoteTmuxSetup := fmt.Sprintf(
-			"tmux new-session -d -s %s -n %s -c %s; "+
-				"tmux new-window -t %s -n helper -c %s; "+
-				"tmux select-window -t %s:%s; "+
-				"tmux send-keys -t %s:%s %s Enter; "+
-				"exec tmux attach -t %s:%s",
-			remoteTmuxSession, windowName, workspacePath,
-			remoteTmuxSession, workspacePath,
-			remoteTmuxSession, windowName,
-			remoteTmuxSession, windowName, runner.ShellQuote(command),
-			remoteTmuxSession, windowName,
-		)
-		fullCmd = fmt.Sprintf("%s bash -c %s", provisionPrefix, runner.ShellQuote(remoteTmuxSetup))
+	// Build the provisioning command that:
+	// 1. Connects to the remote via provision_prefix (e.g., dev connect)
+	// 2. Creates a nested remote tmux session with helper window
+	// 3. Runs the agent command in a session-specific window
+	// 4. Attaches to the remote tmux
+	//
+	// The nested tmux structure:
+	//   Remote tmux session "schmux"
+	//     ├─ Window "helper": For running sl/git commands
+	//     └─ Window "{windowName}": Runs the agent
+	nestedTmuxSetup := fmt.Sprintf(
+		"tmux new-session -d -s %s -n helper -c %s; "+
+			"tmux new-window -t %s -n %s -c %s; "+
+			"tmux send-keys -t %s:%s %s Enter; "+
+			"tmux select-window -t %s:%s; "+
+			"exec tmux attach -t %s",
+		remoteTmuxSession, workspacePath, // new-session with helper window
+		remoteTmuxSession, windowName, workspacePath, // new-window for agent
+		remoteTmuxSession, windowName, runner.ShellQuote(command), // send agent command
+		remoteTmuxSession, windowName, // select the agent window
+		remoteTmuxSession, // attach to remote tmux
+	)
 
-		fmt.Printf("[session] === REMOTE SESSION (NEW OD) ===\n")
-		fmt.Printf("[session] Provision prefix: %s\n", provisionPrefix)
-	}
+	// Build the full command with provision prefix
+	// Note: provisionPrefix is already templated with flavor, so we don't add it again
+	// We need bash -c to execute the command string on the remote, since dev connect
+	// wraps commands with exec which doesn't interpret shell syntax
+	fullCmd := fmt.Sprintf("%s -- bash -c %s", provisionPrefix, shellQuote(nestedTmuxSetup))
 
 	// Log the provisioning details to main log
 	fmt.Printf("[session] Flavor: %s\n", flavor)
@@ -491,11 +523,25 @@ func (m *Manager) SpawnWithProvisioning(ctx context.Context, w *state.Workspace,
 	if err := m.state.AddSession(sess); err != nil {
 		return nil, fmt.Errorf("failed to add session to state: %w", err)
 	}
+
+	// Store LocalTmuxSession in workspace for future session reuse
+	// This allows subsequent sessions to reuse the same devconnect connection
+	w.LocalTmuxSession = tmuxSession
+	if err := m.state.UpdateWorkspace(*w); err != nil {
+		fmt.Printf("[session] warning: failed to store LocalTmuxSession: %v\n", err)
+	}
+
 	if err := m.state.Save(); err != nil {
 		return nil, fmt.Errorf("failed to save state: %w", err)
 	}
 
 	fmt.Printf("[session] created remote session: id=%s flavor=%s window=%s\n", sessionID, flavor, windowName)
+
+	// If this is a new remote (not reusing existing), start background hostname detection
+	if w.RemoteHost == "" {
+		go m.DetectAndStoreHostname(sessionID, w.ID)
+	}
+
 	return &sess, nil
 }
 
@@ -977,8 +1023,39 @@ func (m *Manager) pruneLogFiles(activeSessions []state.Session) error {
 }
 
 // GetLogPath returns the log file path for a session (public for WebSocket).
+// For sessions sharing a local tmux (reused remote connection), returns the
+// log file of the original session that has pipe-pane set up.
 func (m *Manager) GetLogPath(sessionID string) (string, error) {
-	return m.getLogPath(sessionID)
+	// Get the basic log path for this session
+	logPath, err := m.getLogPath(sessionID)
+	if err != nil {
+		return "", err
+	}
+
+	// Check if this session's log file exists
+	if _, err := os.Stat(logPath); err == nil {
+		return logPath, nil
+	}
+
+	// Log file doesn't exist - check if we're sharing a TmuxSession with another session
+	// that has a log file (reused remote connection)
+	sess, found := m.state.GetSession(sessionID)
+	if found {
+		sessions := m.state.GetSessions()
+		for _, other := range sessions {
+			if other.TmuxSession == sess.TmuxSession && other.ID != sess.ID {
+				otherLogPath, err := m.getLogPath(other.ID)
+				if err == nil {
+					if _, err := os.Stat(otherLogPath); err == nil {
+						return otherLogPath, nil
+					}
+				}
+			}
+		}
+	}
+
+	// Fall back to this session's log path (even if it doesn't exist yet)
+	return logPath, nil
 }
 
 // EnsurePipePane ensures pipe-pane is active for a session (auto-migrate old sessions).

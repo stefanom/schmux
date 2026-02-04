@@ -219,7 +219,7 @@ type AccessControlUpdate struct {
 type SessionRunner struct {
 	Type             string `json:"type"`                        // "local_tmux" (default) or "external"
 	ProvisionPrefix  string `json:"provision_prefix,omitempty"`  // Prefix for provisioning+command (e.g., "dev connect {{.Flavor}} --")
-	ConnectionPrefix string `json:"connection_prefix,omitempty"` // Prefix for connecting to existing OD (e.g., "dev connect {{.Hostname}} --")
+	ConnectionPrefix string `json:"connection_prefix,omitempty"` // Prefix for connecting to existing remote (e.g., "dev connect {{.Hostname}} --")
 	HostnameRegex    string `json:"hostname_regex,omitempty"`    // Regex to extract hostname from provisioning log output
 	OpenVSCode       string `json:"open_vscode,omitempty"`       // Command to open VSCode on remote (e.g., "code --remote ssh-remote+{{.Hostname}} {{.Path}}")
 }

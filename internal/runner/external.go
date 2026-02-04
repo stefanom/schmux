@@ -84,10 +84,10 @@ func NewExternalRunnerWithFlavor(cfg ExternalRunnerConfig, flavor string) (*Exte
 }
 
 // ProvisionEnvironment checks if provisioning is needed.
-// For remote repos, each session needs its own OD instance to avoid Sapling conflicts,
+// For remote repos, each session needs its own remote instance to avoid Sapling conflicts,
 // so we always return ErrProvisioningRequired to trigger provisioning.
 func (r *ExternalRunner) ProvisionEnvironment(ctx context.Context) error {
-	// Each session needs its own OD - always provision a new one
+	// Each session needs its own remote - always provision a new one
 	if r.provisionPrefix == "" {
 		return fmt.Errorf("no provision_prefix configured")
 	}
@@ -100,7 +100,7 @@ func (r *ExternalRunner) ProvisionEnvironment(ctx context.Context) error {
 		return fmt.Errorf("failed to build provision prefix: %w", err)
 	}
 
-	fmt.Printf("[runner] provisioning new OD for flavor %s\n", r.flavor)
+	fmt.Printf("[runner] provisioning new remote for flavor %s\n", r.flavor)
 	return &ErrProvisioningRequired{
 		ProvisionPrefix: prefix,
 		Flavor:          r.flavor,
