@@ -187,6 +187,7 @@ export interface RunTarget {
 export interface SessionRunner {
   type: string;
   provision_prefix?: string;
+  connection_prefix?: string;
   hostname_regex?: string;
   open_vscode?: string;
 }
@@ -194,6 +195,7 @@ export interface SessionRunner {
 export interface SessionRunnerUpdate {
   type?: string;
   provision_prefix?: string;
+  connection_prefix?: string;
   hostname_regex?: string;
   open_vscode?: string;
 }

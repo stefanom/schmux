@@ -1060,7 +1060,7 @@ func (s *Server) handleConfigGet(w http.ResponseWriter, r *http.Request) {
 			SessionTTLMinutes: s.config.GetAuthSessionTTLMinutes(),
 		},
 		SessionRunner:  buildSessionRunner(s.config),
-		RemoteRunner: buildRemoteRunner(s.config),
+		RemoteRunner:   buildRemoteRunner(s.config),
 		VersionControl: buildVersionControl(s.config),
 		NeedsRestart:   s.state.GetNeedsRestart(),
 	}
@@ -1362,6 +1362,9 @@ func (s *Server) handleConfigUpdate(w http.ResponseWriter, r *http.Request) {
 		if req.SessionRunner.ProvisionPrefix != nil {
 			cfg.SessionRunner.ProvisionPrefix = *req.SessionRunner.ProvisionPrefix
 		}
+		if req.SessionRunner.ConnectionPrefix != nil {
+			cfg.SessionRunner.ConnectionPrefix = *req.SessionRunner.ConnectionPrefix
+		}
 		if req.SessionRunner.HostnameRegex != nil {
 			cfg.SessionRunner.HostnameRegex = *req.SessionRunner.HostnameRegex
 		}
@@ -1379,6 +1382,9 @@ func (s *Server) handleConfigUpdate(w http.ResponseWriter, r *http.Request) {
 		}
 		if req.RemoteRunner.ProvisionPrefix != nil {
 			cfg.RemoteRunner.ProvisionPrefix = *req.RemoteRunner.ProvisionPrefix
+		}
+		if req.RemoteRunner.ConnectionPrefix != nil {
+			cfg.RemoteRunner.ConnectionPrefix = *req.RemoteRunner.ConnectionPrefix
 		}
 		if req.RemoteRunner.HostnameRegex != nil {
 			cfg.RemoteRunner.HostnameRegex = *req.RemoteRunner.HostnameRegex
@@ -1557,13 +1563,16 @@ func buildTLS(cfg *config.Config) *contracts.TLS {
 func buildSessionRunner(cfg *config.Config) contracts.SessionRunner {
 	runner := cfg.SessionRunner
 	openVSCode := ""
+	connectionPrefix := ""
 	if runner != nil {
 		openVSCode = runner.OpenVSCode
+		connectionPrefix = runner.ConnectionPrefix
 	}
 	return contracts.SessionRunner{
-		Type:          cfg.GetSessionRunnerType(),
-		HostnameRegex: cfg.GetSessionRunnerHostnameRegex(),
-		OpenVSCode:    openVSCode,
+		Type:             cfg.GetSessionRunnerType(),
+		ConnectionPrefix: connectionPrefix,
+		HostnameRegex:    cfg.GetSessionRunnerHostnameRegex(),
+		OpenVSCode:       openVSCode,
 	}
 }
 
@@ -1573,10 +1582,11 @@ func buildRemoteRunner(cfg *config.Config) contracts.SessionRunner {
 		return contracts.SessionRunner{}
 	}
 	return contracts.SessionRunner{
-		Type:            "external", // Remote always uses external runner
-		ProvisionPrefix: runner.ProvisionPrefix,
-		HostnameRegex:   runner.HostnameRegex,
-		OpenVSCode:      runner.OpenVSCode,
+		Type:             "external", // Remote always uses external runner
+		ProvisionPrefix:  runner.ProvisionPrefix,
+		ConnectionPrefix: runner.ConnectionPrefix,
+		HostnameRegex:    runner.HostnameRegex,
+		OpenVSCode:       runner.OpenVSCode,
 	}
 }
 
@@ -1770,6 +1780,12 @@ func (s *Server) handleDiff(w http.ResponseWriter, r *http.Request) {
 		return
 	}
 
+	// For external (remote) workspaces, use Sapling VCS via remote command execution
+	if ws.External {
+		s.handleSaplingDiff(w, r, workspaceID, &ws)
+		return
+	}
+
 	// Refresh git status so the client gets updated stats
 	refreshCtx, refreshCancel := context.WithTimeout(context.Background(), time.Duration(s.config.GetGitStatusTimeoutMs())*time.Millisecond)
 	if _, err := s.workspace.UpdateGitStatus(refreshCtx, workspaceID); err != nil {
@@ -1939,6 +1955,160 @@ func (s *Server) handleDiff(w http.ResponseWriter, r *http.Request) {
 
 	w.Header().Set("Content-Type", "application/json")
 	json.NewEncoder(w).Encode(response)
+}
+
+// handleSaplingDiff returns Sapling diff for a remote workspace.
+// Uses the helper window in the remote tmux session to run sl commands.
+func (s *Server) handleSaplingDiff(w http.ResponseWriter, r *http.Request, workspaceID string, ws *state.Workspace) {
+	type FileDiff struct {
+		OldPath      string `json:"old_path,omitempty"`
+		NewPath      string `json:"new_path,omitempty"`
+		OldContent   string `json:"old_content,omitempty"`
+		NewContent   string `json:"new_content,omitempty"`
+		Status       string `json:"status,omitempty"`
+		LinesAdded   int    `json:"lines_added"`
+		LinesRemoved int    `json:"lines_removed"`
+		IsBinary     bool   `json:"is_binary"`
+	}
+
+	type DiffResponse struct {
+		WorkspaceID string     `json:"workspace_id"`
+		Repo        string     `json:"repo"`
+		Branch      string     `json:"branch"`
+		VCSType     string     `json:"vcs_type,omitempty"`
+		Files       []FileDiff `json:"files"`
+		Error       string     `json:"error,omitempty"`
+	}
+
+	// Find an active session for this workspace to run commands through
+	sessionID := s.findActiveSessionForWorkspace(workspaceID)
+	if sessionID == "" {
+		// No active session - return empty diff with informational message
+		response := DiffResponse{
+			WorkspaceID: workspaceID,
+			Repo:        ws.Repo,
+			Branch:      ws.Branch,
+			VCSType:     "sapling",
+			Files:       []FileDiff{},
+			Error:       "No active session for remote workspace. Start a session to view changes.",
+		}
+		w.Header().Set("Content-Type", "application/json")
+		json.NewEncoder(w).Encode(response)
+		return
+	}
+
+	ctx, cancel := context.WithTimeout(r.Context(), 30*time.Second)
+	defer cancel()
+
+	// Run sl status to get changed files
+	statusResult, err := s.session.RunRemoteCommand(ctx, sessionID, "sl status")
+	if err != nil {
+		response := DiffResponse{
+			WorkspaceID: workspaceID,
+			Repo:        ws.Repo,
+			Branch:      ws.Branch,
+			VCSType:     "sapling",
+			Files:       []FileDiff{},
+			Error:       fmt.Sprintf("Failed to run sl status: %v", err),
+		}
+		w.Header().Set("Content-Type", "application/json")
+		json.NewEncoder(w).Encode(response)
+		return
+	}
+
+	// Parse sl status output
+	files := make([]FileDiff, 0)
+	lines := strings.Split(strings.TrimSpace(statusResult.Output), "\n")
+	for _, line := range lines {
+		if len(line) < 3 {
+			continue
+		}
+		statusChar := line[0]
+		path := strings.TrimSpace(line[2:])
+
+		var status string
+		switch statusChar {
+		case 'M':
+			status = "modified"
+		case 'A':
+			status = "added"
+		case 'R':
+			status = "deleted"
+		case '?':
+			status = "untracked"
+		case '!':
+			status = "deleted"
+		default:
+			continue
+		}
+
+		files = append(files, FileDiff{
+			NewPath: path,
+			Status:  status,
+		})
+	}
+
+	// Get line stats from sl diff --stat
+	diffStatResult, err := s.session.RunRemoteCommand(ctx, sessionID, "sl diff --stat")
+	if err == nil && diffStatResult.Output != "" {
+		// Parse diff --stat output format:
+		// path/to/file | 10 +++++-----
+		diffStatLines := strings.Split(strings.TrimSpace(diffStatResult.Output), "\n")
+		fileStats := make(map[string][2]int) // path -> [added, removed]
+
+		for _, line := range diffStatLines {
+			if !strings.Contains(line, "|") {
+				continue
+			}
+			parts := strings.SplitN(line, "|", 2)
+			if len(parts) != 2 {
+				continue
+			}
+			path := strings.TrimSpace(parts[0])
+			stats := strings.TrimSpace(parts[1])
+
+			// Count + and - in the bar
+			added := strings.Count(stats, "+")
+			removed := strings.Count(stats, "-")
+			fileStats[path] = [2]int{added, removed}
+		}
+
+		// Update files with stats
+		for i := range files {
+			if stats, ok := fileStats[files[i].NewPath]; ok {
+				files[i].LinesAdded = stats[0]
+				files[i].LinesRemoved = stats[1]
+			}
+		}
+	}
+
+	response := DiffResponse{
+		WorkspaceID: workspaceID,
+		Repo:        ws.Repo,
+		Branch:      ws.Branch,
+		VCSType:     "sapling",
+		Files:       files,
+	}
+
+	w.Header().Set("Content-Type", "application/json")
+	json.NewEncoder(w).Encode(response)
+}
+
+// findActiveSessionForWorkspace finds an active session for the given workspace.
+// Returns empty string if no active session found.
+func (s *Server) findActiveSessionForWorkspace(workspaceID string) string {
+	sessions := s.state.GetSessions()
+	for _, sess := range sessions {
+		if sess.WorkspaceID == workspaceID {
+			ctx, cancel := context.WithTimeout(context.Background(), time.Duration(s.config.GetXtermQueryTimeoutMs())*time.Millisecond)
+			running := s.session.IsRunning(ctx, sess.ID)
+			cancel()
+			if running {
+				return sess.ID
+			}
+		}
+	}
+	return ""
 }
 
 type resolvedQuickLaunch struct {
@@ -2217,6 +2387,10 @@ func (s *Server) handleOpenVSCodeExternal(w http.ResponseWriter, ws state.Worksp
 
 	if hostname != "" {
 		fmt.Printf("[open-vscode] found hostname: %s\n", hostname)
+		// Store hostname in workspace for future session reuse
+		if err := s.session.UpdateWorkspaceRemoteHost(ws.ID, hostname); err != nil {
+			fmt.Printf("[open-vscode] warning: failed to store remote host: %v\n", err)
+		}
 	}
 
 	if hostname == "" {
@@ -3201,10 +3375,17 @@ func (s *Server) handleWorkspaceGitGraph(w http.ResponseWriter, r *http.Request)
 	}
 
 	// Verify workspace exists
-	if _, ok := s.state.GetWorkspace(workspaceID); !ok {
+	ws, ok := s.state.GetWorkspace(workspaceID)
+	if !ok {
 		w.Header().Set("Content-Type", "application/json")
 		w.WriteHeader(http.StatusNotFound)
 		json.NewEncoder(w).Encode(map[string]string{"error": "workspace not found: " + workspaceID})
+		return
+	}
+
+	// For external (remote) workspaces, use Sapling VCS
+	if ws.External {
+		s.handleSaplingGitGraph(w, r, workspaceID, &ws)
 		return
 	}
 
@@ -3240,6 +3421,144 @@ func (s *Server) handleWorkspaceGitGraph(w http.ResponseWriter, r *http.Request)
 			FilesChanged: ws.GitFilesChanged,
 			LinesAdded:   ws.GitLinesAdded,
 			LinesRemoved: ws.GitLinesRemoved,
+		}
+	}
+
+	w.Header().Set("Content-Type", "application/json")
+	json.NewEncoder(w).Encode(resp)
+}
+
+// handleSaplingGitGraph returns Sapling commit graph for a remote workspace.
+func (s *Server) handleSaplingGitGraph(w http.ResponseWriter, r *http.Request, workspaceID string, ws *state.Workspace) {
+	// Parse query params
+	maxCommits := 50
+	if mc := r.URL.Query().Get("max_commits"); mc != "" {
+		if parsed, err := strconv.Atoi(mc); err == nil && parsed > 0 {
+			maxCommits = parsed
+		}
+	}
+	if maxCommits > 100 {
+		maxCommits = 100 // Limit for remote execution
+	}
+
+	// Find an active session for this workspace
+	sessionID := s.findActiveSessionForWorkspace(workspaceID)
+	if sessionID == "" {
+		resp := contracts.GitGraphResponse{
+			Repo:     ws.Repo,
+			Nodes:    []contracts.GitGraphNode{},
+			Branches: map[string]contracts.GitGraphBranch{},
+		}
+		w.Header().Set("Content-Type", "application/json")
+		json.NewEncoder(w).Encode(resp)
+		return
+	}
+
+	ctx, cancel := context.WithTimeout(r.Context(), 30*time.Second)
+	defer cancel()
+
+	// Run sl log to get commit history
+	// Template format: hash|short|message|author|date|parents|phase
+	template := "{node}|{shortest(node,7)}|{desc|firstline}|{author|user}|{date|isodate}|{parents}|{phase}"
+	cmd := fmt.Sprintf("sl log -r 'ancestors(.) & draft()' --template '%s\\n' --limit %d 2>/dev/null || sl log --template '%s\\n' --limit %d", template, maxCommits, template, maxCommits)
+
+	result, err := s.session.RunRemoteCommand(ctx, sessionID, cmd)
+	if err != nil {
+		w.Header().Set("Content-Type", "application/json")
+		w.WriteHeader(http.StatusInternalServerError)
+		json.NewEncoder(w).Encode(map[string]string{"error": fmt.Sprintf("Failed to run sl log: %v", err)})
+		return
+	}
+
+	// Parse the output into commits
+	nodes := make([]contracts.GitGraphNode, 0)
+	lines := strings.Split(strings.TrimSpace(result.Output), "\n")
+	for _, line := range lines {
+		line = strings.TrimSpace(line)
+		if line == "" {
+			continue
+		}
+
+		parts := strings.SplitN(line, "|", 7)
+		if len(parts) < 6 {
+			continue
+		}
+
+		node := contracts.GitGraphNode{
+			Hash:      parts[0],
+			ShortHash: parts[1],
+			Message:   parts[2],
+			Author:    parts[3],
+			Timestamp: parts[4],
+			Parents:   []string{},
+			Branches:  []string{},
+			IsHead:    []string{},
+		}
+
+		// Parse parents (space-separated)
+		if parts[5] != "" {
+			node.Parents = strings.Fields(parts[5])
+		}
+
+		nodes = append(nodes, node)
+	}
+
+	// Mark the first commit as HEAD
+	if len(nodes) > 0 {
+		nodes[0].IsHead = []string{"@"}
+	}
+
+	resp := contracts.GitGraphResponse{
+		Repo:  ws.Repo,
+		Nodes: nodes,
+		Branches: map[string]contracts.GitGraphBranch{
+			"@": {
+				Head:   "",
+				IsMain: false,
+			},
+		},
+	}
+	if len(nodes) > 0 {
+		resp.Branches["@"] = contracts.GitGraphBranch{
+			Head:   nodes[0].Hash,
+			IsMain: false,
+		}
+	}
+
+	// Get dirty state from sl status
+	statusResult, err := s.session.RunRemoteCommand(ctx, sessionID, "sl diff --stat | tail -1")
+	if err == nil && statusResult.Output != "" {
+		// Parse summary line: X files changed, Y insertions(+), Z deletions(-)
+		if strings.Contains(statusResult.Output, "changed") {
+			resp.DirtyState = &contracts.GitGraphDirtyState{}
+			parts := strings.Split(statusResult.Output, ",")
+			for _, part := range parts {
+				part = strings.TrimSpace(part)
+				if strings.Contains(part, "file") {
+					fields := strings.Fields(part)
+					if len(fields) > 0 {
+						if n, err := strconv.Atoi(fields[0]); err == nil {
+							resp.DirtyState.FilesChanged = n
+						}
+					}
+				}
+				if strings.Contains(part, "insertion") {
+					fields := strings.Fields(part)
+					if len(fields) > 0 {
+						if n, err := strconv.Atoi(fields[0]); err == nil {
+							resp.DirtyState.LinesAdded = n
+						}
+					}
+				}
+				if strings.Contains(part, "deletion") {
+					fields := strings.Fields(part)
+					if len(fields) > 0 {
+						if n, err := strconv.Atoi(fields[0]); err == nil {
+							resp.DirtyState.LinesRemoved = n
+						}
+					}
+				}
+			}
 		}
 	}
 

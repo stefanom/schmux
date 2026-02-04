@@ -66,8 +66,9 @@ export default function SessionTabs({ sessions, currentSessionId, workspace, act
   const filesChanged = workspace?.git_files_changed ?? 0;
   const hasChanges = filesChanged > 0 || linesAdded > 0 || linesRemoved > 0;
 
-  // External workspaces (remote) don't have git status/graph
+  // External workspaces (remote) use Sapling VCS - tabs are shown but label adapted
   const isExternal = workspace?.external ?? false;
+  const graphTabLabel = 'commit log';
 
   // Calculate spawn menu position
   useEffect(() => {
@@ -318,7 +319,7 @@ export default function SessionTabs({ sessions, currentSessionId, workspace, act
       }}
     >
       <div className="session-tab__row1">
-        <span className="session-tab__name">git graph</span>
+        <span className="session-tab__name">{graphTabLabel}</span>
       </div>
     </div>
   );
@@ -402,11 +403,11 @@ export default function SessionTabs({ sessions, currentSessionId, workspace, act
     <div className="session-tabs">
       {sessions.map((sess) => renderSessionTab(sess))}
 
-      {/* Diff tab — hidden for external workspaces */}
-      {!isExternal && renderDiffTab()}
+      {/* Diff tab — always shown (uses Sapling for external workspaces) */}
+      {renderDiffTab()}
 
-      {/* Git tab — hidden for external workspaces */}
-      {!isExternal && renderGitTab()}
+      {/* Git/Sapling graph tab — always shown */}
+      {renderGitTab()}
 
       {/* Add button */}
       {showAddButton && renderAddButton()}

@@ -69,8 +69,8 @@ type Config struct {
 	Xterm                      *XtermConfig           `json:"xterm,omitempty"`
 	Network                    *NetworkConfig         `json:"network,omitempty"`
 	AccessControl              *AccessControlConfig   `json:"access_control,omitempty"`
-	SessionRunner  *SessionRunnerConfig `json:"session_runner,omitempty"`  // Deprecated: use RemoteRunner
-	RemoteRunner   *SessionRunnerConfig `json:"remote_runner,omitempty"`   // Command templates for remote repos
+	SessionRunner              *SessionRunnerConfig   `json:"session_runner,omitempty"`  // Deprecated: use RemoteRunner
+	RemoteRunner               *SessionRunnerConfig   `json:"remote_runner,omitempty"`   // Command templates for remote repos
 	VersionControl             *VersionControlConfig  `json:"version_control,omitempty"` // Deprecated: VCS is now implied by repo mode
 
 	// path is the file path where this config was loaded from or should be saved to.
@@ -145,10 +145,11 @@ type AccessControlConfig struct {
 
 // SessionRunnerConfig controls how sessions are executed.
 type SessionRunnerConfig struct {
-	Type            string `json:"type"`                        // "local_tmux" (default) or "external"
-	ProvisionPrefix string `json:"provision_prefix,omitempty"`  // Prefix for provisioning+command (e.g., "ssh {{.Flavor}} --")
-	HostnameRegex   string `json:"hostname_regex,omitempty"`    // Regex to extract hostname from provisioning log output
-	OpenVSCode      string `json:"open_vscode,omitempty"`       // Command to open VSCode on remote (e.g., "code --remote ssh-remote+{{.Hostname}} {{.Path}}")
+	Type             string `json:"type"`                        // "local_tmux" (default) or "external"
+	ProvisionPrefix  string `json:"provision_prefix,omitempty"`  // Prefix for provisioning+command (e.g., "dev connect {{.Flavor}} --")
+	ConnectionPrefix string `json:"connection_prefix,omitempty"` // Prefix for connecting to existing OD (e.g., "dev connect {{.Hostname}} --")
+	HostnameRegex    string `json:"hostname_regex,omitempty"`    // Regex to extract hostname from provisioning log output
+	OpenVSCode       string `json:"open_vscode,omitempty"`       // Command to open VSCode on remote (e.g., "code --remote ssh-remote+{{.Hostname}} {{.Path}}")
 }
 
 // VersionControlConfig controls how version control is handled.
@@ -170,14 +171,14 @@ const (
 
 // Repo mode constants
 const (
-	RepoModeLocal    = "local"    // default: local git clone/worktree
+	RepoModeLocal  = "local"  // default: local git clone/worktree
 	RepoModeRemote = "remote" // remote environment
 )
 
 // Repo represents a git repository configuration.
 type Repo struct {
-	Name     string          `json:"name"`
-	URL      string          `json:"url"`
+	Name   string        `json:"name"`
+	URL    string        `json:"url"`
 	Mode   string        `json:"mode,omitempty"` // "local" (default) or "remote"
 	Remote *RemoteConfig `json:"remote,omitempty"`
 }
@@ -1091,6 +1092,15 @@ func (c *Config) GetSessionRunnerHostnameRegex() string {
 		return ""
 	}
 	return c.SessionRunner.HostnameRegex
+}
+
+// GetSessionRunnerConnectionPrefix returns the connection prefix for external runner.
+// This is used to connect to an existing OD by hostname instead of provisioning a new one.
+func (c *Config) GetSessionRunnerConnectionPrefix() string {
+	if c.SessionRunner == nil {
+		return ""
+	}
+	return c.SessionRunner.ConnectionPrefix
 }
 
 // GetVersionControlType returns the configured version control type.

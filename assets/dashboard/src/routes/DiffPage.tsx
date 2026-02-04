@@ -10,6 +10,9 @@ import WorkspaceHeader from '../components/WorkspaceHeader';
 import SessionTabs from '../components/SessionTabs';
 import type { DiffResponse } from '../lib/types';
 
+// Polling interval for remote workspaces (15 seconds)
+const REMOTE_POLL_INTERVAL = 15000;
+
 type ExternalDiffCommand = {
   name: string;
   command: string;
@@ -44,6 +47,7 @@ export default function DiffPage() {
   const workspace = workspaces?.find(ws => ws.id === workspaceId);
   const workspaceExists = workspaceId && workspaces?.some(ws => ws.id === workspaceId);
   const externalDiffCommands = config?.external_diff_commands || [];
+  const isExternal = workspace?.external ?? false;
 
   // Navigate home if workspace was disposed
   useEffect(() => {
@@ -51,6 +55,34 @@ export default function DiffPage() {
       navigate('/');
     }
   }, [loading, workspaceId, workspaceExists, navigate]);
+
+  // Refetch function for polling
+  const fetchDiff = useCallback(async () => {
+    if (!workspaceId) return;
+    try {
+      const data = await getDiff(workspaceId);
+      setDiffData(data);
+      if (data.files?.length > 0 && selectedFileIndex >= data.files.length) {
+        setSelectedFileIndex(0);
+      }
+      setError('');
+    } catch (err) {
+      // Don't clear existing data on error during polling
+      console.error('Failed to fetch diff:', err);
+    }
+  }, [workspaceId, selectedFileIndex]);
+
+  // Poll for remote workspaces since WebSocket git status updates don't work
+  useEffect(() => {
+    if (!isExternal) return;
+
+    const pollInterval = config?.sessions?.git_status_poll_interval_ms || REMOTE_POLL_INTERVAL;
+    const interval = setInterval(() => {
+      fetchDiff();
+    }, pollInterval);
+
+    return () => clearInterval(interval);
+  }, [isExternal, fetchDiff, config?.sessions?.git_status_poll_interval_ms]);
 
   const handleMouseDown = useCallback((e: React.MouseEvent) => {
     e.preventDefault();

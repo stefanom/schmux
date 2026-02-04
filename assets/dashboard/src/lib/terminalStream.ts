@@ -130,6 +130,12 @@ export default class TerminalStream {
     this.terminal.loadAddon(new WebLinksAddon());
     this.terminal.open(this.containerElement);
     this.terminal.onData((data) => {
+      // Filter out terminal response sequences (like Device Attributes responses)
+      // These start with ESC [ and end with 'c' (DA response) or 'R' (cursor position report)
+      // We only want to send actual user input, not automated terminal responses
+      if (this.isTerminalResponse(data)) {
+        return;
+      }
       this.sendInput(data);
     });
 
@@ -540,5 +546,29 @@ export default class TerminalStream {
   private notifySelectedLinesChange() {
     const lines = this.getSelectedLines();
     this.onSelectedLinesChange(lines);
+  }
+
+  // Check if data is a terminal response sequence (not user input)
+  // Terminal responses include:
+  // - Device Attributes (DA): ESC [ ... c
+  // - Cursor Position Report: ESC [ ... R
+  // - Other CSI responses ending with specific characters
+  private isTerminalResponse(data: string): boolean {
+    // Check for CSI sequences (ESC [) that end with response terminators
+    // DA response: ends with 'c'
+    // Cursor position report: ends with 'R'
+    const csiResponsePattern = /^\x1b\[[\d;?]*[cR]$/;
+    if (csiResponsePattern.test(data)) {
+      return true;
+    }
+
+    // Also filter partial responses that might come through
+    // These look like "0;276;0c" or similar number sequences ending in 'c'
+    const partialDaPattern = /^[\d;]+c$/;
+    if (partialDaPattern.test(data)) {
+      return true;
+    }
+
+    return false;
   }
 }

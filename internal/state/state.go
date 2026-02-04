@@ -26,7 +26,9 @@ type Workspace struct {
 	Repo            string `json:"repo"`
 	Branch          string `json:"branch"`
 	Path            string `json:"path"`
-	External        bool   `json:"external,omitempty"` // true if workspace is externally managed (no VCS operations)
+	External        bool   `json:"external,omitempty"`    // true if workspace is externally managed (no VCS operations)
+	VCSType         string `json:"vcs_type,omitempty"`    // "git" or "sapling" (for external workspaces)
+	RemoteHost      string `json:"remote_host,omitempty"` // OD hostname for remote workspaces (allows session reuse)
 	GitDirty        bool   `json:"-"`
 	GitAhead        int    `json:"-"`
 	GitBehind       int    `json:"-"`
@@ -51,6 +53,7 @@ type Session struct {
 	CreatedAt     time.Time `json:"created_at"`
 	Pid           int       `json:"pid"`                      // PID of the target process from tmux pane
 	EnvironmentID string    `json:"environment_id,omitempty"` // Remote environment ID (e.g., hostname)
+	RemoteWindow  string    `json:"remote_window,omitempty"`  // Remote tmux window name (for multi-session OD)
 	LastOutputAt  time.Time `json:"-"`                        // Last time terminal had new output (in-memory only, not persisted)
 	Nudge         string    `json:"nudge,omitempty"`          // NudgeNik consultation result
 }

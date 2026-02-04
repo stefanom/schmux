@@ -5,6 +5,10 @@ import { computeLayout, GRAPH_COLOR, HIGHLIGHT_COLOR } from '../lib/gitGraphLayo
 import type { GitGraphLayout, LayoutNode, LayoutEdge, LaneLine } from '../lib/gitGraphLayout';
 import type { GitGraphResponse } from '../lib/types';
 import { useSessions } from '../contexts/SessionsContext';
+import { useConfig } from '../contexts/ConfigContext';
+
+// Polling interval for remote workspaces (15 seconds)
+const REMOTE_POLL_INTERVAL = 15000;
 
 interface GitHistoryDAGProps {
   workspaceId: string;
@@ -30,6 +34,7 @@ function relativeTime(timestamp: string): string {
 
 export default function GitHistoryDAG({ workspaceId }: GitHistoryDAGProps) {
   const navigate = useNavigate();
+  const { config } = useConfig();
   const [data, setData] = useState<GitGraphResponse | null>(null);
   const [layout, setLayout] = useState<GitGraphLayout | null>(null);
   const [error, setError] = useState<string | null>(null);
@@ -43,7 +48,7 @@ export default function GitHistoryDAG({ workspaceId }: GitHistoryDAGProps) {
       setLayout(computeLayout(resp));
       setError(null);
     } catch (err) {
-      setError(err instanceof Error ? err.message : 'Failed to load git graph');
+      setError(err instanceof Error ? err.message : 'Failed to load commit log');
     } finally {
       setLoading(false);
     }
@@ -53,10 +58,25 @@ export default function GitHistoryDAG({ workspaceId }: GitHistoryDAGProps) {
     fetchData();
   }, [fetchData]);
 
-  // Refetch when git state changes via WebSocket session updates.
-  // Track the git-relevant fields and refetch when they change.
+  // Check if workspace is external (remote)
   const { workspaces } = useSessions();
   const ws = workspaces.find(w => w.id === workspaceId);
+  const isExternal = ws?.external ?? false;
+
+  // Poll for remote workspaces since WebSocket git status updates don't work
+  useEffect(() => {
+    if (!isExternal) return;
+
+    const pollInterval = config?.sessions?.git_status_poll_interval_ms || REMOTE_POLL_INTERVAL;
+    const interval = setInterval(() => {
+      fetchData();
+    }, pollInterval);
+
+    return () => clearInterval(interval);
+  }, [isExternal, fetchData, config?.sessions?.git_status_poll_interval_ms]);
+
+  // Refetch when git state changes via WebSocket session updates.
+  // Track the git-relevant fields and refetch when they change.
   const gitFingerprint = ws
     ? `${ws.git_ahead}:${ws.git_behind}:${ws.git_files_changed}:${ws.git_lines_added}:${ws.git_lines_removed}`
     : '';
@@ -77,7 +97,7 @@ export default function GitHistoryDAG({ workspaceId }: GitHistoryDAGProps) {
   }, []);
 
   if (loading) {
-    return <div className="loading-state"><div className="spinner" /> Loading git graph...</div>;
+    return <div className="loading-state"><div className="spinner" /> Loading commit log...</div>;
   }
 
   if (error) {

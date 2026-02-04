@@ -263,6 +263,7 @@ func (m *Manager) getOrCreateRemoteWorkspace(ctx context.Context, repo config.Re
 		Branch:   branch, // May not be used for remote
 		Path:     workspacePath,
 		External: true,
+		VCSType:  "sapling", // Remote workspaces use Sapling
 	}
 
 	if err := m.state.AddWorkspace(w); err != nil {
