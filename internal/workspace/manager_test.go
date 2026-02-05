@@ -143,7 +143,7 @@ func TestNew(t *testing.T) {
 	statePath := t.TempDir() + "/state.json"
 	st := state.New(statePath)
 
-	m := New(cfg, st, statePath, nil)
+	m := New(cfg, st, statePath, nil, nil)
 	if m == nil {
 		t.Error("New() returned nil")
 	}
@@ -167,7 +167,7 @@ func TestGetWorkspacesForRepo(t *testing.T) {
 	}
 
 	cfg := &config.Config{WorkspacePath: "/tmp/workspaces"}
-	m := New(cfg, st, statePath, nil)
+	m := New(cfg, st, statePath, nil, nil)
 
 	workspaces := m.getWorkspacesForRepo("test")
 	if len(workspaces) != 2 {
@@ -190,7 +190,7 @@ func TestDispose(t *testing.T) {
 	statePath := filepath.Join(tmpDir, "state.json")
 	cfg := &config.Config{WorkspacePath: tmpDir}
 	st := state.New(statePath)
-	m := New(cfg, st, statePath, nil)
+	m := New(cfg, st, statePath, nil, nil)
 
 	// Create test workspace directory and state entry
 	workspaceID := "test-001"
@@ -241,7 +241,7 @@ func TestDispose_NotFound(t *testing.T) {
 	statePath := filepath.Join(tmpDir, "state.json")
 	cfg := &config.Config{WorkspacePath: tmpDir}
 	st := state.New(statePath)
-	m := New(cfg, st, statePath, nil)
+	m := New(cfg, st, statePath, nil, nil)
 
 	// Try to dispose non-existent workspace
 	err := m.Dispose("nonexistent")
@@ -258,7 +258,7 @@ func TestDispose_ActiveSessions(t *testing.T) {
 	statePath := filepath.Join(tmpDir, "state.json")
 	cfg := &config.Config{WorkspacePath: tmpDir}
 	st := state.New(statePath)
-	m := New(cfg, st, statePath, nil)
+	m := New(cfg, st, statePath, nil, nil)
 
 	// Create test workspace directory and state entry
 	workspaceID := "test-001"
@@ -336,7 +336,7 @@ func TestDispose_Integration(t *testing.T) {
 			{Name: "test", URL: repoDir},
 		},
 	}
-	m := New(cfg, st, statePath, nil)
+	m := New(cfg, st, statePath, nil, nil)
 
 	// Create workspace via GetOrCreate (real git clone/checkout)
 	ws, err := m.GetOrCreate(context.Background(), repoDir, "main")
@@ -386,7 +386,7 @@ func TestGetOrCreate_LocalRepo(t *testing.T) {
 	cfg := config.CreateDefault(configPath)
 	cfg.WorkspacePath = tmpDir
 	st := state.New(statePath)
-	m := New(cfg, st, statePath, nil)
+	m := New(cfg, st, statePath, nil, nil)
 
 	ctx := context.Background()
 
@@ -515,7 +515,7 @@ func TestCreateCleanupOnStateSaveFailure(t *testing.T) {
 	st := state.New("")
 	mockSt := &mockStateStore{state: st, failSave: true}
 
-	mgr := New(cfg, mockSt, "", nil)
+	mgr := New(cfg, mockSt, "", nil, nil)
 
 	ctx := context.Background()
 
@@ -568,7 +568,7 @@ func TestCreateNoCleanupOnSuccess(t *testing.T) {
 	st := state.New(statePath)
 	mockSt := &mockStateStore{state: st, failSave: false}
 
-	mgr := New(cfg, mockSt, statePath, nil)
+	mgr := New(cfg, mockSt, statePath, nil, nil)
 
 	ctx := context.Background()
 
@@ -709,7 +709,7 @@ func TestRefreshWorkspaceConfig(t *testing.T) {
 		cfg.WorkspacePath = tmpDir
 		st := state.New(statePath)
 
-		mgr := New(cfg, st, statePath, nil)
+		mgr := New(cfg, st, statePath, nil, nil)
 
 		ws1 := state.Workspace{
 			ID:     "repo-001",
@@ -766,7 +766,7 @@ func TestRefreshWorkspaceConfig(t *testing.T) {
 		cfg.WorkspacePath = tmpDir
 		st := state.New(statePath)
 
-		mgr := New(cfg, st, statePath, nil)
+		mgr := New(cfg, st, statePath, nil, nil)
 
 		ws := state.Workspace{
 			ID:     "repo-001",

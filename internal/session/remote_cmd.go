@@ -5,7 +5,6 @@ import (
 	"fmt"
 	"os"
 	"os/exec"
-	"regexp"
 	"strings"
 	"sync"
 	"time"
@@ -234,7 +233,7 @@ func (m *Manager) IsRemoteSession(sessionID string) bool {
 // SwitchToSessionWindow switches the remote tmux to the session's window.
 // This should be called when viewing a session's terminal to ensure the correct
 // window is displayed. For sessions sharing a remote connection, this switches
-// to that session's specific window.
+// to that session's specific window and redirects pipe-pane to the session's log.
 func (m *Manager) SwitchToSessionWindow(ctx context.Context, sessionID string) error {
 	sess, found := m.state.GetSession(sessionID)
 	if !found {
@@ -252,12 +251,61 @@ func (m *Manager) SwitchToSessionWindow(ctx context.Context, sessionID string) e
 		return nil
 	}
 
+	// Serialize remote window switches to prevent C-b sequences from interfering
+	remoteCommandMutex.Lock()
+	defer remoteCommandMutex.Unlock()
+
 	// Switch to the session's remote window
 	remoteTmuxSession := "schmux"
 	selectWindowCmd := fmt.Sprintf("select-window -t %s:%s", remoteTmuxSession, sess.RemoteWindow)
+	localTmux := sess.TmuxSession
 
 	fmt.Printf("[session] switching to remote window %s for session %s\n", sess.RemoteWindow, sessionID)
-	return m.sendTmuxCommand(ctx, sess.TmuxSession, selectWindowCmd)
+	if err := m.sendTmuxCommand(ctx, localTmux, selectWindowCmd); err != nil {
+		return err
+	}
+
+	// Give the remote tmux time to switch windows and update display
+	time.Sleep(300 * time.Millisecond)
+
+	// Get log path for this session
+	logPath, err := m.GetLogPath(sessionID)
+	if err != nil {
+		fmt.Printf("[session] warning: failed to get log path for session %s: %v\n", sessionID, err)
+		return nil // Don't fail the switch just because we couldn't redirect logs
+	}
+
+	// Stop current pipe-pane before capturing
+	if err := m.runner.StopPipePane(ctx, localTmux); err != nil {
+		fmt.Printf("[session] warning: failed to stop pipe-pane: %v\n", err)
+	}
+
+	// Capture current screen content and write to log file
+	// This gives immediate content when switching to a session
+	if content, err := m.runner.CaptureLastLines(ctx, localTmux, 500); err == nil && content != "" {
+		// Check if log file is empty - if so, write captured content as initial state
+		// Otherwise, append to preserve history
+		fileInfo, statErr := os.Stat(logPath)
+		if statErr != nil || fileInfo.Size() == 0 {
+			if writeErr := os.WriteFile(logPath, []byte(content), 0644); writeErr != nil {
+				fmt.Printf("[session] warning: failed to write captured content to %s: %v\n", logPath, writeErr)
+			} else {
+				fmt.Printf("[session] captured %d bytes of screen content to %s\n", len(content), logPath)
+			}
+		}
+		// If file already has content, don't duplicate - pipe-pane will capture new output
+	} else if err != nil {
+		fmt.Printf("[session] warning: failed to capture screen content: %v\n", err)
+	}
+
+	// Start pipe-pane to capture new output
+	if err := m.runner.StartPipePane(ctx, localTmux, logPath); err != nil {
+		fmt.Printf("[session] warning: failed to start pipe-pane to %s: %v\n", logPath, err)
+	} else {
+		fmt.Printf("[session] redirected pipe-pane to %s\n", logPath)
+	}
+
+	return nil
 }
 
 // GetSessionWorkspace returns the workspace for a session.
@@ -273,56 +321,6 @@ func (m *Manager) GetSessionWorkspace(sessionID string) (*state.Workspace, error
 	return ws, nil
 }
 
-// UpdateWorkspaceRemoteHost updates the RemoteHost for a workspace.
-// This should be called when the hostname is first detected from the session log.
-func (m *Manager) UpdateWorkspaceRemoteHost(workspaceID, remoteHost string) error {
-	ws, found := m.state.GetWorkspace(workspaceID)
-	if !found {
-		return fmt.Errorf("workspace not found: %s", workspaceID)
-	}
-
-	// Only update if not already set
-	if ws.RemoteHost != "" {
-		return nil
-	}
-
-	ws.RemoteHost = remoteHost
-	if err := m.state.UpdateWorkspace(ws); err != nil {
-		return fmt.Errorf("failed to update workspace: %w", err)
-	}
-	if err := m.state.Save(); err != nil {
-		return fmt.Errorf("failed to save state: %w", err)
-	}
-
-	fmt.Printf("[session] stored remote host for workspace %s: %s\n", workspaceID, remoteHost)
-	return nil
-}
-
-// ClearWorkspaceRemoteHost clears the RemoteHost and LocalTmuxSession for a workspace.
-// This should be called when the last session for the workspace is disposed.
-func (m *Manager) ClearWorkspaceRemoteHost(workspaceID string) error {
-	ws, found := m.state.GetWorkspace(workspaceID)
-	if !found {
-		return nil // Workspace may already be disposed
-	}
-
-	if ws.RemoteHost == "" && ws.LocalTmuxSession == "" {
-		return nil // Nothing to clear
-	}
-
-	ws.RemoteHost = ""
-	ws.LocalTmuxSession = ""
-	if err := m.state.UpdateWorkspace(ws); err != nil {
-		return fmt.Errorf("failed to update workspace: %w", err)
-	}
-	if err := m.state.Save(); err != nil {
-		return fmt.Errorf("failed to save state: %w", err)
-	}
-
-	fmt.Printf("[session] cleared remote host and local tmux session for workspace %s\n", workspaceID)
-	return nil
-}
-
 // HasActiveSessionsForWorkspace checks if a workspace has any running sessions.
 func (m *Manager) HasActiveSessionsForWorkspace(ctx context.Context, workspaceID string) bool {
 	sessions := m.state.GetSessions()
@@ -334,103 +332,4 @@ func (m *Manager) HasActiveSessionsForWorkspace(ctx context.Context, workspaceID
 		}
 	}
 	return false
-}
-
-// DetectAndStoreHostname detects the hostname from a session's log file and stores it in the workspace.
-// This is called automatically after provisioning a remote session.
-func (m *Manager) DetectAndStoreHostname(sessionID, workspaceID string) {
-	hostnameRegex := m.config.GetRemoteRunnerHostnameRegex()
-	if hostnameRegex == "" {
-		fmt.Printf("[session] no hostname_regex configured, skipping hostname detection\n")
-		return
-	}
-
-	// Poll for hostname in the log file for up to 60 seconds
-	maxWait := 60 * time.Second
-	pollInterval := 2 * time.Second
-	deadline := time.Now().Add(maxWait)
-
-	fmt.Printf("[session] starting hostname detection for session %s\n", sessionID)
-
-	for time.Now().Before(deadline) {
-		// Check if workspace already has hostname (might be set by another path)
-		ws, found := m.state.GetWorkspace(workspaceID)
-		if !found {
-			fmt.Printf("[session] workspace %s not found, stopping hostname detection\n", workspaceID)
-			return
-		}
-		if ws.RemoteHost != "" {
-			fmt.Printf("[session] hostname already set for workspace %s: %s\n", workspaceID, ws.RemoteHost)
-			return
-		}
-
-		// Read the log file
-		logPath, err := m.GetLogPath(sessionID)
-		if err != nil {
-			time.Sleep(pollInterval)
-			continue
-		}
-
-		logBytes, err := os.ReadFile(logPath)
-		if err != nil {
-			time.Sleep(pollInterval)
-			continue
-		}
-
-		logContent := string(logBytes)
-		if len(logContent) == 0 {
-			time.Sleep(pollInterval)
-			continue
-		}
-
-		// Strip ANSI escape codes before matching
-		ansiRegex := regexp.MustCompile(`\x1b\[[0-9;]*[a-zA-Z]|\x1b\][^\x07]*\x07`)
-		logContent = ansiRegex.ReplaceAllString(logContent, "")
-
-		// Try matching with multiline flag if regex uses ^ anchor
-		regexToTry := hostnameRegex
-		if strings.HasPrefix(regexToTry, "^") && !strings.HasPrefix(regexToTry, "(?m)") {
-			regexToTry = "(?m)" + regexToTry
-		}
-
-		re, err := regexp.Compile(regexToTry)
-		if err != nil {
-			fmt.Printf("[session] invalid hostname regex: %v\n", err)
-			return
-		}
-
-		matches := re.FindStringSubmatch(logContent)
-		hostname := ""
-		if len(matches) > 1 {
-			hostname = matches[1]
-		} else if len(matches) > 0 {
-			hostname = matches[0]
-		}
-
-		// If no match and regex starts with ^, try without the anchor
-		if hostname == "" && strings.HasPrefix(hostnameRegex, "^") {
-			regexWithoutAnchor := strings.TrimPrefix(hostnameRegex, "^")
-			re, err := regexp.Compile(regexWithoutAnchor)
-			if err == nil {
-				matches := re.FindStringSubmatch(logContent)
-				if len(matches) > 1 {
-					hostname = matches[1]
-				} else if len(matches) > 0 {
-					hostname = matches[0]
-				}
-			}
-		}
-
-		if hostname != "" {
-			fmt.Printf("[session] detected hostname: %s\n", hostname)
-			if err := m.UpdateWorkspaceRemoteHost(workspaceID, hostname); err != nil {
-				fmt.Printf("[session] failed to store hostname: %v\n", err)
-			}
-			return
-		}
-
-		time.Sleep(pollInterval)
-	}
-
-	fmt.Printf("[session] hostname detection timed out for session %s\n", sessionID)
 }

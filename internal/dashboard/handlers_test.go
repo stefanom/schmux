@@ -20,7 +20,7 @@ func TestHandleHasNudgenik(t *testing.T) {
 		cfg := &config.Config{WorkspacePath: "/tmp/workspaces"}
 		st := state.New("")
 		statePath := t.TempDir() + "/state.json"
-		wm := workspace.New(cfg, st, statePath, nil)
+		wm := workspace.New(cfg, st, statePath, nil, nil)
 		sm := session.New(cfg, st, statePath, wm, nil)
 		server := NewServer(cfg, st, statePath, sm, wm, nil)
 
@@ -50,7 +50,7 @@ func TestHandleHasNudgenik(t *testing.T) {
 		}
 		st := state.New("")
 		statePath := t.TempDir() + "/state.json"
-		wm := workspace.New(cfg, st, statePath, nil)
+		wm := workspace.New(cfg, st, statePath, nil, nil)
 		sm := session.New(cfg, st, statePath, wm, nil)
 		server := NewServer(cfg, st, statePath, sm, wm, nil)
 
@@ -78,7 +78,7 @@ func TestHandleAskNudgenik(t *testing.T) {
 	cfg := &config.Config{WorkspacePath: "/tmp/workspaces"}
 	st := state.New("")
 	statePath := t.TempDir() + "/state.json"
-	wm := workspace.New(cfg, st, statePath, nil)
+	wm := workspace.New(cfg, st, statePath, nil, nil)
 	sm := session.New(cfg, st, statePath, wm, nil)
 	server := NewServer(cfg, st, statePath, sm, wm, nil)
 
@@ -148,7 +148,7 @@ func TestResolveQuickLaunchByName(t *testing.T) {
 	}
 	statePath := filepath.Join(t.TempDir(), "state.json")
 	st := state.New(statePath)
-	wm := workspace.New(cfg, st, statePath, nil)
+	wm := workspace.New(cfg, st, statePath, nil, nil)
 	sm := session.New(cfg, st, statePath, wm, nil)
 	server := NewServer(cfg, st, statePath, sm, wm, nil)
 
@@ -220,7 +220,7 @@ func TestHandleSuggestBranch(t *testing.T) {
 		cfg := &config.Config{WorkspacePath: "/tmp/workspaces"}
 		st := state.New("")
 		statePath := t.TempDir() + "/state.json"
-		wm := workspace.New(cfg, st, statePath, nil)
+		wm := workspace.New(cfg, st, statePath, nil, nil)
 		sm := session.New(cfg, st, statePath, wm, nil)
 		server := NewServer(cfg, st, statePath, sm, wm, nil)
 
@@ -240,7 +240,7 @@ func TestHandleBuiltinQuickLaunchCookbook(t *testing.T) {
 	cfg := &config.Config{WorkspacePath: "/tmp/workspaces"}
 	st := state.New("")
 	statePath := t.TempDir() + "/state.json"
-	wm := workspace.New(cfg, st, statePath, nil)
+	wm := workspace.New(cfg, st, statePath, nil, nil)
 	sm := session.New(cfg, st, statePath, wm, nil)
 	server := NewServer(cfg, st, statePath, sm, wm, nil)
 
@@ -326,7 +326,7 @@ func TestHandleHealthz(t *testing.T) {
 	cfg := &config.Config{WorkspacePath: "/tmp/workspaces"}
 	st := state.New("")
 	statePath := t.TempDir() + "/state.json"
-	wm := workspace.New(cfg, st, statePath, nil)
+	wm := workspace.New(cfg, st, statePath, nil, nil)
 	sm := session.New(cfg, st, statePath, wm, nil)
 	server := NewServer(cfg, st, statePath, sm, wm, nil)
 
@@ -373,7 +373,7 @@ func TestHandleUpdate(t *testing.T) {
 	cfg := &config.Config{WorkspacePath: "/tmp/workspaces"}
 	st := state.New("")
 	statePath := t.TempDir() + "/state.json"
-	wm := workspace.New(cfg, st, statePath, nil)
+	wm := workspace.New(cfg, st, statePath, nil, nil)
 	sm := session.New(cfg, st, statePath, wm, nil)
 	server := NewServer(cfg, st, statePath, sm, wm, nil)
 

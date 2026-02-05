@@ -21,7 +21,7 @@ func TestNew(t *testing.T) {
 	}
 	st := state.New("")
 	statePath := t.TempDir() + "/state.json"
-	wm := workspace.New(cfg, st, statePath, nil)
+	wm := workspace.New(cfg, st, statePath, nil, nil)
 
 	m := New(cfg, st, statePath, wm, nil)
 	if m == nil {
@@ -42,7 +42,7 @@ func TestGetAttachCommand(t *testing.T) {
 	cfg := &config.Config{WorkspacePath: "/tmp/workspaces"}
 	st := state.New("")
 	statePath := t.TempDir() + "/state.json"
-	wm := workspace.New(cfg, st, statePath, nil)
+	wm := workspace.New(cfg, st, statePath, nil, nil)
 
 	m := New(cfg, st, statePath, wm, nil)
 
@@ -71,7 +71,7 @@ func TestGetAttachCommandNotFound(t *testing.T) {
 	cfg := &config.Config{WorkspacePath: "/tmp/workspaces"}
 	st := state.New("")
 	statePath := t.TempDir() + "/state.json"
-	wm := workspace.New(cfg, st, statePath, nil)
+	wm := workspace.New(cfg, st, statePath, nil, nil)
 
 	m := New(cfg, st, statePath, wm, nil)
 
@@ -85,7 +85,7 @@ func TestGetAllSessions(t *testing.T) {
 	cfg := &config.Config{WorkspacePath: "/tmp/workspaces"}
 	st := state.New("")
 	statePath := t.TempDir() + "/state.json"
-	wm := workspace.New(cfg, st, statePath, nil)
+	wm := workspace.New(cfg, st, statePath, nil, nil)
 
 	m := New(cfg, st, statePath, wm, nil)
 
@@ -112,7 +112,7 @@ func TestGetSession(t *testing.T) {
 	cfg := &config.Config{WorkspacePath: "/tmp/workspaces"}
 	st := state.New("")
 	statePath := t.TempDir() + "/state.json"
-	wm := workspace.New(cfg, st, statePath, nil)
+	wm := workspace.New(cfg, st, statePath, nil, nil)
 
 	m := New(cfg, st, statePath, wm, nil)
 
@@ -145,7 +145,7 @@ func TestIsRunning(t *testing.T) {
 	cfg := &config.Config{WorkspacePath: "/tmp/workspaces"}
 	st := state.New("")
 	statePath := t.TempDir() + "/state.json"
-	wm := workspace.New(cfg, st, statePath, nil)
+	wm := workspace.New(cfg, st, statePath, nil, nil)
 
 	m := New(cfg, st, statePath, wm, nil)
 
@@ -191,7 +191,7 @@ func TestGetOutput(t *testing.T) {
 	cfg := &config.Config{WorkspacePath: "/tmp/workspaces"}
 	st := state.New("")
 	statePath := t.TempDir() + "/state.json"
-	wm := workspace.New(cfg, st, statePath, nil)
+	wm := workspace.New(cfg, st, statePath, nil, nil)
 
 	m := New(cfg, st, statePath, wm, nil)
 
@@ -220,7 +220,7 @@ func TestGetLogPath(t *testing.T) {
 	cfg := &config.Config{WorkspacePath: "/tmp/workspaces"}
 	st := state.New("")
 	statePath := t.TempDir() + "/state.json"
-	wm := workspace.New(cfg, st, statePath, nil)
+	wm := workspace.New(cfg, st, statePath, nil, nil)
 
 	m := New(cfg, st, statePath, wm, nil)
 
@@ -339,7 +339,7 @@ func TestRenameSession(t *testing.T) {
 	cfg := &config.Config{WorkspacePath: "/tmp/workspaces"}
 	st := state.New("")
 	statePath := t.TempDir() + "/state.json"
-	wm := workspace.New(cfg, st, statePath, nil)
+	wm := workspace.New(cfg, st, statePath, nil, nil)
 
 	m := New(cfg, st, statePath, wm, nil)
 
@@ -372,7 +372,7 @@ func TestDispose(t *testing.T) {
 	cfg := &config.Config{WorkspacePath: "/tmp/workspaces"}
 	st := state.New("")
 	statePath := t.TempDir() + "/state.json"
-	wm := workspace.New(cfg, st, statePath, nil)
+	wm := workspace.New(cfg, st, statePath, nil, nil)
 
 	m := New(cfg, st, statePath, wm, nil)
 
@@ -421,7 +421,7 @@ func TestEnsurePipePane(t *testing.T) {
 	}
 	st := state.New("")
 	statePath := t.TempDir() + "/state.json"
-	wm := workspace.New(cfg, st, statePath, nil)
+	wm := workspace.New(cfg, st, statePath, nil, nil)
 
 	m := New(cfg, st, statePath, wm, nil)
 

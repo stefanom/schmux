@@ -247,7 +247,7 @@ func TestGitPullRebase_MultipleBranchesConfig(t *testing.T) {
 	statePath := filepath.Join(tmpDir, "state.json")
 	cfg := &config.Config{WorkspacePath: tmpDir}
 	st := state.New(statePath)
-	m := New(cfg, st, statePath, nil)
+	m := New(cfg, st, statePath, nil, nil)
 	ctx := context.Background()
 
 	// This should work because we explicitly specify origin/main
@@ -282,7 +282,7 @@ func TestGitPullRebase_WithBranchParameter(t *testing.T) {
 	statePath := filepath.Join(tmpDir, "state.json")
 	cfg := &config.Config{WorkspacePath: tmpDir}
 	st := state.New(statePath)
-	m := New(cfg, st, statePath, nil)
+	m := New(cfg, st, statePath, nil, nil)
 	ctx := context.Background()
 
 	// gitPullRebase with explicit origin/<branch> should work
@@ -320,7 +320,7 @@ func TestGitRemoteBranchExists(t *testing.T) {
 	statePath := filepath.Join(tmpDir, "state.json")
 	cfg := &config.Config{WorkspacePath: tmpDir}
 	st := state.New(statePath)
-	m := New(cfg, st, statePath, nil)
+	m := New(cfg, st, statePath, nil, nil)
 	ctx := context.Background()
 
 	exists, err := m.gitRemoteBranchExists(ctx, cloneDir, "main")

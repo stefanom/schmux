@@ -2410,7 +2410,7 @@ func (s *Server) handleOpenVSCodeExternal(w http.ResponseWriter, ws state.Worksp
 	if hostname != "" {
 		fmt.Printf("[open-vscode] found hostname: %s\n", hostname)
 		// Store hostname in workspace for future session reuse
-		if err := s.session.UpdateWorkspaceRemoteHost(ws.ID, hostname); err != nil {
+		if err := s.workspace.UpdateWorkspaceRemoteHost(ws.ID, hostname); err != nil {
 			fmt.Printf("[open-vscode] warning: failed to store remote host: %v\n", err)
 		}
 	}

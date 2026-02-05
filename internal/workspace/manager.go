@@ -5,13 +5,16 @@ import (
 	"fmt"
 	"os"
 	"path/filepath"
+	"regexp"
 	"strconv"
 	"strings"
 	"sync"
+	"time"
 
 	"github.com/sergeknystautas/schmux/internal/api/contracts"
 	"github.com/sergeknystautas/schmux/internal/config"
 	"github.com/sergeknystautas/schmux/internal/difftool"
+	"github.com/sergeknystautas/schmux/internal/runner"
 	"github.com/sergeknystautas/schmux/internal/state"
 	"github.com/sergeknystautas/schmux/internal/vcs"
 )
@@ -37,13 +40,22 @@ type Manager struct {
 	randSuffix           func(length int) string
 	defaultBranchCache   map[string]string // repoURL -> defaultBranch or "unknown"
 	defaultBranchCacheMu sync.RWMutex
+
+	// Remote provisioning fields
+	runner          runner.SessionRunner   // Local tmux runner for creating provisioning sessions
+	provisionLocks  map[string]*sync.Mutex // Per-workspace locks for remote provisioning
+	provisionLockMu sync.Mutex             // Protects provisionLocks map
 }
 
 // New creates a new workspace manager.
 // If v is nil, a GitVCS is used by default.
-func New(cfg *config.Config, st state.StateStore, statePath string, v vcs.VersionControl) *Manager {
+// If r is nil, a LocalTmuxRunner is used by default (for remote provisioning).
+func New(cfg *config.Config, st state.StateStore, statePath string, v vcs.VersionControl, r runner.SessionRunner) *Manager {
 	if v == nil {
 		v = vcs.NewGitVCS()
+	}
+	if r == nil {
+		r = runner.NewLocalTmuxRunner()
 	}
 	m := &Manager{
 		config:           cfg,
@@ -53,6 +65,8 @@ func New(cfg *config.Config, st state.StateStore, statePath string, v vcs.Versio
 		configStates:     make(map[string]configState),           // track config file mtime to detect changes
 		repoLocks:        make(map[string]*sync.Mutex),
 		randSuffix:       defaultRandSuffix,
+		runner:           r,
+		provisionLocks:   make(map[string]*sync.Mutex),
 	}
 	// Pre-load workspace configs so they're available on first API call
 	// (before the first poll cycle runs)
@@ -231,6 +245,7 @@ func (m *Manager) GetOrCreate(ctx context.Context, repoURL, branch string) (*sta
 // getOrCreateRemoteWorkspace handles workspace creation for remote repos.
 // These repos use externally-managed VCS (e.g., sapling) and remote execution environments.
 // No git clone or worktree is created - we just register a workspace pointing to the configured path.
+// Provisioning happens here before returning, so the workspace is ready for sessions.
 func (m *Manager) getOrCreateRemoteWorkspace(ctx context.Context, repo config.Repo, branch string) (*state.Workspace, error) {
 	if repo.Remote == nil {
 		return nil, fmt.Errorf("repo %s is marked as remote but has no remote config", repo.Name)
@@ -250,7 +265,23 @@ func (m *Manager) getOrCreateRemoteWorkspace(ctx context.Context, repo config.Re
 		if w.Repo == repo.URL && w.External && w.Branch == branch {
 			// Reuse existing external workspace with same branch
 			fmt.Printf("[workspace] reusing remote workspace: id=%s path=%s branch=%s\n", w.ID, w.Path, w.Branch)
-			return &w, nil
+
+			// If already ready, return directly
+			if w.IsReady() {
+				return &w, nil
+			}
+
+			// If not ready, provision (or wait for provisioning)
+			if err := m.ProvisionRemote(ctx, w.ID, repo); err != nil {
+				return nil, fmt.Errorf("failed to provision remote workspace: %w", err)
+			}
+
+			// Re-fetch the workspace to get updated status
+			freshW, found := m.state.GetWorkspace(w.ID)
+			if !found {
+				return nil, fmt.Errorf("workspace not found after provisioning: %s", w.ID)
+			}
+			return &freshW, nil
 		}
 	}
 
@@ -279,6 +310,7 @@ func (m *Manager) getOrCreateRemoteWorkspace(ctx context.Context, repo config.Re
 		Path:     workspacePath,
 		External: true,
 		VCSType:  m.config.GetRemoteRunnerVCSType(),
+		Status:   state.WorkspaceStatusPending,
 	}
 
 	if err := m.state.AddWorkspace(w); err != nil {
@@ -289,7 +321,18 @@ func (m *Manager) getOrCreateRemoteWorkspace(ctx context.Context, repo config.Re
 	}
 
 	fmt.Printf("[workspace] created remote workspace: id=%s path=%s repo=%s\n", w.ID, w.Path, repo.URL)
-	return &w, nil
+
+	// Provision the remote workspace
+	if err := m.ProvisionRemote(ctx, w.ID, repo); err != nil {
+		return nil, fmt.Errorf("failed to provision remote workspace: %w", err)
+	}
+
+	// Re-fetch the workspace to get updated status
+	freshW, found := m.state.GetWorkspace(w.ID)
+	if !found {
+		return nil, fmt.Errorf("workspace not found after provisioning: %s", w.ID)
+	}
+	return &freshW, nil
 }
 
 // create creates a new workspace directory for the given repoURL using git worktrees.
@@ -778,4 +821,432 @@ func (m *Manager) Dispose(workspaceID string) error {
 
 	fmt.Printf("[workspace] disposed: id=%s\n", workspaceID)
 	return nil
+}
+
+// getProvisionLock returns a mutex for the given workspace ID.
+// This is used to serialize remote provisioning so that parallel spawns
+// share the same remote connection instead of each provisioning separately.
+func (m *Manager) getProvisionLock(workspaceID string) *sync.Mutex {
+	m.provisionLockMu.Lock()
+	defer m.provisionLockMu.Unlock()
+
+	lock, ok := m.provisionLocks[workspaceID]
+	if !ok {
+		lock = &sync.Mutex{}
+		m.provisionLocks[workspaceID] = lock
+	}
+	return lock
+}
+
+// ProvisionRemote provisions a remote workspace connection.
+// Blocks until provisioning completes or fails.
+// Safe to call concurrently - only one caller provisions, others wait.
+func (m *Manager) ProvisionRemote(ctx context.Context, workspaceID string, repo config.Repo) error {
+	// Acquire lock briefly to check state
+	provisionLock := m.getProvisionLock(workspaceID)
+	provisionLock.Lock()
+
+	// Re-fetch workspace from state
+	w, found := m.state.GetWorkspace(workspaceID)
+	if !found {
+		provisionLock.Unlock()
+		return fmt.Errorf("workspace not found: %s", workspaceID)
+	}
+
+	fmt.Printf("[workspace] ProvisionRemote: workspace=%s LocalTmuxSession=%q Status=%s\n",
+		w.ID, w.LocalTmuxSession, w.Status)
+
+	// Case 1: Connection is ready
+	if w.Status == state.WorkspaceStatusReady && w.LocalTmuxSession != "" && m.runner.SessionExists(ctx, w.LocalTmuxSession) {
+		provisionLock.Unlock()
+		return nil
+	}
+
+	// Case 2: Another goroutine is currently provisioning - wait for it
+	if w.Status == state.WorkspaceStatusProvisioning {
+		provisionLock.Unlock()
+		fmt.Printf("[workspace] === WAITING FOR PROVISIONING ===\n")
+		fmt.Printf("[workspace] Another goroutine is provisioning, waiting...\n")
+
+		// Poll until provisioning completes
+		if err := m.waitForProvisioning(ctx, workspaceID, 90*time.Second); err != nil {
+			return fmt.Errorf("failed waiting for provisioning: %w", err)
+		}
+
+		return nil
+	}
+
+	// Case 3: First caller - start provisioning
+	fmt.Printf("[workspace] === FIRST REMOTE PROVISIONING ===\n")
+
+	// Mark as provisioning and release lock
+	w.Status = state.WorkspaceStatusProvisioning
+	w.StatusMessage = ""
+	if err := m.state.UpdateWorkspace(w); err != nil {
+		provisionLock.Unlock()
+		return fmt.Errorf("failed to set provisioning status: %w", err)
+	}
+	m.state.Save()
+	provisionLock.Unlock()
+
+	// Do the actual provisioning
+	if err := m.doProvision(ctx, workspaceID, repo); err != nil {
+		// Mark as failed
+		m.setWorkspaceStatus(workspaceID, state.WorkspaceStatusFailed, err.Error())
+		return err
+	}
+
+	return nil
+}
+
+// doProvision does the actual provisioning work for a remote workspace.
+// This includes creating the local tmux session that connects to the remote.
+func (m *Manager) doProvision(ctx context.Context, workspaceID string, repo config.Repo) error {
+	w, found := m.state.GetWorkspace(workspaceID)
+	if !found {
+		return fmt.Errorf("workspace not found: %s", workspaceID)
+	}
+
+	// Get the remote runner config
+	runnerCfg := m.config.GetRemoteRunner()
+	if runnerCfg == nil || runnerCfg.ProvisionPrefix == "" {
+		return fmt.Errorf("remote_runner not configured (provision_prefix is required)")
+	}
+
+	// Get flavor from repo config
+	flavor := ""
+	if repo.Remote != nil {
+		flavor = repo.Remote.Flavor
+	}
+
+	// Create the shared local tmux session name for this workspace
+	sharedLocalTmux := fmt.Sprintf("schmux-%s", workspaceID)
+	remoteTmuxSession := "schmux"
+	workspacePath := w.Path
+
+	// Build the provisioning bash script
+	// This creates a remote tmux session with a helper window
+	nestedTmuxSetup := fmt.Sprintf(
+		"tmux new-session -d -s %s -n helper -c %s; "+
+			"exec tmux attach -t %s:helper",
+		remoteTmuxSession, workspacePath,
+		remoteTmuxSession,
+	)
+
+	// Substitute flavor into provision prefix
+	provisionPrefix := strings.ReplaceAll(runnerCfg.ProvisionPrefix, "{{.Flavor}}", flavor)
+	fullCmd := fmt.Sprintf("%s -- bash -c %s", provisionPrefix, shellQuote(nestedTmuxSetup))
+
+	fmt.Printf("[workspace] Flavor: %s\n", flavor)
+	fmt.Printf("[workspace] Remote workspace path: %s\n", w.Path)
+	fmt.Printf("[workspace] Local tmux session: %s\n", sharedLocalTmux)
+	fmt.Printf("[workspace] Command:\n")
+	fmt.Printf("[workspace]   %s\n", fullCmd)
+
+	homeDir, err := os.UserHomeDir()
+	if err != nil {
+		homeDir = "/"
+	}
+
+	// Create the shared local tmux session
+	if err := m.runner.CreateSession(ctx, runner.CreateSessionOpts{
+		SessionID: sharedLocalTmux,
+		WorkDir:   homeDir,
+		Command:   fullCmd,
+	}); err != nil {
+		return fmt.Errorf("failed to create local tmux session: %w", err)
+	}
+
+	// Wait for the remote tmux to be ready (lock NOT held during this wait)
+	fmt.Printf("[workspace] Waiting for remote tmux to be ready...\n")
+	if err := m.waitForRemoteTmuxReady(ctx, sharedLocalTmux, 60*time.Second); err != nil {
+		m.runner.KillSession(ctx, sharedLocalTmux)
+		return fmt.Errorf("remote tmux not ready: %w", err)
+	}
+	fmt.Printf("[workspace] Remote tmux is ready\n")
+
+	// Acquire lock to update state
+	provisionLock := m.getProvisionLock(workspaceID)
+	provisionLock.Lock()
+	defer provisionLock.Unlock()
+
+	// Re-fetch workspace
+	w, found = m.state.GetWorkspace(workspaceID)
+	if !found {
+		return fmt.Errorf("workspace not found: %s", workspaceID)
+	}
+
+	w.LocalTmuxSession = sharedLocalTmux
+	w.Status = state.WorkspaceStatusReady
+	w.StatusMessage = ""
+	if err := m.state.UpdateWorkspace(w); err != nil {
+		return fmt.Errorf("failed to store LocalTmuxSession: %w", err)
+	}
+	m.state.Save()
+
+	fmt.Printf("[workspace] Provisioning complete: LocalTmuxSession=%s\n", sharedLocalTmux)
+	fmt.Printf("[workspace] =========================\n")
+
+	// Start background hostname detection
+	if w.RemoteHost == "" {
+		go m.detectAndStoreHostname(workspaceID, sharedLocalTmux)
+	}
+
+	return nil
+}
+
+// waitForProvisioning polls until the workspace's Status is no longer provisioning.
+func (m *Manager) waitForProvisioning(ctx context.Context, workspaceID string, timeout time.Duration) error {
+	deadline := time.Now().Add(timeout)
+	pollInterval := 2 * time.Second
+
+	for time.Now().Before(deadline) {
+		select {
+		case <-ctx.Done():
+			return ctx.Err()
+		default:
+		}
+
+		ws, found := m.state.GetWorkspace(workspaceID)
+		if !found {
+			return fmt.Errorf("workspace not found: %s", workspaceID)
+		}
+
+		// Check if provisioning is complete
+		if ws.Status == state.WorkspaceStatusReady && ws.LocalTmuxSession != "" {
+			fmt.Printf("[workspace] Provisioning complete, LocalTmuxSession=%s\n", ws.LocalTmuxSession)
+			return nil
+		}
+
+		// Check if provisioning failed
+		if ws.Status == state.WorkspaceStatusFailed {
+			return fmt.Errorf("provisioning failed: %s", ws.StatusMessage)
+		}
+
+		// If status changed to something else unexpected, also check
+		if ws.Status != state.WorkspaceStatusProvisioning {
+			return fmt.Errorf("unexpected workspace status: %s", ws.Status)
+		}
+
+		time.Sleep(pollInterval)
+	}
+
+	return fmt.Errorf("timeout waiting for provisioning to complete")
+}
+
+// waitForRemoteTmuxReady waits for the remote tmux session to be accessible.
+// It polls by checking if the local tmux session shows signs of being attached
+// to the remote tmux (looking for tmux-related output in the pane).
+func (m *Manager) waitForRemoteTmuxReady(ctx context.Context, localTmux string, timeout time.Duration) error {
+	deadline := time.Now().Add(timeout)
+	pollInterval := 2 * time.Second
+
+	for time.Now().Before(deadline) {
+		select {
+		case <-ctx.Done():
+			return ctx.Err()
+		default:
+		}
+
+		// Check if the local tmux session still exists
+		if !m.runner.SessionExists(ctx, localTmux) {
+			return fmt.Errorf("local tmux session died")
+		}
+
+		// Capture the pane output to see if we're attached to the remote tmux
+		output, err := m.runner.CaptureOutput(ctx, localTmux)
+		if err != nil {
+			time.Sleep(pollInterval)
+			continue
+		}
+
+		// Look for signs that we're in a tmux session on the remote
+		// When attached to remote tmux, we typically see the agent running
+		// or at least a shell prompt. We check for common indicators.
+		if strings.Contains(output, "claude") ||
+			strings.Contains(output, "codex") ||
+			strings.Contains(output, "$") ||
+			strings.Contains(output, "#") ||
+			strings.Contains(output, "~") ||
+			len(strings.TrimSpace(output)) > 50 {
+			// Looks like we're connected and have output
+			return nil
+		}
+
+		time.Sleep(pollInterval)
+	}
+
+	return fmt.Errorf("timeout waiting for remote tmux")
+}
+
+// detectAndStoreHostname detects the hostname from a session's log file and stores it in the workspace.
+// This is called automatically after provisioning a remote workspace.
+func (m *Manager) detectAndStoreHostname(workspaceID, localTmux string) {
+	hostnameRegex := m.config.GetRemoteRunnerHostnameRegex()
+	if hostnameRegex == "" {
+		fmt.Printf("[workspace] no hostname_regex configured, skipping hostname detection\n")
+		return
+	}
+
+	// Poll for hostname in the captured output for up to 60 seconds
+	maxWait := 60 * time.Second
+	pollInterval := 2 * time.Second
+	deadline := time.Now().Add(maxWait)
+
+	fmt.Printf("[workspace] starting hostname detection for workspace %s\n", workspaceID)
+
+	ctx := context.Background()
+
+	for time.Now().Before(deadline) {
+		// Check if workspace already has hostname (might be set by another path)
+		ws, found := m.state.GetWorkspace(workspaceID)
+		if !found {
+			fmt.Printf("[workspace] workspace %s not found, stopping hostname detection\n", workspaceID)
+			return
+		}
+		if ws.RemoteHost != "" {
+			fmt.Printf("[workspace] hostname already set for workspace %s: %s\n", workspaceID, ws.RemoteHost)
+			return
+		}
+
+		// Capture the output from the local tmux session
+		output, err := m.runner.CaptureOutput(ctx, localTmux)
+		if err != nil {
+			time.Sleep(pollInterval)
+			continue
+		}
+
+		if len(output) == 0 {
+			time.Sleep(pollInterval)
+			continue
+		}
+
+		// Strip ANSI escape codes before matching
+		ansiRegex := regexp.MustCompile(`\x1b\[[0-9;]*[a-zA-Z]|\x1b\][^\x07]*\x07`)
+		output = ansiRegex.ReplaceAllString(output, "")
+
+		// Try matching with multiline flag if regex uses ^ anchor
+		regexToTry := hostnameRegex
+		if strings.HasPrefix(regexToTry, "^") && !strings.HasPrefix(regexToTry, "(?m)") {
+			regexToTry = "(?m)" + regexToTry
+		}
+
+		re, err := regexp.Compile(regexToTry)
+		if err != nil {
+			fmt.Printf("[workspace] invalid hostname regex: %v\n", err)
+			return
+		}
+
+		matches := re.FindStringSubmatch(output)
+		hostname := ""
+		if len(matches) > 1 {
+			hostname = matches[1]
+		} else if len(matches) > 0 {
+			hostname = matches[0]
+		}
+
+		// If no match and regex starts with ^, try without the anchor
+		if hostname == "" && strings.HasPrefix(hostnameRegex, "^") {
+			regexWithoutAnchor := strings.TrimPrefix(hostnameRegex, "^")
+			re, err := regexp.Compile(regexWithoutAnchor)
+			if err == nil {
+				matches := re.FindStringSubmatch(output)
+				if len(matches) > 1 {
+					hostname = matches[1]
+				} else if len(matches) > 0 {
+					hostname = matches[0]
+				}
+			}
+		}
+
+		if hostname != "" {
+			fmt.Printf("[workspace] detected hostname: %s\n", hostname)
+			if err := m.UpdateWorkspaceRemoteHost(workspaceID, hostname); err != nil {
+				fmt.Printf("[workspace] failed to store hostname: %v\n", err)
+			}
+			return
+		}
+
+		time.Sleep(pollInterval)
+	}
+
+	fmt.Printf("[workspace] hostname detection timed out for workspace %s\n", workspaceID)
+}
+
+// setWorkspaceStatus updates the status and status message for a workspace.
+func (m *Manager) setWorkspaceStatus(workspaceID string, status state.WorkspaceStatus, message string) {
+	provisionLock := m.getProvisionLock(workspaceID)
+	provisionLock.Lock()
+	defer provisionLock.Unlock()
+
+	ws, found := m.state.GetWorkspace(workspaceID)
+	if found {
+		ws.Status = status
+		ws.StatusMessage = message
+		m.state.UpdateWorkspace(ws)
+		m.state.Save()
+	}
+}
+
+// UpdateWorkspaceRemoteHost updates the RemoteHost for a workspace.
+func (m *Manager) UpdateWorkspaceRemoteHost(workspaceID, remoteHost string) error {
+	ws, found := m.state.GetWorkspace(workspaceID)
+	if !found {
+		return fmt.Errorf("workspace not found: %s", workspaceID)
+	}
+
+	// Only update if not already set
+	if ws.RemoteHost != "" {
+		return nil
+	}
+
+	ws.RemoteHost = remoteHost
+	if err := m.state.UpdateWorkspace(ws); err != nil {
+		return fmt.Errorf("failed to update workspace: %w", err)
+	}
+	if err := m.state.Save(); err != nil {
+		return fmt.Errorf("failed to save state: %w", err)
+	}
+
+	fmt.Printf("[workspace] stored remote host for workspace %s: %s\n", workspaceID, remoteHost)
+	return nil
+}
+
+// shellQuote quotes a string for safe use in shell commands using single quotes.
+// Single quotes preserve everything literally, including newlines.
+// Embedded single quotes are handled with the '\" trick.
+func shellQuote(s string) string {
+	return "'" + strings.ReplaceAll(s, "'", "'\\''") + "'"
+}
+
+// ClearWorkspaceRemoteHost clears the RemoteHost and LocalTmuxSession for a workspace.
+// This should be called when the last session for the workspace is disposed.
+func (m *Manager) ClearWorkspaceRemoteHost(workspaceID string) error {
+	ws, found := m.state.GetWorkspace(workspaceID)
+	if !found {
+		return nil // Workspace may already be disposed
+	}
+
+	if ws.RemoteHost == "" && ws.LocalTmuxSession == "" {
+		return nil // Nothing to clear
+	}
+
+	ws.RemoteHost = ""
+	ws.LocalTmuxSession = ""
+	ws.Status = state.WorkspaceStatusDisconnected
+	if err := m.state.UpdateWorkspace(ws); err != nil {
+		return fmt.Errorf("failed to update workspace: %w", err)
+	}
+	if err := m.state.Save(); err != nil {
+		return fmt.Errorf("failed to save state: %w", err)
+	}
+
+	fmt.Printf("[workspace] cleared remote host and local tmux session for workspace %s\n", workspaceID)
+	return nil
+}
+
+// GetRunner returns the local tmux runner for the workspace manager.
+// This is used by the session manager to check if local tmux sessions exist.
+func (m *Manager) GetRunner() runner.SessionRunner {
+	return m.runner
 }

@@ -5,6 +5,7 @@ import (
 
 	"github.com/sergeknystautas/schmux/internal/api/contracts"
 	"github.com/sergeknystautas/schmux/internal/config"
+	"github.com/sergeknystautas/schmux/internal/runner"
 	"github.com/sergeknystautas/schmux/internal/state"
 )
 
@@ -128,6 +129,15 @@ type WorkspaceManager interface {
 
 	// GetGitGraph returns the commit graph for a workspace showing local branch vs origin/main.
 	GetGitGraph(ctx context.Context, workspaceID string, maxCommits int, contextSize int) (*contracts.GitGraphResponse, error)
+
+	// ClearWorkspaceRemoteHost clears the RemoteHost and LocalTmuxSession for a workspace.
+	ClearWorkspaceRemoteHost(workspaceID string) error
+
+	// UpdateWorkspaceRemoteHost updates the RemoteHost for a workspace.
+	UpdateWorkspaceRemoteHost(workspaceID, remoteHost string) error
+
+	// GetRunner returns the local tmux runner for the workspace manager.
+	GetRunner() runner.SessionRunner
 }
 
 // Ensure *Manager implements WorkspaceManager at compile time.

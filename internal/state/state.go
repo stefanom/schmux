@@ -9,6 +9,22 @@ import (
 	"time"
 )
 
+// WorkspaceStatus represents the current status of a workspace.
+type WorkspaceStatus string
+
+const (
+	// WorkspaceStatusPending indicates the workspace is created but not yet provisioned.
+	WorkspaceStatusPending WorkspaceStatus = "pending"
+	// WorkspaceStatusProvisioning indicates the workspace is being provisioned.
+	WorkspaceStatusProvisioning WorkspaceStatus = "provisioning"
+	// WorkspaceStatusReady indicates the workspace is provisioned and ready for use.
+	WorkspaceStatusReady WorkspaceStatus = "ready"
+	// WorkspaceStatusFailed indicates provisioning failed.
+	WorkspaceStatusFailed WorkspaceStatus = "failed"
+	// WorkspaceStatusDisconnected indicates the remote connection was lost.
+	WorkspaceStatusDisconnected WorkspaceStatus = "disconnected"
+)
+
 // State represents the application state.
 type State struct {
 	Workspaces    []Workspace    `json:"workspaces"`
@@ -22,20 +38,33 @@ type State struct {
 // Workspace represents a workspace directory state.
 // Multiple sessions can share the same workspace (multi-agent per directory).
 type Workspace struct {
-	ID               string `json:"id"`
-	Repo             string `json:"repo"`
-	Branch           string `json:"branch"`
-	Path             string `json:"path"`
-	External         bool   `json:"external,omitempty"`         // true if workspace is externally managed (no VCS operations)
-	VCSType          string `json:"vcs_type,omitempty"`         // "git" or "sapling" (for external workspaces)
-	RemoteHost       string `json:"remote_host,omitempty"`        // Remote hostname for remote workspaces (allows session reuse)
-	LocalTmuxSession string `json:"local_tmux_session,omitempty"` // Local tmux session name connected to the remote
-	GitDirty         bool   `json:"-"`
-	GitAhead         int    `json:"-"`
-	GitBehind        int    `json:"-"`
-	GitLinesAdded    int    `json:"-"`
-	GitLinesRemoved  int    `json:"-"`
-	GitFilesChanged  int    `json:"-"`
+	ID               string          `json:"id"`
+	Repo             string          `json:"repo"`
+	Branch           string          `json:"branch"`
+	Path             string          `json:"path"`
+	External         bool            `json:"external,omitempty"`           // true if workspace is externally managed (no VCS operations)
+	VCSType          string          `json:"vcs_type,omitempty"`           // "git" or "sapling" (for external workspaces)
+	RemoteHost       string          `json:"remote_host,omitempty"`        // Remote hostname for remote workspaces (allows session reuse)
+	LocalTmuxSession string          `json:"local_tmux_session,omitempty"` // Local tmux session name connected to the remote
+	Status           WorkspaceStatus `json:"status,omitempty"`             // Current workspace status (for remote workspaces)
+	StatusMessage    string          `json:"status_message,omitempty"`     // Error message if status is failed
+	Provisioning     bool            `json:"provisioning,omitempty"`       // DEPRECATED: Use Status instead. Kept for migration.
+	GitDirty         bool            `json:"-"`
+	GitAhead         int             `json:"-"`
+	GitBehind        int             `json:"-"`
+	GitLinesAdded    int             `json:"-"`
+	GitLinesRemoved  int             `json:"-"`
+	GitFilesChanged  int             `json:"-"`
+}
+
+// IsReady returns true if the workspace is ready for use.
+// For local workspaces, this always returns true.
+// For remote workspaces, this checks the Status field.
+func (w Workspace) IsReady() bool {
+	if !w.External {
+		return true
+	}
+	return w.Status == WorkspaceStatusReady
 }
 
 // WorktreeBase tracks a bare clone that hosts worktrees.
@@ -89,6 +118,21 @@ func Load(path string) (*State, error) {
 	// Initialize WorktreeBases if nil (existing state files)
 	if st.WorktreeBases == nil {
 		st.WorktreeBases = []WorktreeBase{}
+	}
+
+	// Migrate old Provisioning bool to new Status field
+	for i := range st.Workspaces {
+		w := &st.Workspaces[i]
+		if w.External && w.Status == "" {
+			// Migrate from old Provisioning field
+			if w.Provisioning {
+				w.Status = WorkspaceStatusProvisioning
+			} else if w.LocalTmuxSession != "" {
+				w.Status = WorkspaceStatusReady
+			} else {
+				w.Status = WorkspaceStatusPending
+			}
+		}
 	}
 
 	// Reset LastOutputAt for all loaded sessions to avoid treating restored

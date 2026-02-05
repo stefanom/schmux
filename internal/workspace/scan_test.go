@@ -25,7 +25,7 @@ func TestScan_EmptyWorkspaceDirectory(t *testing.T) {
 		},
 	}
 	st := state.New(statePath)
-	m := New(cfg, st, statePath, nil)
+	m := New(cfg, st, statePath, nil, nil)
 
 	result, err := m.Scan()
 	if err != nil {
@@ -66,7 +66,7 @@ func TestScan_AddNewWorkspace(t *testing.T) {
 		},
 	}
 	st := state.New(statePath)
-	m := New(cfg, st, statePath, nil)
+	m := New(cfg, st, statePath, nil, nil)
 
 	// Scan should not add because the repo URL doesn't match
 	result, err := m.Scan()
@@ -113,7 +113,7 @@ func TestScan_RemoveMissingWorkspace(t *testing.T) {
 	}
 	st.AddWorkspace(ws)
 
-	m := New(cfg, st, statePath, nil)
+	m := New(cfg, st, statePath, nil, nil)
 
 	// Delete the workspace directory
 	if err := os.RemoveAll(workspacePath); err != nil {
@@ -175,7 +175,7 @@ func TestScan_UpdateWorkspaceBranch(t *testing.T) {
 	}
 	st.AddWorkspace(ws)
 
-	m := New(cfg, st, statePath, nil)
+	m := New(cfg, st, statePath, nil, nil)
 
 	// Scan should detect branch change
 	// Note: This test will not actually update because the remote URL doesn't match
@@ -232,7 +232,7 @@ func TestScan_SkipActiveSessionWorkspaces(t *testing.T) {
 	}
 	st.AddSession(sess)
 
-	m := New(cfg, st, statePath, nil)
+	m := New(cfg, st, statePath, nil, nil)
 
 	// Delete the workspace directory
 	if err := os.RemoveAll(workspacePath); err != nil {
@@ -293,7 +293,7 @@ func TestScan_Integration(t *testing.T) {
 	}
 	st.AddWorkspace(ws1)
 
-	m := New(cfg, st, statePath, nil)
+	m := New(cfg, st, statePath, nil, nil)
 
 	result, err := m.Scan()
 	if err != nil {

@@ -3,33 +3,12 @@ package runner
 import (
 	"bytes"
 	"context"
-	"errors"
 	"fmt"
 	"os/exec"
 	"regexp"
 	"strings"
 	"text/template"
 )
-
-// ErrProvisioningRequired indicates that no environment is available and provisioning is needed.
-// Contains the provision prefix to use for creating the remote session directly.
-type ErrProvisioningRequired struct {
-	ProvisionPrefix string // Prefix for provisioning commands (e.g., "ssh user@host --")
-	Flavor          string // The flavor being provisioned
-}
-
-func (e *ErrProvisioningRequired) Error() string {
-	return fmt.Sprintf("provisioning required for flavor %s", e.Flavor)
-}
-
-// IsProvisioningRequired checks if an error indicates provisioning is required.
-func IsProvisioningRequired(err error) (*ErrProvisioningRequired, bool) {
-	var provErr *ErrProvisioningRequired
-	if errors.As(err, &provErr) {
-		return provErr, true
-	}
-	return nil, false
-}
 
 // ExternalRunner executes tmux commands via a configurable connection prefix.
 // This enables remote session execution via tools like SSH or custom provisioning tools.
@@ -83,28 +62,11 @@ func NewExternalRunnerWithFlavor(cfg ExternalRunnerConfig, flavor string) (*Exte
 	}, nil
 }
 
-// ProvisionEnvironment checks if provisioning is needed.
-// For remote repos, each session needs its own remote instance to avoid Sapling conflicts,
-// so we always return ErrProvisioningRequired to trigger provisioning.
+// ProvisionEnvironment is a no-op for ExternalRunner.
+// Provisioning is handled by the workspace manager at workspace creation time.
 func (r *ExternalRunner) ProvisionEnvironment(ctx context.Context) error {
-	// Each session needs its own remote - always provision a new one
-	if r.provisionPrefix == "" {
-		return fmt.Errorf("no provision_prefix configured")
-	}
-
-	// Build the provision prefix with flavor substituted
-	prefix, err := r.executeTemplate(r.provisionPrefix, map[string]any{
-		"Flavor": r.flavor,
-	})
-	if err != nil {
-		return fmt.Errorf("failed to build provision prefix: %w", err)
-	}
-
-	fmt.Printf("[runner] provisioning new remote for flavor %s\n", r.flavor)
-	return &ErrProvisioningRequired{
-		ProvisionPrefix: prefix,
-		Flavor:          r.flavor,
-	}
+	// Provisioning now happens in workspace manager before sessions are spawned
+	return nil
 }
 
 // CreateSession creates a new session.

@@ -46,7 +46,7 @@ func setupWorkspaceGraphTest(t *testing.T, branch string) (mgr *Manager, remoteD
 	st := state.New(statePath)
 	st.AddWorkspace(state.Workspace{ID: wsID, Repo: remoteDir, Branch: branch, Path: wsDir})
 
-	mgr = New(cfg, st, statePath, nil)
+	mgr = New(cfg, st, statePath, nil, nil)
 	return
 }
 
@@ -486,7 +486,7 @@ func TestGitGraph_InvalidWorkspacePath(t *testing.T) {
 		Branch: "main",
 		Path:   "/nonexistent/path/to/workspace",
 	})
-	mgr := New(cfg, st, statePath, nil)
+	mgr := New(cfg, st, statePath, nil, nil)
 
 	_, err := mgr.GetGitGraph(context.Background(), "ws-bad-path", 200, 5)
 	if err == nil {
@@ -509,7 +509,7 @@ func TestGitGraph_CorruptedGitDir(t *testing.T) {
 		Branch: "main",
 		Path:   wsDir,
 	})
-	mgr := New(cfg, st, statePath, nil)
+	mgr := New(cfg, st, statePath, nil, nil)
 
 	_, err := mgr.GetGitGraph(context.Background(), "ws-no-git", 200, 5)
 	if err == nil {

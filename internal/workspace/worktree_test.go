@@ -23,7 +23,7 @@ func TestCreateLocalRepo(t *testing.T) {
 	cfg := config.CreateDefault(configPath)
 	cfg.WorkspacePath = tmpDir
 	st := state.New(statePath)
-	m := New(cfg, st, statePath, nil)
+	m := New(cfg, st, statePath, nil, nil)
 
 	ctx := context.Background()
 
@@ -161,7 +161,7 @@ func TestEnsureUniqueBranchRetryExhaustion(t *testing.T) {
 	cfg.WorkspacePath = filepath.Join(tmpDir, "workspaces")
 	cfg.WorktreeBasePath = filepath.Join(tmpDir, "repos")
 	st := state.New(statePath)
-	m := New(cfg, st, statePath, nil)
+	m := New(cfg, st, statePath, nil, nil)
 
 	ctx := context.Background()
 	repoDir := gitTestWorkTree(t)
@@ -200,7 +200,7 @@ func TestBranchSourceRefPrefersRemote(t *testing.T) {
 	cfg.WorkspacePath = filepath.Join(tmpDir, "workspaces")
 	cfg.WorktreeBasePath = filepath.Join(tmpDir, "repos")
 	st := state.New(statePath)
-	m := New(cfg, st, statePath, nil)
+	m := New(cfg, st, statePath, nil, nil)
 
 	ctx := context.Background()
 	repoDir := gitTestWorkTree(t)
@@ -253,7 +253,7 @@ func TestCreateLocalRepoCleanupOnStateSaveFailure(t *testing.T) {
 	st := state.New("")
 	mockSt := &mockStateStore{state: st, failSave: true}
 
-	mgr := New(cfg, mockSt, "", nil)
+	mgr := New(cfg, mockSt, "", nil, nil)
 
 	ctx := context.Background()
 
@@ -300,7 +300,7 @@ func TestCreateLocalRepoNoCleanupOnSuccess(t *testing.T) {
 	st := state.New(statePath)
 	mockSt := &mockStateStore{state: st, failSave: false}
 
-	mgr := New(cfg, mockSt, statePath, nil)
+	mgr := New(cfg, mockSt, statePath, nil, nil)
 
 	ctx := context.Background()
 

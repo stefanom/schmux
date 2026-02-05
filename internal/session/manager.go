@@ -9,7 +9,6 @@ import (
 	"sort"
 	"strconv"
 	"strings"
-	"sync"
 	"syscall"
 	"time"
 
@@ -38,12 +37,6 @@ type Manager struct {
 	runner       runner.SessionRunner            // Local tmux runner
 	remoteRunner runner.SessionRunner            // External runner for remote repos (lazy-init)
 	runnerByRepo map[string]runner.SessionRunner // Cached runners per repo (for different flavors)
-
-	// workspaceProvisionMu protects workspaceProvisionLocks
-	workspaceProvisionMu sync.Mutex
-	// workspaceProvisionLocks holds per-workspace locks for remote provisioning
-	// This ensures only one session provisions the remote while others wait
-	workspaceProvisionLocks map[string]*sync.Mutex
 }
 
 // ResolvedTarget is a resolved run target with command and env info.
@@ -68,32 +61,12 @@ func New(cfg *config.Config, st state.StateStore, statePath string, wm workspace
 		r = runner.NewLocalTmuxRunner()
 	}
 	return &Manager{
-		config:                  cfg,
-		state:                   st,
-		workspace:               wm,
-		runner:                  r,
-		runnerByRepo:            make(map[string]runner.SessionRunner),
-		workspaceProvisionLocks: make(map[string]*sync.Mutex),
+		config:       cfg,
+		state:        st,
+		workspace:    wm,
+		runner:       r,
+		runnerByRepo: make(map[string]runner.SessionRunner),
 	}
-}
-
-// getWorkspaceProvisionLock returns a mutex for the given workspace ID.
-// This is used to serialize remote provisioning so that parallel spawns
-// share the same remote connection instead of each provisioning separately.
-func (m *Manager) getWorkspaceProvisionLock(workspaceID string) *sync.Mutex {
-	m.workspaceProvisionMu.Lock()
-	defer m.workspaceProvisionMu.Unlock()
-
-	if m.workspaceProvisionLocks == nil {
-		m.workspaceProvisionLocks = make(map[string]*sync.Mutex)
-	}
-
-	lock, ok := m.workspaceProvisionLocks[workspaceID]
-	if !ok {
-		lock = &sync.Mutex{}
-		m.workspaceProvisionLocks[workspaceID] = lock
-	}
-	return lock
 }
 
 // Spawn creates a new session.
@@ -117,7 +90,7 @@ func (m *Manager) Spawn(ctx context.Context, repoURL, branch, targetName, prompt
 		}
 		w = ws
 	} else {
-		// Get or create workspace (includes fetch/pull/clean)
+		// Get or create workspace (includes fetch/pull/clean, and provisioning for remote)
 		w, err = m.workspace.GetOrCreate(ctx, repoURL, branch)
 		if err != nil {
 			return nil, fmt.Errorf("failed to get workspace: %w", err)
@@ -144,13 +117,19 @@ func (m *Manager) Spawn(ctx context.Context, repoURL, branch, targetName, prompt
 		tmuxSession = sanitizeNickname(uniqueNickname)
 	}
 
-	// Select the appropriate runner based on workspace mode
+	// For remote workspaces, spawn via the remote window method
+	if w.External {
+		// Use session-specific window name (short version for tmux compatibility)
+		windowName := sessionID
+		if len(windowName) > 20 {
+			windowName = windowName[len(windowName)-20:]
+		}
+		return m.spawnRemoteWindow(ctx, w, sessionID, windowName, command, uniqueNickname, targetName)
+	}
+
+	// Select the local runner for the workspace
 	r, envID, err := m.getRunnerForWorkspace(ctx, w)
 	if err != nil {
-		// Check if provisioning is required - create session via provisioning
-		if provErr, ok := runner.IsProvisioningRequired(err); ok {
-			return m.SpawnWithProvisioning(ctx, w, provErr.ProvisionPrefix, provErr.Flavor, sessionID, tmuxSession, command, uniqueNickname, targetName)
-		}
 		return nil, fmt.Errorf("failed to get runner for workspace: %w", err)
 	}
 
@@ -224,7 +203,7 @@ func (m *Manager) SpawnCommand(ctx context.Context, repoURL, branch, command, ni
 		}
 		w = ws
 	} else {
-		// Get or create workspace (includes fetch/pull/clean)
+		// Get or create workspace (includes fetch/pull/clean, and provisioning for remote)
 		w, err = m.workspace.GetOrCreate(ctx, repoURL, branch)
 		if err != nil {
 			return nil, fmt.Errorf("failed to get workspace: %w", err)
@@ -246,13 +225,19 @@ func (m *Manager) SpawnCommand(ctx context.Context, repoURL, branch, command, ni
 		tmuxSession = sanitizeNickname(uniqueNickname)
 	}
 
-	// Select the appropriate runner based on workspace mode
+	// For remote workspaces, spawn via the remote window method
+	if w.External {
+		// Use session-specific window name (short version for tmux compatibility)
+		windowName := sessionID
+		if len(windowName) > 20 {
+			windowName = windowName[len(windowName)-20:]
+		}
+		return m.spawnRemoteWindow(ctx, w, sessionID, windowName, command, uniqueNickname, "command")
+	}
+
+	// Select the local runner for the workspace
 	r, envID, err := m.getRunnerForWorkspace(ctx, w)
 	if err != nil {
-		// Check if provisioning is required - create session via provisioning
-		if provErr, ok := runner.IsProvisioningRequired(err); ok {
-			return m.SpawnWithProvisioning(ctx, w, provErr.ProvisionPrefix, provErr.Flavor, sessionID, tmuxSession, command, uniqueNickname, "command")
-		}
 		return nil, fmt.Errorf("failed to get runner for workspace: %w", err)
 	}
 
@@ -313,260 +298,94 @@ func (m *Manager) SpawnCommand(ctx context.Context, repoURL, branch, command, ni
 }
 
 // getRunnerForWorkspace returns the appropriate runner for a workspace.
-// For external (remote) workspaces, returns an ExternalRunner configured for that repo.
 // For local workspaces, returns the local tmux runner.
-// Also returns the environment ID (hostname) for remote sessions, empty for local.
+// Remote workspaces are handled separately via spawnRemoteWindow().
+// Also returns the environment ID (empty for local).
 func (m *Manager) getRunnerForWorkspace(ctx context.Context, w *state.Workspace) (runner.SessionRunner, string, error) {
 	// For local workspaces, use the local tmux runner
 	if !w.External {
 		return m.runner, "", nil
 	}
 
-	// For external (remote) workspaces, get or create an ExternalRunner
-	// Check if we have a cached runner for this repo
-	if r, ok := m.runnerByRepo[w.Repo]; ok {
-		return r, r.GetEnvironmentID(), nil
-	}
-
-	// Look up the repo config to get flavor and other settings
-	repoConfig, found := m.config.FindRepoByURL(w.Repo)
-	if !found {
-		return nil, "", fmt.Errorf("repo config not found for %s", w.Repo)
-	}
-	if !repoConfig.IsRemote() {
-		return nil, "", fmt.Errorf("repo %s is not an remote repo", repoConfig.Name)
-	}
-	if repoConfig.Remote == nil {
-		return nil, "", fmt.Errorf("repo %s has no remote config", repoConfig.Name)
-	}
-
-	// Get the remote runner config
-	runnerCfg := m.config.GetRemoteRunner()
-	if runnerCfg == nil || runnerCfg.ProvisionPrefix == "" {
-		return nil, "", fmt.Errorf("remote_runner not configured (provision_prefix is required)")
-	}
-
-	// Create the external runner with simplified config
-	extRunner, err := runner.NewExternalRunnerWithFlavor(runner.ExternalRunnerConfig{
-		ProvisionPrefix: runnerCfg.ProvisionPrefix,
-		HostnameRegex:   runnerCfg.HostnameRegex,
-	}, repoConfig.Remote.Flavor)
-	if err != nil {
-		return nil, "", fmt.Errorf("failed to create external runner: %w", err)
-	}
-
-	// Provision the environment (may return ErrProvisioningRequired for interactive provisioning)
-	if err := extRunner.ProvisionEnvironment(ctx); err != nil {
-		// Don't wrap ErrProvisioningRequired - let it propagate for special handling
-		if _, ok := runner.IsProvisioningRequired(err); ok {
-			return nil, "", err
-		}
-		return nil, "", fmt.Errorf("failed to provision environment: %w", err)
-	}
-
-	// Cache the runner for future use
-	m.runnerByRepo[w.Repo] = extRunner
-
-	return extRunner, extRunner.GetEnvironmentID(), nil
+	// Remote workspaces should be handled via spawnRemoteWindow() before calling this
+	return nil, "", fmt.Errorf("remote workspace %s should use spawnRemoteWindow()", w.ID)
 }
 
-// SpawnWithProvisioning creates a local tmux session that runs the agent command via the provisioning tool.
-// The local session stays connected to the remote, forwarding I/O, so the dashboard can monitor it.
-// Creates a nested remote tmux session with session-specific windows:
-//   - {sessionID}: runs the agent command (visible to user)
-//   - helper: for running sl/git commands without disturbing the agent (shared)
-//
-// If the workspace already has a RemoteHost set (from a previous session), reuses that remote
-// by connecting to it and creating a new window instead of provisioning a new remote environment.
-//
-// Uses workspace-level locking to ensure that parallel spawns share the same remote connection
-// instead of each provisioning a separate remote machine.
-func (m *Manager) SpawnWithProvisioning(ctx context.Context, w *state.Workspace, provisionPrefix, flavor, sessionID, tmuxSession, command, nickname, target string) (*state.Session, error) {
-	// Acquire workspace-level lock to serialize remote provisioning
-	// This ensures only one session provisions the remote while others wait
-	provisionLock := m.getWorkspaceProvisionLock(w.ID)
-	provisionLock.Lock()
-	defer provisionLock.Unlock()
+// spawnRemoteWindow creates a new remote window for a session using the existing provisioned connection.
+// The workspace must already be provisioned (LocalTmuxSession set).
+// It sends commands through the helper window to create the new agent window.
+func (m *Manager) spawnRemoteWindow(ctx context.Context, w *state.Workspace, sessionID, windowName, command, nickname, target string) (*state.Session, error) {
+	fmt.Printf("[session] === REMOTE SESSION (VIA HELPER) ===\n")
+	fmt.Printf("[session] Using existing connection: %s\n", w.LocalTmuxSession)
+	fmt.Printf("[session] Window name: %s\n", windowName)
 
-	// Use the workspace path as-is (including ~ if present)
-	workspacePath := w.Path
+	localTmux := w.LocalTmuxSession
+	if localTmux == "" {
+		return nil, fmt.Errorf("workspace %s is not provisioned (no LocalTmuxSession)", w.ID)
+	}
+
+	// Verify the local tmux session exists
+	if !m.workspace.GetRunner().SessionExists(ctx, localTmux) {
+		return nil, fmt.Errorf("local tmux session %s does not exist", localTmux)
+	}
+
 	remoteTmuxSession := "schmux"
+	workspacePath := w.Path
 
-	// Re-fetch workspace from state to get latest RemoteHost and LocalTmuxSession values
-	// Another goroutine may have already provisioned while we were waiting for the lock
-	freshWorkspace, found := m.state.GetWorkspace(w.ID)
-	if found {
-		if freshWorkspace.RemoteHost != "" {
-			w.RemoteHost = freshWorkspace.RemoteHost
-		}
-		if freshWorkspace.LocalTmuxSession != "" {
-			w.LocalTmuxSession = freshWorkspace.LocalTmuxSession
-		}
+	// Serialize with remote command mutex to prevent interference
+	remoteCommandMutex.Lock()
+	defer remoteCommandMutex.Unlock()
+
+	// Step 1: Switch to helper window
+	fmt.Printf("[session] Switching to helper window...\n")
+	if err := m.sendTmuxCommand(ctx, localTmux, fmt.Sprintf("select-window -t %s:helper", remoteTmuxSession)); err != nil {
+		return nil, fmt.Errorf("failed to switch to helper window: %w", err)
 	}
-
-	fmt.Printf("[session] SpawnWithProvisioning: workspace=%s RemoteHost=%q LocalTmuxSession=%q\n",
-		w.ID, w.RemoteHost, w.LocalTmuxSession)
-
-	// Use session-specific window name (short version for tmux compatibility)
-	windowName := sessionID
-	if len(windowName) > 20 {
-		windowName = windowName[len(windowName)-20:]
-	}
-
-	// Check if we can reuse an existing local tmux session (existing devconnect connection)
-	if w.LocalTmuxSession != "" && m.runner.SessionExists(ctx, w.LocalTmuxSession) {
-		// Reuse existing devconnect connection by sending commands through it
-		fmt.Printf("[session] === REMOTE SESSION (REUSE EXISTING CONNECTION) ===\n")
-		fmt.Printf("[session] Using existing local tmux: %s\n", w.LocalTmuxSession)
-		fmt.Printf("[session] Creating new remote window: %s\n", windowName)
-
-		// Create new window in remote tmux via the existing local tmux session
-		// Use C-b : to send tmux commands through the nested connection
-		createWindowCmd := fmt.Sprintf("new-window -t %s -n %s -c %s", remoteTmuxSession, windowName, workspacePath)
-		if err := m.sendTmuxCommand(ctx, w.LocalTmuxSession, createWindowCmd); err != nil {
-			return nil, fmt.Errorf("failed to create remote window: %w", err)
-		}
-
-		time.Sleep(200 * time.Millisecond)
-
-		// Send the agent command to the new window
-		sendKeysCmd := fmt.Sprintf("send-keys -t %s:%s %s Enter", remoteTmuxSession, windowName, runner.ShellQuote(command))
-		if err := m.sendTmuxCommand(ctx, w.LocalTmuxSession, sendKeysCmd); err != nil {
-			return nil, fmt.Errorf("failed to send command to remote window: %w", err)
-		}
-
-		// Get PID (will be 0 for now since we're sharing the connection)
-		pid := 0
-
-		// Create session state
-		// Note: This session shares the local tmux with the first session but has its own remote window
-		sess := state.Session{
-			ID:           sessionID,
-			WorkspaceID:  w.ID,
-			Target:       target,
-			Nickname:     nickname,
-			TmuxSession:  w.LocalTmuxSession, // Share the local tmux session
-			CreatedAt:    time.Now(),
-			Pid:          pid,
-			RemoteWindow: windowName,
-		}
-
-		if err := m.state.AddSession(sess); err != nil {
-			return nil, fmt.Errorf("failed to add session to state: %w", err)
-		}
-		if err := m.state.Save(); err != nil {
-			return nil, fmt.Errorf("failed to save state: %w", err)
-		}
-
-		fmt.Printf("[session] created remote session (reused connection): id=%s window=%s\n", sessionID, windowName)
-		fmt.Printf("[session] =========================\n")
-		return &sess, nil
-	}
-
-	// First session for this workspace - provision new remote environment
-	// This creates the connection and remote tmux with helper window only.
-	// The agent window will be created after provisioning completes.
-	fmt.Printf("[session] === REMOTE SESSION (NEW PROVISION) ===\n")
-
-	// Build the provisioning command that:
-	// 1. Connects to the remote via provision_prefix (e.g., dev connect)
-	// 2. Creates a nested remote tmux session with helper window
-	// 3. Attaches to the remote tmux (keeps connection alive)
-	//
-	// Note: We DON'T create the agent window here - that's done after provisioning
-	// so all sessions (including the first) use the same window creation path.
-	nestedTmuxSetup := fmt.Sprintf(
-		"tmux new-session -d -s %s -n helper -c %s; "+
-			"exec tmux attach -t %s",
-		remoteTmuxSession, workspacePath, // new-session with helper window
-		remoteTmuxSession, // attach to remote tmux
-	)
-
-	// Build the full command with provision prefix
-	fullCmd := fmt.Sprintf("%s -- bash -c %s", provisionPrefix, shellQuote(nestedTmuxSetup))
-
-	// Log the provisioning details
-	fmt.Printf("[session] Flavor: %s\n", flavor)
-	fmt.Printf("[session] Remote workspace path: %s\n", w.Path)
-	fmt.Printf("[session] Remote tmux session: %s\n", remoteTmuxSession)
-	fmt.Printf("[session] Provisioning command:\n")
-	fmt.Printf("[session]   %s\n", fullCmd)
-
-	// Use user's home directory for the local tmux session working directory
-	homeDir, err := os.UserHomeDir()
-	if err != nil {
-		homeDir = "/"
-	}
-
-	// Create local tmux session that runs the provisioning tool
-	if err := m.runner.CreateSession(ctx, runner.CreateSessionOpts{
-		SessionID: tmuxSession,
-		WorkDir:   homeDir,
-		Command:   fullCmd,
-	}); err != nil {
-		return nil, fmt.Errorf("failed to create remote session: %w", err)
-	}
-
-	// Set up log file for pipe-pane streaming
-	logPath, err := m.ensureLogFile(sessionID)
-	if err != nil {
-		fmt.Printf("[session] warning: failed to create log file: %v\n", err)
-	} else {
-		// Force fixed window size for deterministic TUI output
-		width, height := m.config.GetTerminalSize()
-		if err := m.runner.SetWindowSizeManual(ctx, tmuxSession); err != nil {
-			fmt.Printf("[session] warning: failed to set manual window size: %v\n", err)
-		}
-		if err := m.runner.ResizeWindow(ctx, tmuxSession, width, height); err != nil {
-			fmt.Printf("[session] warning: failed to resize window: %v\n", err)
-		}
-		// Start pipe-pane to log file
-		if err := m.runner.StartPipePane(ctx, tmuxSession, logPath); err != nil {
-			return nil, fmt.Errorf("failed to start pipe-pane: %w", err)
-		}
-	}
-
-	// Store LocalTmuxSession in workspace immediately so subsequent sessions know
-	// the connection exists (even though we're still setting up)
-	w.LocalTmuxSession = tmuxSession
-	if err := m.state.UpdateWorkspace(*w); err != nil {
-		fmt.Printf("[session] warning: failed to store LocalTmuxSession: %v\n", err)
-	}
-
-	// Wait for remote tmux to be ready before creating agent window
-	// The connection needs time to establish and create the remote session
-	fmt.Printf("[session] Waiting for remote tmux to be ready...\n")
-	time.Sleep(2 * time.Second)
-
-	// Now create the agent window using the same path as subsequent sessions
-	fmt.Printf("[session] Creating agent window: %s\n", windowName)
-	createWindowCmd := fmt.Sprintf("new-window -t %s -n %s -c %s", remoteTmuxSession, windowName, workspacePath)
-	if err := m.sendTmuxCommand(ctx, tmuxSession, createWindowCmd); err != nil {
-		return nil, fmt.Errorf("failed to create agent window: %w", err)
-	}
-
 	time.Sleep(300 * time.Millisecond)
 
-	// Send the agent command to the window
-	fmt.Printf("[session] Sending agent command to window: %s\n", command)
-	sendKeysCmd := fmt.Sprintf("send-keys -t %s:%s %s Enter", remoteTmuxSession, windowName, runner.ShellQuote(command))
-	if err := m.sendTmuxCommand(ctx, tmuxSession, sendKeysCmd); err != nil {
-		return nil, fmt.Errorf("failed to send command to agent window: %w", err)
+	// Step 2: Create new window via tmux command (sent through helper shell)
+	newWindowCmd := fmt.Sprintf("tmux new-window -t %s -n %s -c %s", remoteTmuxSession, windowName, workspacePath)
+	fmt.Printf("[session] Creating window: %s\n", newWindowCmd)
+	if err := m.sendKeysToRemote(ctx, localTmux, newWindowCmd); err != nil {
+		return nil, fmt.Errorf("failed to create remote window: %w", err)
 	}
+	time.Sleep(500 * time.Millisecond)
 
-	// Get the PID of the process from tmux pane
-	pid, err := m.runner.GetPanePID(ctx, tmuxSession)
+	// Step 3: Send the agent command to the new window
+	sendKeysCmd := fmt.Sprintf("tmux send-keys -t %s:%s %s Enter", remoteTmuxSession, windowName, runner.ShellQuote(command))
+	fmt.Printf("[session] Sending agent command: %s\n", sendKeysCmd)
+	if err := m.sendKeysToRemote(ctx, localTmux, sendKeysCmd); err != nil {
+		return nil, fmt.Errorf("failed to send agent command: %w", err)
+	}
+	time.Sleep(300 * time.Millisecond)
+
+	// Step 4: Switch to the new agent window
+	fmt.Printf("[session] Switching to new window: %s\n", windowName)
+	if err := m.sendTmuxCommand(ctx, localTmux, fmt.Sprintf("select-window -t %s:%s", remoteTmuxSession, windowName)); err != nil {
+		return nil, fmt.Errorf("failed to switch to agent window: %w", err)
+	}
+	time.Sleep(100 * time.Millisecond)
+
+	// Set up log file for this session
+	_, err := m.ensureLogFile(sessionID)
 	if err != nil {
-		return nil, fmt.Errorf("failed to get pane PID: %w", err)
+		fmt.Printf("[session] warning: failed to create log file: %v\n", err)
+	}
+	// Note: pipe-pane is already set up on the shared local tmux
+
+	// Get PID (from the shared local tmux)
+	pid, err := m.workspace.GetRunner().GetPanePID(ctx, localTmux)
+	if err != nil {
+		pid = 0
 	}
 
-	// Create session state
+	// Create session state - uses the SHARED local tmux session
 	sess := state.Session{
 		ID:           sessionID,
 		WorkspaceID:  w.ID,
 		Target:       target,
 		Nickname:     nickname,
-		TmuxSession:  tmuxSession,
+		TmuxSession:  localTmux, // Shared local tmux
 		CreatedAt:    time.Now(),
 		Pid:          pid,
 		RemoteWindow: windowName,
@@ -575,18 +394,12 @@ func (m *Manager) SpawnWithProvisioning(ctx context.Context, w *state.Workspace,
 	if err := m.state.AddSession(sess); err != nil {
 		return nil, fmt.Errorf("failed to add session to state: %w", err)
 	}
-
 	if err := m.state.Save(); err != nil {
 		return nil, fmt.Errorf("failed to save state: %w", err)
 	}
 
-	fmt.Printf("[session] created remote session: id=%s flavor=%s window=%s\n", sessionID, flavor, windowName)
+	fmt.Printf("[session] created remote session: id=%s window=%s\n", sessionID, windowName)
 	fmt.Printf("[session] =========================\n")
-
-	// If this is a new remote (not reusing existing), start background hostname detection
-	if w.RemoteHost == "" {
-		go m.DetectAndStoreHostname(sessionID, w.ID)
-	}
 
 	return &sess, nil
 }
@@ -823,8 +636,9 @@ func findProcessesInWorkspace(workspacePath string) ([]int, error) {
 }
 
 // Dispose disposes of a session.
-// For remote sessions: if other sessions exist in the workspace, only closes the remote window.
-// If it's the last session, kills the connection and deletes the workspace.
+// For remote sessions with shared local tmux:
+//   - If other sessions exist, only kills the remote window (keeps connection alive)
+//   - If it's the last session, kills the shared local tmux and deletes the workspace
 func (m *Manager) Dispose(ctx context.Context, sessionID string) error {
 	sess, found := m.state.GetSession(sessionID)
 	if !found {
@@ -851,32 +665,50 @@ func (m *Manager) Dispose(ctx context.Context, sessionID string) error {
 	}
 	isLastSessionForWorkspace := sessionCountForWorkspace <= 1
 
-	// Check if this is a remote session with a shared connection
-	isRemoteWithSharedConnection := wsFound && ws.External && sess.RemoteWindow != "" && ws.LocalTmuxSession != ""
+	// Check if this is a remote session (shared local tmux with remote windows)
+	isRemoteSession := wsFound && ws.External && sess.RemoteWindow != ""
 
-	if isRemoteWithSharedConnection && !isLastSessionForWorkspace {
-		// Remote session with other sessions still active - just close the remote window
+	if isRemoteSession && !isLastSessionForWorkspace {
+		// Remote session with other sessions still active
+		// Just kill the remote window - keep the shared local tmux alive
 		fmt.Printf("[session] === DISPOSE REMOTE SESSION (KEEP CONNECTION) ===\n")
 		fmt.Printf("[session] Session: %s, Remote window: %s\n", sessionID, sess.RemoteWindow)
-		fmt.Printf("[session] Other sessions remain in workspace, keeping connection alive\n")
+		fmt.Printf("[session] Other sessions remain, keeping shared local tmux alive\n")
 
-		// Kill just the remote window by sending kill-window command through the connection
+		// Kill the remote window by sending kill-window command through the shared connection
 		remoteTmuxSession := "schmux"
 		killWindowCmd := fmt.Sprintf("kill-window -t %s:%s", remoteTmuxSession, sess.RemoteWindow)
-		if err := m.sendTmuxCommand(ctx, ws.LocalTmuxSession, killWindowCmd); err != nil {
+		if err := m.sendTmuxCommand(ctx, sess.TmuxSession, killWindowCmd); err != nil {
 			warnings = append(warnings, fmt.Sprintf("failed to kill remote window: %v", err))
 		} else {
 			remoteWindowKilled = true
 		}
 
+		// DO NOT kill the local tmux - it's shared by other sessions
+
 		fmt.Printf("[session] =========================\n")
-	} else {
-		// Local session OR last remote session - full disposal
-		if isRemoteWithSharedConnection && isLastSessionForWorkspace {
-			fmt.Printf("[session] === DISPOSE LAST REMOTE SESSION (DISCONNECT) ===\n")
-			fmt.Printf("[session] Session: %s, will kill connection and delete workspace\n", sessionID)
+	} else if isRemoteSession && isLastSessionForWorkspace {
+		// Last remote session - kill the remote window, then the shared local tmux
+		fmt.Printf("[session] === DISPOSE LAST REMOTE SESSION (DISCONNECT) ===\n")
+		fmt.Printf("[session] Session: %s, will disconnect and delete workspace\n", sessionID)
+
+		// Kill the remote window first
+		remoteTmuxSession := "schmux"
+		killWindowCmd := fmt.Sprintf("kill-window -t %s:%s", remoteTmuxSession, sess.RemoteWindow)
+		if err := m.sendTmuxCommand(ctx, sess.TmuxSession, killWindowCmd); err != nil {
+			warnings = append(warnings, fmt.Sprintf("failed to kill remote window: %v", err))
+		} else {
+			remoteWindowKilled = true
 		}
 
+		// Kill the shared local tmux session (disconnects dev connect)
+		if err := m.runner.KillSession(ctx, sess.TmuxSession); err == nil {
+			tmuxKilled = true
+		}
+
+		fmt.Printf("[session] =========================\n")
+	} else {
+		// Local session - full disposal with process cleanup
 		if wsFound {
 			// Step 1: Kill the tracked process group (if we have a PID)
 			if sess.Pid > 0 {
@@ -888,17 +720,12 @@ func (m *Manager) Dispose(ctx context.Context, sessionID string) error {
 			}
 
 			// Step 2: Fallback - find and kill any orphaned processes in the workspace directory
-			// This catches processes that may have escaped the process group
-			// Check context before doing expensive process scan
-			// Skip for remote workspaces (path is remote, not local)
 			if ctx.Err() == nil && !ws.External {
 				orphanPIDs, _ := findProcessesInWorkspace(ws.Path)
 				for _, pid := range orphanPIDs {
-					// Check context before each kill
 					if ctx.Err() != nil {
 						break
 					}
-					// Skip the tracked PID since we already tried to kill it
 					if sess.Pid > 0 && pid == sess.Pid {
 						continue
 					}
@@ -911,13 +738,9 @@ func (m *Manager) Dispose(ctx context.Context, sessionID string) error {
 			}
 		}
 
-		// Step 3: Kill tmux session (ignore error if already gone - that's success)
+		// Step 3: Kill tmux session
 		if err := m.runner.KillSession(ctx, sess.TmuxSession); err == nil {
 			tmuxKilled = true
-		}
-
-		if isRemoteWithSharedConnection && isLastSessionForWorkspace {
-			fmt.Printf("[session] =========================\n")
 		}
 	}
 
@@ -931,22 +754,19 @@ func (m *Manager) Dispose(ctx context.Context, sessionID string) error {
 		return fmt.Errorf("failed to remove session from state: %w", err)
 	}
 
-	// For remote workspaces: handle cleanup based on whether this was the last session
-	if wsFound && ws.External {
-		if isLastSessionForWorkspace {
-			// Last session - delete the entire workspace
-			if err := m.workspace.Dispose(sess.WorkspaceID); err != nil {
-				warnings = append(warnings, fmt.Sprintf("failed to delete workspace: %v", err))
-			} else {
-				workspaceDeleted = true
-			}
-		} else if ws.RemoteHost != "" {
-			// Not last session, but check if we should clear remote host (shouldn't happen with new logic)
-			if !m.HasActiveSessionsForWorkspace(ctx, sess.WorkspaceID) {
-				if err := m.ClearWorkspaceRemoteHost(sess.WorkspaceID); err != nil {
-					warnings = append(warnings, fmt.Sprintf("failed to clear remote host: %v", err))
-				}
-			}
+	// For remote workspaces: delete workspace if this was the last session
+	if wsFound && ws.External && isLastSessionForWorkspace {
+		// Clear LocalTmuxSession since the connection is gone
+		ws.LocalTmuxSession = ""
+		if err := m.state.UpdateWorkspace(*ws); err != nil {
+			warnings = append(warnings, fmt.Sprintf("failed to clear LocalTmuxSession: %v", err))
+		}
+
+		// Delete the workspace
+		if err := m.workspace.Dispose(sess.WorkspaceID); err != nil {
+			warnings = append(warnings, fmt.Sprintf("failed to delete workspace: %v", err))
+		} else {
+			workspaceDeleted = true
 		}
 	}
 
@@ -973,7 +793,6 @@ func (m *Manager) Dispose(ctx context.Context, sessionID string) error {
 	}
 	fmt.Printf("[session] %s\n", summary)
 
-	// Print warnings if any
 	for _, w := range warnings {
 		fmt.Printf("[session]   warning: %s\n", w)
 	}

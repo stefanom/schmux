@@ -313,7 +313,7 @@ func Run(background bool) error {
 	versionControl := vcs.NewGitVCS()
 	fmt.Printf("[daemon] using git version control for local repos\n")
 
-	wm := workspace.New(cfg, st, statePath, versionControl)
+	wm := workspace.New(cfg, st, statePath, versionControl, sessionRunner)
 	sm := session.New(cfg, st, statePath, wm, sessionRunner)
 
 	// Ensure overlay directories exist for all repos
