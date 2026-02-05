@@ -150,6 +150,7 @@ type SessionRunnerConfig struct {
 	ConnectionPrefix string `json:"connection_prefix,omitempty"` // Prefix for connecting to existing remote (e.g., "dev connect {{.Hostname}} --")
 	HostnameRegex    string `json:"hostname_regex,omitempty"`    // Regex to extract hostname from provisioning log output
 	OpenVSCode       string `json:"open_vscode,omitempty"`       // Command to open VSCode on remote (e.g., "code --remote ssh-remote+{{.Hostname}} {{.Path}}")
+	VCSType          string `json:"vcs_type,omitempty"`          // "git" or "sapling" - VCS used on remote (default: "git")
 }
 
 // VersionControlConfig controls how version control is handled.
@@ -1156,6 +1157,16 @@ func (c *Config) GetRemoteRunnerOpenVSCode() string {
 		return ""
 	}
 	return runner.OpenVSCode
+}
+
+// GetRemoteRunnerVCSType returns the VCS type for remote workspaces.
+// Returns "git" as default if not configured.
+func (c *Config) GetRemoteRunnerVCSType() string {
+	runner := c.GetRemoteRunner()
+	if runner == nil || runner.VCSType == "" {
+		return "git"
+	}
+	return runner.VCSType
 }
 
 // HasRemoteRepos returns true if any repo uses remote mode.

@@ -48,7 +48,7 @@ export default function GitHistoryDAG({ workspaceId }: GitHistoryDAGProps) {
       setLayout(computeLayout(resp));
       setError(null);
     } catch (err) {
-      setError(err instanceof Error ? err.message : 'Failed to load commit log');
+      setError(err instanceof Error ? err.message : 'Failed to load commits graph');
     } finally {
       setLoading(false);
     }
@@ -97,7 +97,7 @@ export default function GitHistoryDAG({ workspaceId }: GitHistoryDAGProps) {
   }, []);
 
   if (loading) {
-    return <div className="loading-state"><div className="spinner" /> Loading commit log...</div>;
+    return <div className="loading-state"><div className="spinner" /> Loading commits graph...</div>;
   }
 
   if (error) {

@@ -68,7 +68,7 @@ export default function SessionTabs({ sessions, currentSessionId, workspace, act
 
   // External workspaces (remote) use Sapling VCS - tabs are shown but label adapted
   const isExternal = workspace?.external ?? false;
-  const graphTabLabel = 'commit log';
+  const graphTabLabel = 'commits graph';
 
   // Calculate spawn menu position
   useEffect(() => {
@@ -185,14 +185,25 @@ export default function SessionTabs({ sessions, currentSessionId, workspace, act
       sessionDisplay = `${sess.nickname} (${sessionId})`;
     }
 
-    const accepted = await confirm(`Dispose session ${sessionDisplay}?`, { danger: true });
+    // For remote workspaces, show different confirmation based on session count
+    let confirmMessage = `Dispose session ${sessionDisplay}?`;
+    if (isExternal) {
+      const sessionCountInWorkspace = sessions.length;
+      if (sessionCountInWorkspace <= 1) {
+        confirmMessage = `Close session ${sessionDisplay}?\n\nThis is the last session for this workspace. Closing it will disconnect from the remote machine and delete the workspace.`;
+      } else {
+        confirmMessage = `Close session ${sessionDisplay}?`;
+      }
+    }
+
+    const accepted = await confirm(confirmMessage, { danger: true });
     if (!accepted) return;
 
     try {
       await disposeSession(sessionId);
-      success('Session disposed');
+      success(isExternal ? 'Session closed' : 'Session disposed');
     } catch (err) {
-      toastError(`Failed to dispose: ${getErrorMessage(err, 'Unknown error')}`);
+      toastError(`Failed to close session: ${getErrorMessage(err, 'Unknown error')}`);
     }
   };
 
@@ -256,15 +267,15 @@ export default function SessionTabs({ sessions, currentSessionId, workspace, act
               {activityDisplay}
             </span>
           </Tooltip>
-          <Tooltip content="Dispose session" variant="warning">
+          <Tooltip content="Close session" variant="warning">
             <button
               className="btn btn--sm btn--ghost btn--danger session-tab__dispose"
               onClick={(e) => handleDispose(sess.id, e)}
-              aria-label={`Dispose ${sess.id}`}
+              aria-label={`Close ${sess.id}`}
             >
-              <svg width="10" height="10" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2">
-                <polyline points="3 6 5 6 21 6"></polyline>
-                <path d="M19 6v14a2 2 0 0 1-2 2H7a2 2 0 0 1-2-2V6m3 0V4a2 2 0 0 1 2-2h4a2 2 0 0 1 2 2v2"></path>
+              <svg width="10" height="10" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="3" strokeLinecap="round">
+                <line x1="18" y1="6" x2="6" y2="18"></line>
+                <line x1="6" y1="6" x2="18" y2="18"></line>
               </svg>
             </button>
           </Tooltip>
@@ -400,32 +411,38 @@ export default function SessionTabs({ sessions, currentSessionId, workspace, act
   const showAddButton = workspace && !activeSpawnTab;
 
   return (
-    <div className="session-tabs">
-      {sessions.map((sess) => renderSessionTab(sess))}
+    <div className="session-tabs session-tabs--split">
+      {/* Left side: Session tabs and add button */}
+      <div className="session-tabs__left">
+        {sessions.map((sess) => renderSessionTab(sess))}
 
-      {/* Diff tab — always shown (uses Sapling for external workspaces) */}
-      {renderDiffTab()}
+        {/* Add button */}
+        {showAddButton && renderAddButton()}
 
-      {/* Git/Sapling graph tab — always shown */}
-      {renderGitTab()}
-
-      {/* Add button */}
-      {showAddButton && renderAddButton()}
-
-      {activeSpawnTab && (
-        <div
-          className="session-tab session-tab--active"
-          onClick={handleSpawnTabClick}
-          role="button"
-          tabIndex={0}
-        >
-          <div className="session-tab__row1">
-            <span className="session-tab__name">
-              Spawning...
-            </span>
+        {activeSpawnTab && (
+          <div
+            className="session-tab session-tab--active"
+            onClick={handleSpawnTabClick}
+            role="button"
+            tabIndex={0}
+          >
+            <div className="session-tab__row1">
+              <span className="session-tab__name">
+                Spawning...
+              </span>
+            </div>
           </div>
-        </div>
-      )}
+        )}
+      </div>
+
+      {/* Right side: Utility tabs (diff and commits graph) */}
+      <div className="session-tabs__right">
+        {/* Diff tab — always shown (uses Sapling for external workspaces) */}
+        {renderDiffTab()}
+
+        {/* Git/Sapling graph tab — always shown */}
+        {renderGitTab()}
+      </div>
     </div>
   );
 }

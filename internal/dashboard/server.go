@@ -105,7 +105,22 @@ type Server struct {
 	updateMu         sync.Mutex
 
 	authSessionKey []byte
+
+	// Cache for Sapling status to avoid redundant remote commands
+	saplingStatusCache   map[string]*saplingStatusCacheEntry
+	saplingStatusCacheMu sync.RWMutex
 }
+
+// saplingStatusCacheEntry holds cached Sapling status for a workspace.
+type saplingStatusCacheEntry struct {
+	filesChanged int
+	linesAdded   int
+	linesRemoved int
+	fetchedAt    time.Time
+}
+
+// saplingStatusCacheTTL is how long to cache Sapling status before re-fetching.
+const saplingStatusCacheTTL = 10 * time.Second
 
 // versionInfo holds version information.
 type versionInfo struct {
@@ -118,16 +133,17 @@ type versionInfo struct {
 // NewServer creates a new dashboard server.
 func NewServer(cfg *config.Config, st state.StateStore, statePath string, sm *session.Manager, wm workspace.WorkspaceManager, shutdown func()) *Server {
 	s := &Server{
-		config:        cfg,
-		state:         st,
-		statePath:     statePath,
-		session:       sm,
-		workspace:     wm,
-		shutdown:      shutdown,
-		wsConns:       make(map[string][]*wsConn),
-		sessionsConns: make(map[*wsConn]bool),
-		rotationLocks: make(map[string]*sync.Mutex),
-		broadcastDone: make(chan struct{}),
+		config:             cfg,
+		state:              st,
+		statePath:          statePath,
+		session:            sm,
+		workspace:          wm,
+		shutdown:           shutdown,
+		wsConns:            make(map[string][]*wsConn),
+		sessionsConns:      make(map[*wsConn]bool),
+		rotationLocks:      make(map[string]*sync.Mutex),
+		broadcastDone:      make(chan struct{}),
+		saplingStatusCache: make(map[string]*saplingStatusCacheEntry),
 	}
 	go s.broadcastLoop()
 	return s

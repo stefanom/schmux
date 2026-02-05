@@ -190,6 +190,7 @@ export interface SessionRunner {
   connection_prefix?: string;
   hostname_regex?: string;
   open_vscode?: string;
+  vcs_type?: string;
 }
 
 export interface SessionRunnerUpdate {
@@ -198,6 +199,7 @@ export interface SessionRunnerUpdate {
   connection_prefix?: string;
   hostname_regex?: string;
   open_vscode?: string;
+  vcs_type?: string;
 }
 
 export interface Sessions {

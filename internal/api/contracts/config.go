@@ -222,6 +222,7 @@ type SessionRunner struct {
 	ConnectionPrefix string `json:"connection_prefix,omitempty"` // Prefix for connecting to existing remote (e.g., "dev connect {{.Hostname}} --")
 	HostnameRegex    string `json:"hostname_regex,omitempty"`    // Regex to extract hostname from provisioning log output
 	OpenVSCode       string `json:"open_vscode,omitempty"`       // Command to open VSCode on remote (e.g., "code --remote ssh-remote+{{.Hostname}} {{.Path}}")
+	VCSType          string `json:"vcs_type,omitempty"`          // Version control system: "git" (default) or "sapling"
 }
 
 // SessionRunnerUpdate represents partial session runner updates.
@@ -231,6 +232,7 @@ type SessionRunnerUpdate struct {
 	ConnectionPrefix *string `json:"connection_prefix,omitempty"`
 	HostnameRegex    *string `json:"hostname_regex,omitempty"`
 	OpenVSCode       *string `json:"open_vscode,omitempty"`
+	VCSType          *string `json:"vcs_type,omitempty"`
 }
 
 // VersionControl represents version control configuration.

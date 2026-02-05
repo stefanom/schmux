@@ -244,18 +244,33 @@ func (m *Manager) getOrCreateRemoteWorkspace(ctx context.Context, repo config.Re
 	lock.Lock()
 	defer lock.Unlock()
 
-	// For remote repos, all sessions share the same workspace (external path)
-	// Look for existing workspace
+	// For remote repos, look for existing workspace with matching repo AND branch
+	// Different branches require different ODs (separate workspaces)
 	for _, w := range m.state.GetWorkspaces() {
-		if w.Repo == repo.URL && w.External {
-			// Reuse existing external workspace (don't prepare - VCS is external)
-			fmt.Printf("[workspace] reusing remote workspace: id=%s path=%s\n", w.ID, w.Path)
+		if w.Repo == repo.URL && w.External && w.Branch == branch {
+			// Reuse existing external workspace with same branch
+			fmt.Printf("[workspace] reusing remote workspace: id=%s path=%s branch=%s\n", w.ID, w.Path, w.Branch)
 			return &w, nil
 		}
 	}
 
-	// Create new external workspace
-	workspaceID := fmt.Sprintf("%s-"+workspaceNumberFormat, repo.Name, 1)
+	// Create new external workspace for this branch
+	// Find the next available workspace number for this repo
+	nextNum := 1
+	for _, w := range m.state.GetWorkspaces() {
+		if w.Repo == repo.URL && w.External {
+			// Parse the existing workspace ID to find the highest number
+			// Format: {repo-name}-{number}
+			parts := strings.Split(w.ID, "-")
+			if len(parts) > 0 {
+				if num, err := strconv.Atoi(parts[len(parts)-1]); err == nil && num >= nextNum {
+					nextNum = num + 1
+				}
+			}
+		}
+	}
+
+	workspaceID := fmt.Sprintf("%s-"+workspaceNumberFormat, repo.Name, nextNum)
 
 	w := state.Workspace{
 		ID:       workspaceID,
@@ -263,7 +278,7 @@ func (m *Manager) getOrCreateRemoteWorkspace(ctx context.Context, repo config.Re
 		Branch:   branch, // May not be used for remote
 		Path:     workspacePath,
 		External: true,
-		VCSType:  "sapling", // Remote workspaces use Sapling
+		VCSType:  m.config.GetRemoteRunnerVCSType(),
 	}
 
 	if err := m.state.AddWorkspace(w); err != nil {
@@ -358,10 +373,11 @@ func (m *Manager) create(ctx context.Context, repoURL, branch string) (*state.Wo
 
 	// Create workspace state with branch
 	w := state.Workspace{
-		ID:     workspaceID,
-		Repo:   repoURL,
-		Branch: branch,
-		Path:   workspacePath,
+		ID:      workspaceID,
+		Repo:    repoURL,
+		Branch:  branch,
+		Path:    workspacePath,
+		VCSType: "git",
 	}
 
 	if err := m.state.AddWorkspace(w); err != nil {
@@ -428,10 +444,11 @@ func (m *Manager) CreateLocalRepo(ctx context.Context, repoName, branch string) 
 
 	// Create workspace state
 	w := state.Workspace{
-		ID:     workspaceID,
-		Repo:   repoURL,
-		Branch: branch,
-		Path:   workspacePath,
+		ID:      workspaceID,
+		Repo:    repoURL,
+		Branch:  branch,
+		Path:    workspacePath,
+		VCSType: "git",
 	}
 
 	if err := m.state.AddWorkspace(w); err != nil {

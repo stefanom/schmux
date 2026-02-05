@@ -777,6 +777,8 @@ func findProcessesInWorkspace(workspacePath string) ([]int, error) {
 }
 
 // Dispose disposes of a session.
+// For remote sessions: if other sessions exist in the workspace, only closes the remote window.
+// If it's the last session, kills the connection and deletes the workspace.
 func (m *Manager) Dispose(ctx context.Context, sessionID string) error {
 	sess, found := m.state.GetSession(sessionID)
 	if !found {
@@ -788,45 +790,89 @@ func (m *Manager) Dispose(ctx context.Context, sessionID string) error {
 	processesKilled := 0
 	orphanKilled := 0
 	tmuxKilled := false
+	remoteWindowKilled := false
+	workspaceDeleted := false
 
 	// Get the workspace for process cleanup fallback
-	ws, found := m.workspace.GetByID(sess.WorkspaceID)
-	if found {
-		// Step 1: Kill the tracked process group (if we have a PID)
-		if sess.Pid > 0 {
-			if err := killProcessGroup(sess.Pid); err != nil {
-				warnings = append(warnings, fmt.Sprintf("failed to kill process group %d: %v", sess.Pid, err))
-			} else {
-				processesKilled = 1
-			}
-		}
+	ws, wsFound := m.workspace.GetByID(sess.WorkspaceID)
 
-		// Step 2: Fallback - find and kill any orphaned processes in the workspace directory
-		// This catches processes that may have escaped the process group
-		// Check context before doing expensive process scan
-		if ctx.Err() == nil {
-			orphanPIDs, _ := findProcessesInWorkspace(ws.Path)
-			for _, pid := range orphanPIDs {
-				// Check context before each kill
-				if ctx.Err() != nil {
-					break
-				}
-				// Skip the tracked PID since we already tried to kill it
-				if sess.Pid > 0 && pid == sess.Pid {
-					continue
-				}
-				if err := killProcessGroup(pid); err != nil {
-					warnings = append(warnings, fmt.Sprintf("failed to kill orphaned process %d: %v", pid, err))
-				} else {
-					orphanKilled++
-				}
-			}
+	// Count how many sessions exist for this workspace (before removing current)
+	sessionCountForWorkspace := 0
+	for _, s := range m.state.GetSessions() {
+		if s.WorkspaceID == sess.WorkspaceID {
+			sessionCountForWorkspace++
 		}
 	}
+	isLastSessionForWorkspace := sessionCountForWorkspace <= 1
 
-	// Step 3: Kill tmux session (ignore error if already gone - that's success)
-	if err := m.runner.KillSession(ctx, sess.TmuxSession); err == nil {
-		tmuxKilled = true
+	// Check if this is a remote session with a shared connection
+	isRemoteWithSharedConnection := wsFound && ws.External && sess.RemoteWindow != "" && ws.LocalTmuxSession != ""
+
+	if isRemoteWithSharedConnection && !isLastSessionForWorkspace {
+		// Remote session with other sessions still active - just close the remote window
+		fmt.Printf("[session] === DISPOSE REMOTE SESSION (KEEP CONNECTION) ===\n")
+		fmt.Printf("[session] Session: %s, Remote window: %s\n", sessionID, sess.RemoteWindow)
+		fmt.Printf("[session] Other sessions remain in workspace, keeping connection alive\n")
+
+		// Kill just the remote window by sending kill-window command through the connection
+		remoteTmuxSession := "schmux"
+		killWindowCmd := fmt.Sprintf("kill-window -t %s:%s", remoteTmuxSession, sess.RemoteWindow)
+		if err := m.sendTmuxCommand(ctx, ws.LocalTmuxSession, killWindowCmd); err != nil {
+			warnings = append(warnings, fmt.Sprintf("failed to kill remote window: %v", err))
+		} else {
+			remoteWindowKilled = true
+		}
+
+		fmt.Printf("[session] =========================\n")
+	} else {
+		// Local session OR last remote session - full disposal
+		if isRemoteWithSharedConnection && isLastSessionForWorkspace {
+			fmt.Printf("[session] === DISPOSE LAST REMOTE SESSION (DISCONNECT) ===\n")
+			fmt.Printf("[session] Session: %s, will kill connection and delete workspace\n", sessionID)
+		}
+
+		if wsFound {
+			// Step 1: Kill the tracked process group (if we have a PID)
+			if sess.Pid > 0 {
+				if err := killProcessGroup(sess.Pid); err != nil {
+					warnings = append(warnings, fmt.Sprintf("failed to kill process group %d: %v", sess.Pid, err))
+				} else {
+					processesKilled = 1
+				}
+			}
+
+			// Step 2: Fallback - find and kill any orphaned processes in the workspace directory
+			// This catches processes that may have escaped the process group
+			// Check context before doing expensive process scan
+			// Skip for remote workspaces (path is remote, not local)
+			if ctx.Err() == nil && !ws.External {
+				orphanPIDs, _ := findProcessesInWorkspace(ws.Path)
+				for _, pid := range orphanPIDs {
+					// Check context before each kill
+					if ctx.Err() != nil {
+						break
+					}
+					// Skip the tracked PID since we already tried to kill it
+					if sess.Pid > 0 && pid == sess.Pid {
+						continue
+					}
+					if err := killProcessGroup(pid); err != nil {
+						warnings = append(warnings, fmt.Sprintf("failed to kill orphaned process %d: %v", pid, err))
+					} else {
+						orphanKilled++
+					}
+				}
+			}
+		}
+
+		// Step 3: Kill tmux session (ignore error if already gone - that's success)
+		if err := m.runner.KillSession(ctx, sess.TmuxSession); err == nil {
+			tmuxKilled = true
+		}
+
+		if isRemoteWithSharedConnection && isLastSessionForWorkspace {
+			fmt.Printf("[session] =========================\n")
+		}
 	}
 
 	// Delete log file for this session
@@ -834,19 +880,26 @@ func (m *Manager) Dispose(ctx context.Context, sessionID string) error {
 		warnings = append(warnings, fmt.Sprintf("failed to delete log file: %v", err))
 	}
 
-	// Note: workspace is NOT cleaned up on session disposal.
-	// Workspaces persist and are only reset when reused for a new spawn.
-
 	// Remove session from state
 	if err := m.state.RemoveSession(sessionID); err != nil {
 		return fmt.Errorf("failed to remove session from state: %w", err)
 	}
 
-	// For remote workspaces: clear RemoteHost if this was the last session
-	if found && ws.External && ws.RemoteHost != "" {
-		if !m.HasActiveSessionsForWorkspace(ctx, sess.WorkspaceID) {
-			if err := m.ClearWorkspaceRemoteHost(sess.WorkspaceID); err != nil {
-				warnings = append(warnings, fmt.Sprintf("failed to clear remote host: %v", err))
+	// For remote workspaces: handle cleanup based on whether this was the last session
+	if wsFound && ws.External {
+		if isLastSessionForWorkspace {
+			// Last session - delete the entire workspace
+			if err := m.workspace.Dispose(sess.WorkspaceID); err != nil {
+				warnings = append(warnings, fmt.Sprintf("failed to delete workspace: %v", err))
+			} else {
+				workspaceDeleted = true
+			}
+		} else if ws.RemoteHost != "" {
+			// Not last session, but check if we should clear remote host (shouldn't happen with new logic)
+			if !m.HasActiveSessionsForWorkspace(ctx, sess.WorkspaceID) {
+				if err := m.ClearWorkspaceRemoteHost(sess.WorkspaceID); err != nil {
+					warnings = append(warnings, fmt.Sprintf("failed to clear remote host: %v", err))
+				}
 			}
 		}
 	}
@@ -856,12 +909,21 @@ func (m *Manager) Dispose(ctx context.Context, sessionID string) error {
 	}
 
 	// Print summary
-	summary := fmt.Sprintf("Disposed session %s: killed %d process group", sessionID, processesKilled)
+	summary := fmt.Sprintf("Disposed session %s:", sessionID)
+	if remoteWindowKilled {
+		summary += " killed remote window"
+	}
+	if processesKilled > 0 {
+		summary += fmt.Sprintf(" killed %d process group", processesKilled)
+	}
 	if orphanKilled > 0 {
 		summary += fmt.Sprintf(" + %d orphaned process(es)", orphanKilled)
 	}
 	if tmuxKilled {
 		summary += " + tmux session"
+	}
+	if workspaceDeleted {
+		summary += " + deleted workspace"
 	}
 	fmt.Printf("[session] %s\n", summary)
 

@@ -82,6 +82,7 @@ type ConfigSnapshot = {
   remoteRunnerHostnameRegex: string;
   remoteRunnerProvisionPrefix: string;
   remoteRunnerOpenVSCode: string;
+  remoteRunnerVCSType: string;
 };
 
 type ModelModalState = {
@@ -198,6 +199,7 @@ export default function ConfigPage() {
   const [remoteRunnerHostnameRegex, setRemoteRunnerHostnameRegex] = useState(DEFAULT_REMOTE_HOSTNAME_REGEX);
   const [remoteRunnerProvisionPrefix, setRemoteRunnerProvisionPrefix] = useState(DEFAULT_REMOTE_PROVISION_PREFIX);
   const [remoteRunnerOpenVSCode, setRemoteRunnerOpenVSCode] = useState(DEFAULT_REMOTE_OPEN_VSCODE);
+  const [remoteRunnerVCSType, setRemoteRunnerVCSType] = useState('git');
 
   // Overlays state
   const [overlays, setOverlays] = useState<OverlayInfo[]>([]);
@@ -248,6 +250,7 @@ export default function ConfigPage() {
       remoteRunnerHostnameRegex,
       remoteRunnerProvisionPrefix,
       remoteRunnerOpenVSCode,
+      remoteRunnerVCSType,
     };
 
     // Deep comparison for arrays
@@ -291,7 +294,8 @@ export default function ConfigPage() {
       current.authTlsKeyPath !== originalConfig.authTlsKeyPath ||
       current.remoteRunnerHostnameRegex !== originalConfig.remoteRunnerHostnameRegex ||
       current.remoteRunnerProvisionPrefix !== originalConfig.remoteRunnerProvisionPrefix ||
-      current.remoteRunnerOpenVSCode !== originalConfig.remoteRunnerOpenVSCode
+      current.remoteRunnerOpenVSCode !== originalConfig.remoteRunnerOpenVSCode ||
+      current.remoteRunnerVCSType !== originalConfig.remoteRunnerVCSType
     );
   };
 
@@ -398,6 +402,7 @@ export default function ConfigPage() {
         setRemoteRunnerHostnameRegex(data.remote_runner?.hostname_regex || DEFAULT_REMOTE_HOSTNAME_REGEX);
         setRemoteRunnerProvisionPrefix(data.remote_runner?.provision_prefix || DEFAULT_REMOTE_PROVISION_PREFIX);
         setRemoteRunnerOpenVSCode(data.remote_runner?.open_vscode || DEFAULT_REMOTE_OPEN_VSCODE);
+        setRemoteRunnerVCSType(data.remote_runner?.vcs_type || 'git');
 
         // Set original config for change detection (non-wizard mode)
         if (!isFirstRun) {
@@ -438,6 +443,7 @@ export default function ConfigPage() {
             remoteRunnerHostnameRegex: data.remote_runner?.hostname_regex || DEFAULT_REMOTE_HOSTNAME_REGEX,
             remoteRunnerProvisionPrefix: data.remote_runner?.provision_prefix || DEFAULT_REMOTE_PROVISION_PREFIX,
             remoteRunnerOpenVSCode: data.remote_runner?.open_vscode || DEFAULT_REMOTE_OPEN_VSCODE,
+            remoteRunnerVCSType: data.remote_runner?.vcs_type || 'git',
           });
         }
 
@@ -618,6 +624,7 @@ export default function ConfigPage() {
           hostname_regex: remoteRunnerHostnameRegex,
           provision_prefix: remoteRunnerProvisionPrefix,
           open_vscode: remoteRunnerOpenVSCode,
+          vcs_type: remoteRunnerVCSType,
         },
       };
 
@@ -670,6 +677,7 @@ export default function ConfigPage() {
           remoteRunnerHostnameRegex,
           remoteRunnerProvisionPrefix,
           remoteRunnerOpenVSCode,
+          remoteRunnerVCSType,
         });
       }
 
@@ -2503,8 +2511,7 @@ export default function ConfigPage() {
                 </div>
                 <div className="settings-section__body">
                   <p className="form-group__hint" style={{ marginBottom: 'var(--spacing-md)' }}>
-                    Configure how to run sessions on Remote repositories (repos with mode &quot;remote&quot;).
-                    The connection prefix is prepended to all tmux commands to route them through your remote connection tool.
+                    Configure how to run sessions on remote repositories (repos with mode &quot;remote&quot;).
                   </p>
 
                   <div className="form-group">
@@ -2547,6 +2554,21 @@ export default function ConfigPage() {
                     <p className="form-group__hint">
                       Command to open VSCode on a remote workspace. Template vars: <code>{'{{.Hostname}}'}</code> (remote host), <code>{'{{.Path}}'}</code> (workspace path).
                       Leave empty to disable the VSCode button for remote workspaces.
+                    </p>
+                  </div>
+
+                  <div className="form-group">
+                    <label className="form-group__label">Version Control System</label>
+                    <select
+                      className="select"
+                      value={remoteRunnerVCSType}
+                      onChange={(e) => setRemoteRunnerVCSType(e.target.value)}
+                    >
+                      <option value="git">Git</option>
+                      <option value="sapling">Sapling</option>
+                    </select>
+                    <p className="form-group__hint">
+                      VCS used on remote workspaces. Determines which commands are used for diff and commit graph.
                     </p>
                   </div>
                 </div>

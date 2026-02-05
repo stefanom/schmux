@@ -243,29 +243,32 @@ export default function DiffPage() {
       )}
 
       <div className="diff-page">
-        <div className="diff-actions">
-          <span className="diff-actions__label">Diff in:</span>
-          {BUILTIN_DIFF_COMMANDS.map((cmd) => (
-            <button
-              key={`builtin-${cmd.name}`}
-              className="btn btn--sm btn--ghost btn--bordered"
-              onClick={() => handleExternalDiff(cmd)}
-              disabled={executingDiff !== null}
-            >
-              {executingDiff === cmd.name ? <div className="spinner--small"></div> : cmd.name}
-            </button>
-          ))}
-          {hasUserCommands && externalDiffCommands.map((cmd) => (
-            <button
-              key={cmd.name}
-              className="btn btn--sm btn--ghost btn--bordered"
-              onClick={() => handleExternalDiff(cmd)}
-              disabled={executingDiff !== null}
-            >
-              {executingDiff === cmd.name ? <div className="spinner--small"></div> : cmd.name}
-            </button>
-          ))}
-        </div>
+        {/* External diff tools only work for local workspaces */}
+        {!isExternal && (
+          <div className="diff-actions">
+            <span className="diff-actions__label">Diff in:</span>
+            {BUILTIN_DIFF_COMMANDS.map((cmd) => (
+              <button
+                key={`builtin-${cmd.name}`}
+                className="btn btn--sm btn--ghost btn--bordered"
+                onClick={() => handleExternalDiff(cmd)}
+                disabled={executingDiff !== null}
+              >
+                {executingDiff === cmd.name ? <div className="spinner--small"></div> : cmd.name}
+              </button>
+            ))}
+            {hasUserCommands && externalDiffCommands.map((cmd) => (
+              <button
+                key={cmd.name}
+                className="btn btn--sm btn--ghost btn--bordered"
+                onClick={() => handleExternalDiff(cmd)}
+                disabled={executingDiff !== null}
+              >
+                {executingDiff === cmd.name ? <div className="spinner--small"></div> : cmd.name}
+              </button>
+            ))}
+          </div>
+        )}
 
         <div className="diff-layout" ref={containerRef}>
           <div className="diff-sidebar" style={{ width: `${sidebarWidth}px`, flexShrink: 0 }}>

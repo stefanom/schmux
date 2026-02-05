@@ -19,6 +19,7 @@ export interface WorkspaceResponse {
   branch_url?: string;
   path: string;
   external?: boolean;
+  vcs_type?: string;
   session_count: number;
   sessions: SessionResponse[];
   quick_launch?: string[];

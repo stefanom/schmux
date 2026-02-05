@@ -106,6 +106,7 @@ type WorkspaceResponseItem struct {
 	BranchURL       string                `json:"branch_url,omitempty"`
 	Path            string                `json:"path"`
 	External        bool                  `json:"external,omitempty"`
+	VCSType         string                `json:"vcs_type,omitempty"`
 	SessionCount    int                   `json:"session_count"`
 	Sessions        []SessionResponseItem `json:"sessions"`
 	QuickLaunch     []string              `json:"quick_launch,omitempty"`
@@ -150,6 +151,7 @@ func (s *Server) buildSessionsResponse() []WorkspaceResponseItem {
 			BranchURL:       branchURL,
 			Path:            ws.Path,
 			External:        ws.External,
+			VCSType:         ws.VCSType,
 			SessionCount:    0,
 			Sessions:        []SessionResponseItem{},
 			QuickLaunch:     quickLaunchNames,
@@ -1780,8 +1782,8 @@ func (s *Server) handleDiff(w http.ResponseWriter, r *http.Request) {
 		return
 	}
 
-	// For external (remote) workspaces, use Sapling VCS via remote command execution
-	if ws.External {
+	// For Sapling VCS workspaces, use Sapling commands via remote execution
+	if ws.VCSType == "sapling" {
 		s.handleSaplingDiff(w, r, workspaceID, &ws)
 		return
 	}
@@ -2080,6 +2082,26 @@ func (s *Server) handleSaplingDiff(w http.ResponseWriter, r *http.Request, works
 				files[i].LinesRemoved = stats[1]
 			}
 		}
+	}
+
+	// Calculate totals and update workspace state for the tab indicator
+	var totalLinesAdded, totalLinesRemoved int
+	for _, f := range files {
+		totalLinesAdded += f.LinesAdded
+		totalLinesRemoved += f.LinesRemoved
+	}
+	filesChanged := len(files)
+
+	// Update workspace git status fields
+	ws.GitFilesChanged = filesChanged
+	ws.GitLinesAdded = totalLinesAdded
+	ws.GitLinesRemoved = totalLinesRemoved
+	ws.GitDirty = filesChanged > 0
+	if err := s.state.UpdateWorkspace(*ws); err != nil {
+		fmt.Printf("[handleSaplingDiff] warning: failed to update workspace state: %v\n", err)
+	} else {
+		// Broadcast to update the frontend tab indicator
+		go s.BroadcastSessions()
 	}
 
 	response := DiffResponse{
@@ -2552,6 +2574,17 @@ func (s *Server) handleDiffExternal(w http.ResponseWriter, r *http.Request) {
 		json.NewEncoder(w).Encode(DiffExternalResponse{
 			Success: false,
 			Message: fmt.Sprintf("workspace %s not found", workspaceID),
+		})
+		return
+	}
+
+	// External (remote) workspaces don't support local diff tools
+	if ws.External {
+		w.Header().Set("Content-Type", "application/json")
+		w.WriteHeader(http.StatusBadRequest)
+		json.NewEncoder(w).Encode(DiffExternalResponse{
+			Success: false,
+			Message: "External diff tools are not supported for remote workspaces. Use the web diff viewer instead.",
 		})
 		return
 	}
@@ -3383,8 +3416,8 @@ func (s *Server) handleWorkspaceGitGraph(w http.ResponseWriter, r *http.Request)
 		return
 	}
 
-	// For external (remote) workspaces, use Sapling VCS
-	if ws.External {
+	// For Sapling VCS workspaces, use Sapling commands
+	if ws.VCSType == "sapling" {
 		s.handleSaplingGitGraph(w, r, workspaceID, &ws)
 		return
 	}
@@ -3525,40 +3558,13 @@ func (s *Server) handleSaplingGitGraph(w http.ResponseWriter, r *http.Request, w
 		}
 	}
 
-	// Get dirty state from sl status
-	statusResult, err := s.session.RunRemoteCommand(ctx, sessionID, "sl diff --stat | tail -1")
-	if err == nil && statusResult.Output != "" {
-		// Parse summary line: X files changed, Y insertions(+), Z deletions(-)
-		if strings.Contains(statusResult.Output, "changed") {
-			resp.DirtyState = &contracts.GitGraphDirtyState{}
-			parts := strings.Split(statusResult.Output, ",")
-			for _, part := range parts {
-				part = strings.TrimSpace(part)
-				if strings.Contains(part, "file") {
-					fields := strings.Fields(part)
-					if len(fields) > 0 {
-						if n, err := strconv.Atoi(fields[0]); err == nil {
-							resp.DirtyState.FilesChanged = n
-						}
-					}
-				}
-				if strings.Contains(part, "insertion") {
-					fields := strings.Fields(part)
-					if len(fields) > 0 {
-						if n, err := strconv.Atoi(fields[0]); err == nil {
-							resp.DirtyState.LinesAdded = n
-						}
-					}
-				}
-				if strings.Contains(part, "deletion") {
-					fields := strings.Fields(part)
-					if len(fields) > 0 {
-						if n, err := strconv.Atoi(fields[0]); err == nil {
-							resp.DirtyState.LinesRemoved = n
-						}
-					}
-				}
-			}
+	// Get dirty state from workspace state (populated by handleSaplingDiff)
+	// This avoids running a redundant sl diff --stat command
+	if ws.GitFilesChanged > 0 || ws.GitLinesAdded > 0 || ws.GitLinesRemoved > 0 {
+		resp.DirtyState = &contracts.GitGraphDirtyState{
+			FilesChanged: ws.GitFilesChanged,
+			LinesAdded:   ws.GitLinesAdded,
+			LinesRemoved: ws.GitLinesRemoved,
 		}
 	}
 
