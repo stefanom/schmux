@@ -9,6 +9,7 @@ import (
 	"sort"
 	"strconv"
 	"strings"
+	"sync"
 	"syscall"
 	"time"
 
@@ -37,6 +38,12 @@ type Manager struct {
 	runner       runner.SessionRunner            // Local tmux runner
 	remoteRunner runner.SessionRunner            // External runner for remote repos (lazy-init)
 	runnerByRepo map[string]runner.SessionRunner // Cached runners per repo (for different flavors)
+
+	// workspaceProvisionMu protects workspaceProvisionLocks
+	workspaceProvisionMu sync.Mutex
+	// workspaceProvisionLocks holds per-workspace locks for remote provisioning
+	// This ensures only one session provisions the remote while others wait
+	workspaceProvisionLocks map[string]*sync.Mutex
 }
 
 // ResolvedTarget is a resolved run target with command and env info.
@@ -61,12 +68,32 @@ func New(cfg *config.Config, st state.StateStore, statePath string, wm workspace
 		r = runner.NewLocalTmuxRunner()
 	}
 	return &Manager{
-		config:       cfg,
-		state:        st,
-		workspace:    wm,
-		runner:       r,
-		runnerByRepo: make(map[string]runner.SessionRunner),
+		config:                  cfg,
+		state:                   st,
+		workspace:               wm,
+		runner:                  r,
+		runnerByRepo:            make(map[string]runner.SessionRunner),
+		workspaceProvisionLocks: make(map[string]*sync.Mutex),
 	}
+}
+
+// getWorkspaceProvisionLock returns a mutex for the given workspace ID.
+// This is used to serialize remote provisioning so that parallel spawns
+// share the same remote connection instead of each provisioning separately.
+func (m *Manager) getWorkspaceProvisionLock(workspaceID string) *sync.Mutex {
+	m.workspaceProvisionMu.Lock()
+	defer m.workspaceProvisionMu.Unlock()
+
+	if m.workspaceProvisionLocks == nil {
+		m.workspaceProvisionLocks = make(map[string]*sync.Mutex)
+	}
+
+	lock, ok := m.workspaceProvisionLocks[workspaceID]
+	if !ok {
+		lock = &sync.Mutex{}
+		m.workspaceProvisionLocks[workspaceID] = lock
+	}
+	return lock
 }
 
 // Spawn creates a new session.
@@ -351,13 +378,22 @@ func (m *Manager) getRunnerForWorkspace(ctx context.Context, w *state.Workspace)
 //
 // If the workspace already has a RemoteHost set (from a previous session), reuses that remote
 // by connecting to it and creating a new window instead of provisioning a new remote environment.
+//
+// Uses workspace-level locking to ensure that parallel spawns share the same remote connection
+// instead of each provisioning a separate remote machine.
 func (m *Manager) SpawnWithProvisioning(ctx context.Context, w *state.Workspace, provisionPrefix, flavor, sessionID, tmuxSession, command, nickname, target string) (*state.Session, error) {
+	// Acquire workspace-level lock to serialize remote provisioning
+	// This ensures only one session provisions the remote while others wait
+	provisionLock := m.getWorkspaceProvisionLock(w.ID)
+	provisionLock.Lock()
+	defer provisionLock.Unlock()
+
 	// Use the workspace path as-is (including ~ if present)
 	workspacePath := w.Path
 	remoteTmuxSession := "schmux"
 
 	// Re-fetch workspace from state to get latest RemoteHost and LocalTmuxSession values
-	// (they may have been updated by hostname detection since Spawn() started)
+	// Another goroutine may have already provisioned while we were waiting for the lock
 	freshWorkspace, found := m.state.GetWorkspace(w.ID)
 	if found {
 		if freshWorkspace.RemoteHost != "" {
