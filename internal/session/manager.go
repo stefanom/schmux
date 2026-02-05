@@ -463,46 +463,34 @@ func (m *Manager) SpawnWithProvisioning(ctx context.Context, w *state.Workspace,
 		return &sess, nil
 	}
 
-	// First session for this workspace - provision new remote environment and create remote tmux
+	// First session for this workspace - provision new remote environment
+	// This creates the connection and remote tmux with helper window only.
+	// The agent window will be created after provisioning completes.
 	fmt.Printf("[session] === REMOTE SESSION (NEW PROVISION) ===\n")
 
 	// Build the provisioning command that:
 	// 1. Connects to the remote via provision_prefix (e.g., dev connect)
 	// 2. Creates a nested remote tmux session with helper window
-	// 3. Runs the agent command in a session-specific window
-	// 4. Attaches to the remote tmux
+	// 3. Attaches to the remote tmux (keeps connection alive)
 	//
-	// The nested tmux structure:
-	//   Remote tmux session "schmux"
-	//     ├─ Window "helper": For running sl/git commands
-	//     └─ Window "{windowName}": Runs the agent
+	// Note: We DON'T create the agent window here - that's done after provisioning
+	// so all sessions (including the first) use the same window creation path.
 	nestedTmuxSetup := fmt.Sprintf(
 		"tmux new-session -d -s %s -n helper -c %s; "+
-			"tmux new-window -t %s -n %s -c %s; "+
-			"tmux send-keys -t %s:%s %s Enter; "+
-			"tmux select-window -t %s:%s; "+
 			"exec tmux attach -t %s",
 		remoteTmuxSession, workspacePath, // new-session with helper window
-		remoteTmuxSession, windowName, workspacePath, // new-window for agent
-		remoteTmuxSession, windowName, runner.ShellQuote(command), // send agent command
-		remoteTmuxSession, windowName, // select the agent window
 		remoteTmuxSession, // attach to remote tmux
 	)
 
 	// Build the full command with provision prefix
-	// Note: provisionPrefix is already templated with flavor, so we don't add it again
-	// We need bash -c to execute the command string on the remote, since dev connect
-	// wraps commands with exec which doesn't interpret shell syntax
 	fullCmd := fmt.Sprintf("%s -- bash -c %s", provisionPrefix, shellQuote(nestedTmuxSetup))
 
-	// Log the provisioning details to main log
+	// Log the provisioning details
 	fmt.Printf("[session] Flavor: %s\n", flavor)
 	fmt.Printf("[session] Remote workspace path: %s\n", w.Path)
-	fmt.Printf("[session] Agent command: %s\n", command)
-	fmt.Printf("[session] Remote tmux session: %s (window: %s)\n", remoteTmuxSession, windowName)
-	fmt.Printf("[session] Full command:\n")
+	fmt.Printf("[session] Remote tmux session: %s\n", remoteTmuxSession)
+	fmt.Printf("[session] Provisioning command:\n")
 	fmt.Printf("[session]   %s\n", fullCmd)
-	fmt.Printf("[session] =========================\n")
 
 	// Use user's home directory for the local tmux session working directory
 	homeDir, err := os.UserHomeDir()
@@ -510,7 +498,7 @@ func (m *Manager) SpawnWithProvisioning(ctx context.Context, w *state.Workspace,
 		homeDir = "/"
 	}
 
-	// Create local tmux session that runs the agent via the provisioning tool
+	// Create local tmux session that runs the provisioning tool
 	if err := m.runner.CreateSession(ctx, runner.CreateSessionOpts{
 		SessionID: tmuxSession,
 		WorkDir:   homeDir,
@@ -538,13 +526,41 @@ func (m *Manager) SpawnWithProvisioning(ctx context.Context, w *state.Workspace,
 		}
 	}
 
+	// Store LocalTmuxSession in workspace immediately so subsequent sessions know
+	// the connection exists (even though we're still setting up)
+	w.LocalTmuxSession = tmuxSession
+	if err := m.state.UpdateWorkspace(*w); err != nil {
+		fmt.Printf("[session] warning: failed to store LocalTmuxSession: %v\n", err)
+	}
+
+	// Wait for remote tmux to be ready before creating agent window
+	// The connection needs time to establish and create the remote session
+	fmt.Printf("[session] Waiting for remote tmux to be ready...\n")
+	time.Sleep(2 * time.Second)
+
+	// Now create the agent window using the same path as subsequent sessions
+	fmt.Printf("[session] Creating agent window: %s\n", windowName)
+	createWindowCmd := fmt.Sprintf("new-window -t %s -n %s -c %s", remoteTmuxSession, windowName, workspacePath)
+	if err := m.sendTmuxCommand(ctx, tmuxSession, createWindowCmd); err != nil {
+		return nil, fmt.Errorf("failed to create agent window: %w", err)
+	}
+
+	time.Sleep(300 * time.Millisecond)
+
+	// Send the agent command to the window
+	fmt.Printf("[session] Sending agent command to window: %s\n", command)
+	sendKeysCmd := fmt.Sprintf("send-keys -t %s:%s %s Enter", remoteTmuxSession, windowName, runner.ShellQuote(command))
+	if err := m.sendTmuxCommand(ctx, tmuxSession, sendKeysCmd); err != nil {
+		return nil, fmt.Errorf("failed to send command to agent window: %w", err)
+	}
+
 	// Get the PID of the process from tmux pane
 	pid, err := m.runner.GetPanePID(ctx, tmuxSession)
 	if err != nil {
 		return nil, fmt.Errorf("failed to get pane PID: %w", err)
 	}
 
-	// Create session state - this IS the actual agent session
+	// Create session state
 	sess := state.Session{
 		ID:           sessionID,
 		WorkspaceID:  w.ID,
@@ -553,18 +569,11 @@ func (m *Manager) SpawnWithProvisioning(ctx context.Context, w *state.Workspace,
 		TmuxSession:  tmuxSession,
 		CreatedAt:    time.Now(),
 		Pid:          pid,
-		RemoteWindow: windowName, // Track which remote window this session uses
+		RemoteWindow: windowName,
 	}
 
 	if err := m.state.AddSession(sess); err != nil {
 		return nil, fmt.Errorf("failed to add session to state: %w", err)
-	}
-
-	// Store LocalTmuxSession in workspace for future session reuse
-	// This allows subsequent sessions to reuse the same devconnect connection
-	w.LocalTmuxSession = tmuxSession
-	if err := m.state.UpdateWorkspace(*w); err != nil {
-		fmt.Printf("[session] warning: failed to store LocalTmuxSession: %v\n", err)
 	}
 
 	if err := m.state.Save(); err != nil {
@@ -572,6 +581,7 @@ func (m *Manager) SpawnWithProvisioning(ctx context.Context, w *state.Workspace,
 	}
 
 	fmt.Printf("[session] created remote session: id=%s flavor=%s window=%s\n", sessionID, flavor, windowName)
+	fmt.Printf("[session] =========================\n")
 
 	// If this is a new remote (not reusing existing), start background hostname detection
 	if w.RemoteHost == "" {
