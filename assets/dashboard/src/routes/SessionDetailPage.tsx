@@ -3,6 +3,7 @@ import { Link, useParams, useNavigate } from 'react-router-dom';
 import '@xterm/xterm/css/xterm.css';
 import TerminalStream from '../lib/terminalStream';
 import { updateNickname, disposeSession, reconnectRemoteHost, getErrorMessage } from '../lib/api';
+import ConversationView from '../components/ConversationView';
 import { copyToClipboard, formatRelativeTime, formatTimestamp } from '../lib/utils';
 import { useToast } from '../components/ToastProvider';
 import { useModal } from '../components/ModalProvider';
@@ -89,8 +90,11 @@ export default function SessionDetailPage() {
     }
   }, [sessionData?.id, markAsViewed]);
 
+  const isHtmlMode = sessionData?.render_mode === 'html';
+
   useEffect(() => {
     if (!sessionData || !terminalRef.current) return;
+    if (isHtmlMode) return; // HTML mode uses ConversationView instead of xterm
     if (configLoading) return;
     if (!config?.terminal || typeof config.terminal.width !== 'number' || typeof config.terminal.height !== 'number') {
       return;
@@ -120,7 +124,7 @@ export default function SessionDetailPage() {
     return () => {
       terminalStream.disconnect();
     };
-  }, [sessionData?.id, configLoading, config?.terminal, remoteDisconnected]);
+  }, [sessionData?.id, configLoading, config?.terminal, remoteDisconnected, isHtmlMode]);
 
   useEffect(() => {
     if (!sessionData?.id) return;
@@ -377,6 +381,8 @@ export default function SessionDetailPage() {
                 Reconnect
               </button>
             </div>
+          ) : isHtmlMode ? (
+            <ConversationView sessionId={sessionData.id} running={sessionData.running} />
           ) : (
           <div className="log-viewer">
             <div className="log-viewer__header">
@@ -571,6 +577,7 @@ export default function SessionDetailPage() {
 
           <hr style={{ border: 'none', borderTop: '1px solid var(--color-border)', margin: 'var(--spacing-md) 0' }} />
 
+          {!isHtmlMode && sessionData.attach_cmd && (
           <div className="form-group">
             <label className="form-group__label">Attach Command</label>
             <div className="copy-field">
@@ -585,6 +592,7 @@ export default function SessionDetailPage() {
               </Tooltip>
             </div>
           </div>
+          )}
 
           <div style={{ marginTop: 'auto' }}>
             <button className="btn btn--danger" style={{ width: '100%' }} onClick={handleDispose}>

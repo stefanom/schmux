@@ -4,6 +4,7 @@ export interface SessionResponse {
   branch: string;
   branch_url?: string;
   nickname?: string;
+  render_mode?: 'text' | 'html';
   created_at: string;
   last_output_at?: string;
   running: boolean;
@@ -99,6 +100,7 @@ export interface SpawnRequest {
   quick_launch_name?: string;
   resume?: boolean;                   // resume mode: use agent's resume command
   remote_flavor_id?: string;          // optional: spawn on remote host
+  render_mode?: 'text' | 'html';     // render mode: text (xterm) or html (stream-json)
 }
 
 export interface SpawnResult {
@@ -321,3 +323,48 @@ export interface RemoteSpawnRequest {
   prompt: string;
   nickname: string;
 }
+
+// Stream-json message types for HTML render mode
+export interface StreamJsonMessage {
+  type: string;
+  subtype?: string;
+  // eslint-disable-next-line @typescript-eslint/no-explicit-any
+  [key: string]: any;
+}
+
+// Server -> Client WebSocket messages for stream-json sessions
+export interface StreamJsonWSHistoryMessage {
+  type: 'history';
+  messages: StreamJsonMessage[];
+}
+
+export interface StreamJsonWSMessageMessage {
+  type: 'message';
+  message: StreamJsonMessage;
+}
+
+export interface StreamJsonWSStatusMessage {
+  type: 'status';
+  status: 'running' | 'stopped';
+}
+
+export type StreamJsonWSServerMessage =
+  | StreamJsonWSHistoryMessage
+  | StreamJsonWSMessageMessage
+  | StreamJsonWSStatusMessage;
+
+// Client -> Server WebSocket messages for stream-json sessions
+export interface StreamJsonWSUserMessage {
+  type: 'user_message';
+  content: string;
+}
+
+export interface StreamJsonWSPermissionResponse {
+  type: 'permission_response';
+  request_id: string;
+  approved: boolean;
+}
+
+export type StreamJsonWSClientMessage =
+  | StreamJsonWSUserMessage
+  | StreamJsonWSPermissionResponse;
