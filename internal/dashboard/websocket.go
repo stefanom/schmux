@@ -563,24 +563,24 @@ func (s *Server) handleTerminalWebSocket(w http.ResponseWriter, r *http.Request)
 			return err
 		}
 
-		data := buf[:n] // Actual bytes read
+		data := buf[:n]       // Actual bytes read
 		bytesRead := int64(n) // Track original bytes for offset advancement
 
-		// Check for schmux OSC signals and strip them from output
+		// Check for schmux signals in output
 		// Only process signals on incremental reads (not initial load) to avoid
 		// re-triggering old signals every time a client connects
-		signals, cleanData := signal.ExtractAndStripSignals(data)
+		signals := signal.ParseSignals(data)
 		if len(signals) > 0 {
-			fmt.Printf("[ws %s] stripped %d signals, data len %d -> %d\n", sessionID[:8], len(signals), len(data), len(cleanData))
+			fmt.Printf("[ws %s] detected %d signals\n", sessionID[:8], len(signals))
 		}
 		if !sendFull {
 			for _, sig := range signals {
 				s.handleAgentSignal(sessionID, sig)
 			}
 		}
-		data = cleanData
+		// Note: signals are NOT stripped from output - users will see them in terminal
 
-		// Send content (skip if nothing to send after stripping)
+		// Send content
 		if sendFull {
 			// Prepend ANSI sequences for terminal state priming (only on first full send)
 			content := string(ansiSequences) + string(data)
